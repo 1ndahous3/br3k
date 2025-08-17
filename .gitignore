@@ -1,0 +1,8 @@
+.idea
+
+Cargo.lock
+target/
+
+windef/src/generated
+windef/Cargo.lock
+windef/target/

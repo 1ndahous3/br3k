@@ -1,0 +1,2 @@
+[env]
+PHNT_PATH = { value = "deps/phnt" }
