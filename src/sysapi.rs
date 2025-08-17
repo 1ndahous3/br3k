@@ -1,6 +1,6 @@
-#![allow(non_snake_case)]
 use crate::prelude::*;
 use crate::str::*;
+use crate::fs;
 
 use crate::sysapi_ctx::SysApiCtx as api_ctx;
 use crate::unique_resource::*;
@@ -14,7 +14,7 @@ use windows_sys::Win32::System::Diagnostics::Debug::{CONTEXT, WOW64_CONTEXT};
 use windows_sys::Win32::System::Threading::{
     EVENT_ALL_ACCESS, PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS,
 };
-use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, LoadLibraryA};
+use windows_sys::Win32::System::LibraryLoader::LoadLibraryA;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
@@ -46,51 +46,59 @@ pub fn ntstatus_decode(status: NTSTATUS) -> String {
     )
 }
 
-pub fn HandleClose(handle: HANDLE) -> Result<()> {
+pub fn close_handle(handle: HANDLE) -> Result<()> {
     unsafe {
         let status = NTSTATUS(api_ctx::ntdll().NtClose.unwrap()(handle));
         status.is_ok().then_some(()).ok_or(status)
     }
 }
 
-pub fn HandleDuplicate(
+pub fn duplicate_handle(
     target_process_handle: HANDLE,
     source_handle: HANDLE,
     source_process_handle: HANDLE,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
-        let mut target_handle: HANDLE = ptr::null_mut();
+        let target_handle: HANDLE = ptr::null_mut();
 
         let status = NTSTATUS(api_ctx::ntdll().NtDuplicateObject.unwrap()(
             source_process_handle,
             source_handle,
             target_process_handle,
-            &mut target_handle,
-            0, // DesiredAccess
-            0, // Attributes
+            addr_of!(target_handle) as _,
+            0,
+            0,
             winbase::DUPLICATE_SAME_ACCESS,
         ));
 
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(target_handle)
+            Ok(wrap_handle(target_handle))
         }
     }
 }
 
-pub fn HandleWrap(handle: HANDLE) -> UniqueHandle {
+fn wrap_handle(handle: HANDLE) -> UniqueHandle {
     fn handle_close_deleter(handle: HANDLE) {
-        let _ = HandleClose(handle);
+        let _ = close_handle(handle);
     }
     UniqueResource::new(handle, handle_close_deleter)
 }
-pub fn Peb() -> ntpebteb::PPEB {
+
+pub fn null_handle() -> UniqueHandle {
+    fn handle_close_deleter(handle: HANDLE) {
+        let _ = close_handle(handle);
+    }
+    UniqueResource::new(ptr::null_mut(), handle_close_deleter)
+}
+
+pub fn peb() -> ntpebteb::PPEB {
     #[cfg(target_pointer_width = "64")]
     {
         unsafe {
             let peb: u64;
-            std::arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
+            arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
             peb as ntpebteb::PPEB
         }
     }
@@ -98,7 +106,7 @@ pub fn Peb() -> ntpebteb::PPEB {
     {
         unsafe {
             let peb: u32;
-            std::arch::asm!("mov {}, gs:[0x30]", out(reg) peb);
+            arch::asm!("mov {}, gs:[0x30]", out(reg) peb);
             peb as ntpebteb::PPEB
         }
     }
@@ -109,25 +117,27 @@ pub type UniqueProcessParameters = UniqueResource<
     fn(ntpebteb::PRTL_USER_PROCESS_PARAMETERS),
 >;
 
-pub fn ProcessParametersCreate(
+pub fn create_process_parameters(
     name: &str,
-) -> Result<ntpebteb::PRTL_USER_PROCESS_PARAMETERS> {
+) -> Result<UniqueProcessParameters> {
     unsafe {
         let nt_name = format!("\\??\\{}", name);
         let nt_name = U16CString::from_str(nt_name).unwrap();
+        let nt_name = to_unicode_string(&nt_name);
 
         let mut current_directory = [0u16; winbase::MAX_PATH];
         GetCurrentDirectoryW(Some(&mut current_directory));
+        let current_directory = to_unicode_string(&current_directory);
 
-        let peb = Peb();
+        let peb = peb();
 
-        let mut process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS = ptr::null_mut();
+        let process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS = ptr::null_mut();
         let status = NTSTATUS(api_ctx::ntdll().RtlCreateProcessParametersEx.unwrap()(
-            &mut process_parameters,
-            &mut to_unicode_string(&nt_name) as *mut _ as *mut _,
-            &mut (*(*peb).ProcessParameters).DllPath as *mut _ as *mut _,
-            &mut to_unicode_string(&current_directory) as *mut _ as *mut _,
-            &mut to_unicode_string(&nt_name) as *mut _ as *mut _,
+            addr_of!(process_parameters) as _,
+            addr_of!(nt_name) as _,
+            addr_of!((*(*peb).ProcessParameters).DllPath) as _,
+            addr_of!(current_directory) as _,
+            addr_of!(nt_name) as _,
             (*(*peb).ProcessParameters).Environment,
             ptr::null_mut(),
             ptr::null_mut(),
@@ -139,38 +149,38 @@ pub fn ProcessParametersCreate(
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(process_parameters)
+            Ok(wrap_process_parameters(process_parameters))
         }
     }
 }
 
-pub fn ProcessParametersDestroy(process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS) {
+pub fn destroy_process_parameters(process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS) {
     unsafe {
         api_ctx::ntdll().RtlDestroyProcessParameters.unwrap()(process_parameters);
     }
 }
-
-pub fn ProcessParametersWrap(
+fn wrap_process_parameters(
     process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS,
 ) -> UniqueProcessParameters {
     fn process_parameters_destroy_deleter(
         process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS,
     ) {
-        let _ = ProcessParametersDestroy(process_parameters);
+        let _ = destroy_process_parameters(process_parameters);
     }
     UniqueResource::new(process_parameters, process_parameters_destroy_deleter)
 }
 
 // ProcessHandle, ThreadHandle
-pub fn ProcessCreateUser(name: &str, suspended: bool) -> Result<(HANDLE, HANDLE)> {
+pub fn create_user_process(name: &str, suspended: bool) -> Result<(UniqueHandle, UniqueHandle)> {
     unsafe {
         let nt_name = format!("\\??\\{}", name);
         let nt_name = U16CString::from_str(nt_name).unwrap();
+        let nt_name = to_unicode_string(&nt_name);
 
-        let mut process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS = ptr::null_mut();
+        let process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS = ptr::null_mut();
         let status = NTSTATUS(api_ctx::ntdll().RtlCreateProcessParametersEx.unwrap()(
-            &mut process_parameters,
-            &mut to_unicode_string(&nt_name) as *mut _ as *mut _,
+            addr_of!(process_parameters) as _,
+            addr_of!(nt_name) as _,
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
@@ -186,7 +196,7 @@ pub fn ProcessCreateUser(name: &str, suspended: bool) -> Result<(HANDLE, HANDLE)
             return Err(status);
         }
 
-        let mut create_info = ntpsapi::PS_CREATE_INFO {
+        let create_info = ntpsapi::PS_CREATE_INFO {
             Size: size_of::<ntpsapi::PS_CREATE_INFO>(),
             State: ntpsapi::PS_CREATE_STATE::PsCreateInitialState,
             ..Default::default()
@@ -199,16 +209,16 @@ pub fn ProcessCreateUser(name: &str, suspended: bool) -> Result<(HANDLE, HANDLE)
             }],
         };
 
-        attribute_list.Attributes[0].Attribute = winbase::PS_ATTRIBUTE_IMAGE_NAME as usize;
-        attribute_list.Attributes[0].Size = nt_name.len() * 2;
-        attribute_list.Attributes[0].a1.bindgen_union_field = nt_name.as_ptr() as u64;
+        attribute_list.Attributes[0].Attribute = winbase::PS_ATTRIBUTE_IMAGE_NAME as _;
+        attribute_list.Attributes[0].Size = nt_name.Length as _;
+        attribute_list.Attributes[0].a1.bindgen_union_field = nt_name.Buffer as _;
 
-        let mut process_handle: HANDLE = ptr::null_mut();
-        let mut thread_handle: HANDLE = ptr::null_mut();
+        let process_handle: HANDLE = ptr::null_mut();
+        let thread_handle: HANDLE = ptr::null_mut();
 
         let status = NTSTATUS(api_ctx::ntdll().NtCreateUserProcess.unwrap()(
-            &mut process_handle,
-            &mut thread_handle,
+            addr_of!(process_handle) as _,
+            addr_of!(thread_handle) as _,
             PROCESS_ALL_ACCESS,
             THREAD_ALL_ACCESS,
             ptr::null_mut(),
@@ -219,12 +229,12 @@ pub fn ProcessCreateUser(name: &str, suspended: bool) -> Result<(HANDLE, HANDLE)
             } else {
                 ntpsapi::THREAD_CREATE_FLAGS_NONE
             },
-            process_parameters as *mut _,
-            &mut create_info,
-            &mut attribute_list,
+            process_parameters as _,
+            addr_of!(create_info) as _,
+            addr_of!(attribute_list) as _,
         ));
 
-        ProcessParametersDestroy(process_parameters);
+        destroy_process_parameters(process_parameters);
 
         if !status.is_ok() {
             if status.0 == ntstatus::STATUS_OBJECT_PATH_INVALID {
@@ -236,39 +246,39 @@ pub fn ProcessCreateUser(name: &str, suspended: bool) -> Result<(HANDLE, HANDLE)
 
             Err(status)
         } else {
-            Ok((process_handle, thread_handle))
+            Ok((wrap_handle(process_handle), wrap_handle(thread_handle)))
         }
     }
 }
 
-pub fn ProcessCreate(SectionHandle: HANDLE) -> Result<HANDLE> {
+pub fn create_process(section_handle: HANDLE) -> Result<UniqueHandle> {
     unsafe {
-        let mut process_handle: HANDLE = ptr::null_mut();
+        let process_handle: HANDLE = ptr::null_mut();
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
             ..Default::default()
         };
 
         let status: NTSTATUS = if api_ctx::ntdll().NtCreateProcess.is_some() {
             NTSTATUS(api_ctx::ntdll().NtCreateProcess.unwrap()(
-                &mut process_handle,
+                addr_of!(process_handle) as _,
                 PROCESS_ALL_ACCESS,
-                &mut object_attributes,
-                winbase::NT_CURRENT_PROCESS,
+                addr_of!(object_attributes) as _,
+                NT_CURRENT_PROCESS,
                 true.into(),
-                SectionHandle,
+                section_handle,
                 ptr::null_mut(),
                 ptr::null_mut(),
             ))
         } else {
             NTSTATUS(api_ctx::ntdll().NtCreateProcessEx.unwrap()(
-                &mut process_handle,
+                addr_of!(process_handle) as _,
                 PROCESS_ALL_ACCESS,
-                &mut object_attributes,
-                winbase::NT_CURRENT_PROCESS,
+                addr_of!(object_attributes) as _,
+                NT_CURRENT_PROCESS,
                 ntpsapi::PROCESS_CREATE_FLAGS_INHERIT_HANDLES,
-                SectionHandle,
+                section_handle,
                 ptr::null_mut(),
                 ptr::null_mut(),
                 0,
@@ -278,22 +288,22 @@ pub fn ProcessCreate(SectionHandle: HANDLE) -> Result<HANDLE> {
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(process_handle)
+            Ok(wrap_handle(process_handle))
         }
     }
 }
 
-pub fn ProcessGetBasicInfo(
+pub fn get_process_basic_info(
     process_handle: HANDLE,
 ) -> Result<ntpsapi::PROCESS_BASIC_INFORMATION> {
     unsafe {
-        let mut basic_info = ntpsapi::PROCESS_BASIC_INFORMATION::default();
+        let basic_info = ntpsapi::PROCESS_BASIC_INFORMATION::default();
 
         let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationProcess.unwrap()(
             process_handle,
             ntpsapi::PROCESSINFOCLASS::ProcessBasicInformation,
-            &mut basic_info as *mut _ as *mut _,
-            size_of::<ntpsapi::PROCESS_BASIC_INFORMATION>() as u32,
+            addr_of!(basic_info) as _,
+            size_of::<ntpsapi::PROCESS_BASIC_INFORMATION>() as _,
             ptr::null_mut(),
         ));
 
@@ -305,15 +315,15 @@ pub fn ProcessGetBasicInfo(
     }
 }
 
-pub fn ProcessGetWow64Info(process_handle: HANDLE) -> Result<bool> {
+pub fn get_process_wow64_info(process_handle: HANDLE) -> Result<bool> {
     unsafe {
-        let mut wow64_info: usize = 0;
+        let wow64_info: usize = 0;
 
         let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationProcess.unwrap()(
             process_handle,
             ntpsapi::PROCESSINFOCLASS::ProcessWow64Information,
-            &mut wow64_info as *mut _ as *mut _,
-            size_of::<usize>() as u32,
+            addr_of!(wow64_info) as _,
+            size_of::<usize>() as _,
             ptr::null_mut(),
         ));
 
@@ -325,23 +335,23 @@ pub fn ProcessGetWow64Info(process_handle: HANDLE) -> Result<bool> {
     }
 }
 
-pub fn ProcessFind(name: &str) -> Result<u32> {
+pub fn find_process(name: &str) -> Result<u32> {
     unsafe {
-        let mut entry: PROCESSENTRY32W = mem::zeroed();
-        entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+        let mut entry = PROCESSENTRY32W::default();
+        entry.dwSize = size_of::<PROCESSENTRY32W>() as _;
 
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot.is_null() {
             return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL));
         }
 
-        if Process32FirstW(snapshot, &mut entry) == 0 {
+        if Process32FirstW(snapshot, addr_of!(entry) as _) == 0 {
             return Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND));
         }
 
         let mut pid = 0;
         loop {
-            if Process32NextW(snapshot, &mut entry) == 0 {
+            if Process32NextW(snapshot, addr_of!(entry) as _) == 0 {
                 break;
             }
 
@@ -367,57 +377,57 @@ pub fn ProcessFind(name: &str) -> Result<u32> {
     }
 }
 
-pub fn ProcessOpenByHwnd(
+pub fn open_process_by_hwnd(
     hwnd: HWND,
     access_mask: winbase::ACCESS_MASK,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
         let process_handle =
             api_ctx::win32u().NtUserGetWindowProcessHandle.unwrap()(hwnd, access_mask);
         if process_handle.is_null() {
             Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL))
         } else {
-            Ok(process_handle)
+            Ok(wrap_handle(process_handle))
         }
     }
 }
 
-pub fn ProcessOpen(pid: u32, access_mask: u32) -> Result<HANDLE> {
+pub fn open_process(pid: u32, access_mask: u32) -> Result<UniqueHandle> {
     unsafe {
-        let mut process_handle: HANDLE = ptr::null_mut();
+        let process_handle: HANDLE = ptr::null_mut();
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
             ..Default::default()
         };
 
-        let mut client_id = ntdef::CLIENT_ID {
+        let client_id = ntdef::CLIENT_ID {
             UniqueProcess: pid as _,
             ..Default::default()
         };
 
         let status = NTSTATUS(api_ctx::ntdll().NtOpenProcess.unwrap()(
-            &mut process_handle,
+            addr_of!(process_handle) as _,
             access_mask,
-            &mut object_attributes,
-            &mut client_id as *mut _ as *mut _,
+            addr_of!(object_attributes) as _,
+            addr_of!(client_id) as _,
         ));
 
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(process_handle)
+            Ok(wrap_handle(process_handle))
         }
     }
 }
 
-pub fn ThreadOpenNext(
+pub fn open_next_thread(
     process_handle: HANDLE,
     thread_handle: HANDLE,
     access_mask: winbase::ACCESS_MASK,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
-        let mut new_thread_handle: HANDLE = ptr::null_mut();
+        let new_thread_handle: HANDLE = ptr::null_mut();
 
         let status = NTSTATUS(api_ctx::ntdll().NtGetNextThread.unwrap()(
             process_handle,
@@ -425,7 +435,7 @@ pub fn ThreadOpenNext(
             access_mask,
             0,
             0,
-            &mut new_thread_handle,
+            addr_of!(new_thread_handle) as _,
         ));
 
         if !status.is_ok() {
@@ -433,47 +443,47 @@ pub fn ThreadOpenNext(
                 return Err(status);
             }
 
-            return Ok(new_thread_handle);
+            return Ok(wrap_handle(new_thread_handle));
         }
 
-        Ok(new_thread_handle)
+        Ok(wrap_handle(new_thread_handle))
     }
 }
 
-pub fn ThreadOpen(
+pub fn open_thread(
     pid: u32,
     tid: u32,
     access_mask: winbase::ACCESS_MASK,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
-        let mut thread_handle: HANDLE = ptr::null_mut();
+        let thread_handle: HANDLE = ptr::null_mut();
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
             ..Default::default()
         };
 
-        let mut client_id = ntdef::CLIENT_ID {
+        let client_id = ntdef::CLIENT_ID {
             UniqueProcess: pid as _,
             UniqueThread: tid as _,
         };
 
         let status = NTSTATUS(api_ctx::ntdll().NtOpenThread.unwrap()(
-            &mut thread_handle,
+            addr_of!(thread_handle) as _,
             access_mask,
-            &mut object_attributes,
-            &mut client_id as *mut _ as *mut _,
+            addr_of!(object_attributes) as _,
+            addr_of!(client_id) as _,
         ));
 
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(thread_handle)
+            Ok(wrap_handle(thread_handle))
         }
     }
 }
 
-fn ThreadCreateStack(
+fn create_thread_stack(
     process_handle: HANDLE,
     initial_teb: ntpsapi::PINITIAL_TEB,
 ) -> Result<()> {
@@ -484,8 +494,8 @@ fn ThreadCreateStack(
 
         let status = NTSTATUS(api_ctx::ntdll().NtQuerySystemInformation.unwrap()(
             ntexapi::SYSTEM_INFORMATION_CLASS::SystemBasicInformation,
-            &sys_info as *const _ as *mut _,
-            size_of::<ntexapi::SYSTEM_BASIC_INFORMATION>() as u32,
+            addr_of!(sys_info) as _,
+            size_of::<ntexapi::SYSTEM_BASIC_INFORMATION>() as _,
             ptr::null_mut(),
         ));
 
@@ -514,7 +524,7 @@ fn ThreadCreateStack(
         let maximum_stack_size =
             maximum_stack_size.next_multiple_of(sys_info.AllocationGranularity);
 
-        let mut stack = VirtualMemoryAllocate(
+        let mut stack = allocate_virtual_memory(
             maximum_stack_size as _,
             PAGE_READWRITE,
             process_handle,
@@ -536,7 +546,7 @@ fn ThreadCreateStack(
             guard_page = true;
         }
 
-        stack = VirtualMemoryAllocate(
+        stack = allocate_virtual_memory(
             committed_stack_size as _,
             PAGE_READWRITE,
             process_handle,
@@ -554,7 +564,7 @@ fn ThreadCreateStack(
             let region_size = sys_info.PageSize;
             let protect = PAGE_READWRITE | PAGE_GUARD;
 
-            VirtualMemoryProtect(stack, region_size as _, protect, process_handle)?;
+            protect_virtual_memory(stack, region_size as _, protect, process_handle)?;
 
             (*initial_teb).StackLimit = (*initial_teb).StackLimit.add(region_size as _);
         }
@@ -563,34 +573,34 @@ fn ThreadCreateStack(
     }
 }
 
-pub fn ThreadCreate(
+pub fn create_thread(
     process_handle: HANDLE,
     start_address: PVOID,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
-        let mut thread_handle: HANDLE = ptr::null_mut();
+        let thread_handle: HANDLE = ptr::null_mut();
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
             ..Default::default()
         };
 
         let status = if api_ctx::ntdll().NtCreateThread.is_some() {
-            let client_id = VirtualMemoryAllocate(
+            let client_id = allocate_virtual_memory(
                 size_of::<ntdef::CLIENT_ID>(),
                 PAGE_READWRITE,
                 process_handle,
                 ptr::null_mut(),
                 MEM_COMMIT | MEM_RESERVE,
             )? as ntdef::PCLIENT_ID;
-            let initial_teb = VirtualMemoryAllocate(
+            let initial_teb = allocate_virtual_memory(
                 size_of::<ntpsapi::INITIAL_TEB>(),
                 PAGE_READWRITE,
                 process_handle,
                 ptr::null_mut(),
                 MEM_COMMIT | MEM_RESERVE,
             )? as ntpsapi::PINITIAL_TEB;
-            let context = VirtualMemoryAllocate(
+            let context = allocate_virtual_memory(
                 size_of::<CONTEXT>(),
                 PAGE_READWRITE,
                 process_handle,
@@ -598,31 +608,31 @@ pub fn ThreadCreate(
                 MEM_COMMIT | MEM_RESERVE,
             )? as winbase::PCONTEXT;
 
-            ThreadCreateStack(process_handle, initial_teb)?;
+            create_thread_stack(process_handle, initial_teb)?;
 
             api_ctx::ntdll().RtlInitializeContext.unwrap()(
                 process_handle,
                 context,
                 ptr::null_mut(),
-                start_address as *mut _,
+                start_address as _,
                 (*initial_teb).StackBase,
             );
 
             NTSTATUS(api_ctx::ntdll().NtCreateThread.unwrap()(
-                &mut thread_handle,
+                addr_of!(thread_handle) as _,
                 THREAD_ALL_ACCESS,
-                &mut object_attributes,
+                addr_of!(object_attributes) as _,
                 process_handle,
-                client_id as *mut _ as *mut _,
-                context as *mut _ as *mut _,
-                initial_teb as *mut _ as *mut _,
+                client_id as _,
+                context as _,
+                initial_teb as _,
                 false as _,
             ))
         } else {
             NTSTATUS(api_ctx::ntdll().NtCreateThreadEx.unwrap()(
-                &mut thread_handle,
+                addr_of!(thread_handle) as _,
                 THREAD_ALL_ACCESS,
-                &mut object_attributes,
+                addr_of!(object_attributes) as _,
                 process_handle,
                 start_address,
                 ptr::null_mut(),
@@ -641,12 +651,12 @@ pub fn ThreadCreate(
 
             Err(status)
         } else {
-            Ok(thread_handle)
+            Ok(wrap_handle(thread_handle))
         }
     }
 }
 
-pub fn ThreadSuspend(thread_handle: HANDLE) -> Result<()> {
+pub fn suspend_thread(thread_handle: HANDLE) -> Result<()> {
     unsafe {
         let status = NTSTATUS(api_ctx::ntdll().NtSuspendThread.unwrap()(
             thread_handle,
@@ -656,7 +666,7 @@ pub fn ThreadSuspend(thread_handle: HANDLE) -> Result<()> {
     }
 }
 
-pub fn ThreadResume(thread_handle: HANDLE) -> Result<()> {
+pub fn resume_thread(thread_handle: HANDLE) -> Result<()> {
     unsafe {
         let status = NTSTATUS(api_ctx::ntdll().NtResumeThread.unwrap()(
             thread_handle,
@@ -666,17 +676,17 @@ pub fn ThreadResume(thread_handle: HANDLE) -> Result<()> {
     }
 }
 
-pub fn ThreadGetBasicInfo(
+pub fn get_thread_basic_info(
     thread_handle: HANDLE,
 ) -> Result<ntpsapi::THREAD_BASIC_INFORMATION> {
     unsafe {
-        let mut basic_info = ntpsapi::THREAD_BASIC_INFORMATION::default();
+        let basic_info = ntpsapi::THREAD_BASIC_INFORMATION::default();
 
         let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationThread.unwrap()(
             thread_handle,
             ntpsapi::THREADINFOCLASS::ThreadBasicInformation,
-            &mut basic_info as *mut _ as *mut _,
-            size_of::<ntpsapi::THREAD_BASIC_INFORMATION>() as u32,
+            addr_of!(basic_info) as _,
+            size_of::<ntpsapi::THREAD_BASIC_INFORMATION>() as _,
             ptr::null_mut(),
         ));
 
@@ -702,14 +712,14 @@ struct AlignedWow64Context {
     ctx: WOW64_CONTEXT,
 }
 
-pub fn ThreadGetContext(thread_handle: HANDLE) -> Result<CONTEXT> {
+pub fn get_thread_context(thread_handle: HANDLE) -> Result<CONTEXT> {
     unsafe {
         let mut context = AlignedContext::default();
         context.ctx.ContextFlags = winbase::CONTEXT_FULL;
 
         let status = NTSTATUS(api_ctx::ntdll().NtGetContextThread.unwrap()(
             thread_handle,
-            &mut context as *mut _ as *mut _,
+            addr_of!(context) as _,
         ));
 
         if !status.is_ok() {
@@ -720,15 +730,15 @@ pub fn ThreadGetContext(thread_handle: HANDLE) -> Result<CONTEXT> {
     }
 }
 
-pub fn ThreadGetWow64Context(thread_handle: HANDLE) -> Result<WOW64_CONTEXT> {
+pub fn get_thread_wow64_context(thread_handle: HANDLE) -> Result<WOW64_CONTEXT> {
     unsafe {
-        let mut context = AlignedWow64Context::default();
+        let context = AlignedWow64Context::default();
 
         let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationThread.unwrap()(
             thread_handle,
             ntpsapi::THREADINFOCLASS::ThreadWow64Context,
-            &mut context as *mut _ as *mut _,
-            size_of::<AlignedWow64Context>() as u32,
+            addr_of!(context) as _,
+            size_of::<AlignedWow64Context>() as _,
             ptr::null_mut(),
         ));
 
@@ -740,35 +750,35 @@ pub fn ThreadGetWow64Context(thread_handle: HANDLE) -> Result<WOW64_CONTEXT> {
     }
 }
 
-pub fn ThreadSetContext(thread_handle: HANDLE, ctx: &CONTEXT) -> Result<()> {
+pub fn set_thread_context(thread_handle: HANDLE, ctx: &CONTEXT) -> Result<()> {
     unsafe {
         let context = AlignedContext { ctx: *ctx };
 
         let status = NTSTATUS(api_ctx::ntdll().NtSetContextThread.unwrap()(
             thread_handle,
-            &context as *const _ as *mut _,
+            addr_of!(context) as _,
         ));
 
         if !status.is_ok() { Err(status) } else { Ok(()) }
     }
 }
 
-pub fn ThreadSetWow64Context(thread_handle: HANDLE, ctx: &WOW64_CONTEXT) -> Result<()> {
+pub fn set_thread_wow64_context(thread_handle: HANDLE, ctx: &WOW64_CONTEXT) -> Result<()> {
     unsafe {
         let context = AlignedWow64Context { ctx: *ctx };
 
         let status = NTSTATUS(api_ctx::ntdll().NtSetInformationThread.unwrap()(
             thread_handle,
             ntpsapi::THREADINFOCLASS::ThreadWow64Context,
-            &context as *const _ as *mut _,
-            size_of::<AlignedWow64Context>() as u32,
+            addr_of!(context) as _,
+            size_of::<AlignedWow64Context>() as _,
         ));
 
         if !status.is_ok() { Err(status) } else { Ok(()) }
     }
 }
 
-pub fn VirtualMemoryAllocate(
+pub fn allocate_virtual_memory(
     size: usize,
     protect: PAGE_PROTECTION_FLAGS,
     process_handle: HANDLE,
@@ -776,14 +786,14 @@ pub fn VirtualMemoryAllocate(
     allocation_type: ULONG,
 ) -> Result<PVOID> {
     unsafe {
-        let mut base_address = base_address;
-        let mut size = size;
+        let base_address = base_address;
+        let size = size;
 
         let status = if api_ctx::ntdll().NtAllocateVirtualMemoryEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtAllocateVirtualMemoryEx.unwrap()(
                 process_handle,
-                &mut base_address as *mut _ as *mut _,
-                &mut size as *mut _ as *mut _,
+                addr_of!(base_address) as _,
+                addr_of!(size) as _,
                 allocation_type,
                 protect,
                 ptr::null_mut(),
@@ -792,9 +802,9 @@ pub fn VirtualMemoryAllocate(
         } else {
             NTSTATUS(api_ctx::ntdll().NtAllocateVirtualMemory.unwrap()(
                 process_handle,
-                &mut base_address as *mut _ as *mut _,
+                addr_of!(base_address) as _,
                 0,
-                &mut size as *mut _ as *mut _,
+                addr_of!(size) as _,
                 allocation_type,
                 protect,
             ))
@@ -808,19 +818,19 @@ pub fn VirtualMemoryAllocate(
     }
 }
 
-pub fn SectionCreate(size: usize) -> Result<HANDLE> {
+pub fn create_section(size: usize) -> Result<UniqueHandle> {
     unsafe {
-        let mut section_handle: HANDLE = ptr::null_mut();
+        let section_handle: HANDLE = ptr::null_mut();
 
         let mut maximum_size = ntwin::LARGE_INTEGER::default();
-        maximum_size.bindgen_union_field = size as u64;
+        maximum_size.bindgen_union_field = size as _;
 
         let status = if api_ctx::ntdll().NtCreateSectionEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtCreateSectionEx.unwrap()(
-                &mut section_handle,
+                addr_of!(section_handle) as _,
                 SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
                 ptr::null_mut(),
-                &mut maximum_size,
+                addr_of!(maximum_size) as _,
                 PAGE_EXECUTE_READWRITE,
                 SEC_COMMIT,
                 ptr::null_mut(),
@@ -829,10 +839,10 @@ pub fn SectionCreate(size: usize) -> Result<HANDLE> {
             ))
         } else {
             NTSTATUS(api_ctx::ntdll().NtCreateSection.unwrap()(
-                &mut section_handle,
+                addr_of!(section_handle) as _,
                 SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
                 ptr::null_mut(),
-                &mut maximum_size,
+                addr_of!(maximum_size) as _,
                 PAGE_EXECUTE_READWRITE,
                 SEC_COMMIT,
                 ptr::null_mut(),
@@ -842,32 +852,32 @@ pub fn SectionCreate(size: usize) -> Result<HANDLE> {
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(section_handle)
+            Ok(wrap_handle(section_handle))
         }
     }
 }
 
-pub fn SectionFileCreate(
+pub fn create_file_section(
     file_handle: HANDLE,
     access_mask: u32,
     protection: SECTION_FLAGS,
     as_image: bool,
     size: Option<usize>,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
-        let mut section_handle: HANDLE = ptr::null_mut();
+        let section_handle: HANDLE = ptr::null_mut();
 
         let mut maximum_size = ntwin::LARGE_INTEGER::default();
         if let Some(size) = size {
-            maximum_size.bindgen_union_field = size as u64;
+            maximum_size.bindgen_union_field = size as _;
         }
 
         let status = if api_ctx::ntdll().NtCreateSectionEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtCreateSectionEx.unwrap()(
-                &mut section_handle,
+                addr_of!(section_handle) as _,
                 access_mask,
                 ptr::null_mut(),
-                &mut maximum_size,
+                addr_of!(maximum_size) as _,
                 protection,
                 if as_image { SEC_IMAGE } else { SEC_COMMIT },
                 file_handle,
@@ -876,10 +886,10 @@ pub fn SectionFileCreate(
             ))
         } else {
             NTSTATUS(api_ctx::ntdll().NtCreateSection.unwrap()(
-                &mut section_handle,
+                addr_of!(section_handle) as _,
                 access_mask,
                 ptr::null_mut(),
-                &mut maximum_size,
+                addr_of!(maximum_size) as _,
                 protection,
                 if as_image { SEC_IMAGE } else { SEC_COMMIT },
                 file_handle,
@@ -889,12 +899,12 @@ pub fn SectionFileCreate(
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(section_handle)
+            Ok(wrap_handle(section_handle))
         }
     }
 }
 
-pub fn SectionMapView(
+pub fn map_view_of_section(
     section_handle: HANDLE,
     size: usize,
     protect: PAGE_PROTECTION_FLAGS,
@@ -902,16 +912,16 @@ pub fn SectionMapView(
     base_address: PVOID,
 ) -> Result<PVOID> {
     unsafe {
-        let mut base_address = base_address;
-        let mut size = size;
+        let base_address = base_address;
+        let size = size;
 
         let status = if api_ctx::ntdll().NtMapViewOfSectionEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtMapViewOfSectionEx.unwrap()(
                 section_handle,
                 process_handle,
-                &mut base_address as *mut _ as *mut _,
+                addr_of!(base_address) as _,
                 ptr::null_mut(),
-                &mut size as *mut _ as *mut _,
+                addr_of!(size) as _,
                 0,
                 protect,
                 ptr::null_mut(),
@@ -921,11 +931,11 @@ pub fn SectionMapView(
             NTSTATUS(api_ctx::ntdll().NtMapViewOfSection.unwrap()(
                 section_handle,
                 process_handle,
-                &mut base_address as *mut _ as *mut _,
+                addr_of!(base_address) as _,
                 0,
                 0,
                 ptr::null_mut(),
-                &mut size as *mut _ as *mut _,
+                addr_of!(size) as _,
                 ntmmapi::SECTION_INHERIT::ViewUnmap,
                 0,
                 protect,
@@ -940,7 +950,7 @@ pub fn SectionMapView(
     }
 }
 
-pub fn SectionUnmapView(
+pub fn unmap_view_of_section(
     base_address: PVOID,
     process_handle: HANDLE,
 ) -> Result<()> {
@@ -962,52 +972,58 @@ pub fn SectionUnmapView(
     }
 }
 
-pub fn VirtualMemoryProtect(
+pub fn protect_virtual_memory(
     base_address: PVOID,
     size: usize,
     protect: PAGE_PROTECTION_FLAGS,
     process_handle: HANDLE,
 ) -> Result<()> {
     unsafe {
-        let mut base_address = base_address;
-        let mut size = size;
+        let base_address = base_address;
+        let size = size;
 
-        let mut new_protect = protect;
+        let new_protect = protect;
 
         let status = NTSTATUS(api_ctx::ntdll().NtProtectVirtualMemory.unwrap()(
             process_handle,
-            &mut base_address as *mut _ as *mut _,
-            &mut size as *mut _ as *mut _,
+            addr_of!(base_address) as _,
+            addr_of!(size) as _,
             protect,
-            &mut new_protect as *mut _ as *mut _,
+            addr_of!(new_protect) as _,
         ));
 
         if !status.is_ok() { Err(status) } else { Ok(()) }
     }
 }
 
-pub fn VirtualMemoryWrite(
-    data: PVOID,
-    size: usize,
+pub fn write_virtual_memory<T>(
+    buffer: T,
     base_address: PVOID,
     process_handle: HANDLE,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: AsRef<[u8]>,
+{
     unsafe {
-        let mut number_of_bytes_written: usize = 0;
+        let slice = buffer.as_ref();
+        let data = slice.as_ptr() as PVOID;
+        let size = slice.len();
+
+        let number_of_bytes_written: usize = 0;
 
         let status = NTSTATUS(api_ctx::ntdll().NtWriteVirtualMemory.unwrap()(
             process_handle,
             base_address,
             data,
             size,
-            &mut number_of_bytes_written as *mut _ as *mut _,
+            addr_of!(number_of_bytes_written) as _,
         ));
 
         if !status.is_ok() { Err(status) } else { Ok(()) }
     }
 }
 
-pub fn VirtualMemoryRead<T>(
+pub fn read_virtual_memory<T>(
     mut buffer: T,
     base_address: PVOID,
     process_handle: HANDLE,
@@ -1020,7 +1036,7 @@ where
         let data = slice.as_mut_ptr() as PVOID;
         let size = slice.len();
 
-        let mut number_of_bytes_read: usize = 0;
+        let number_of_bytes_read: usize = 0;
 
         let status = if api_ctx::ntdll().NtReadVirtualMemoryEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtReadVirtualMemoryEx.unwrap()(
@@ -1028,7 +1044,7 @@ where
                 base_address,
                 data,
                 size,
-                &mut number_of_bytes_read as *mut _ as *mut _,
+                addr_of!(number_of_bytes_read) as _,
                 0, //
             ))
         } else {
@@ -1037,7 +1053,7 @@ where
                 base_address,
                 data,
                 size,
-                &mut number_of_bytes_read as *mut _ as *mut _,
+                addr_of!(number_of_bytes_read) as _,
             ))
         };
 
@@ -1049,24 +1065,25 @@ where
     }
 }
 
-pub fn TransactionCreate(path: &str) -> Result<HANDLE> {
+pub fn create_transaction(path: &str) -> Result<UniqueHandle> {
     unsafe {
         let nt_path = format!("\\??\\{}", path);
         let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
-            ObjectName: &mut to_unicode_string(&nt_path) as *mut _ as *mut _,
+            ObjectName: addr_of!(nt_path) as _,
             Attributes: ntdef::OBJ_CASE_INSENSITIVE,
             ..Default::default()
         };
 
-        let mut transaction_handle: HANDLE = ptr::null_mut();
+        let transaction_handle: HANDLE = ptr::null_mut();
 
         let status = NTSTATUS(api_ctx::ntdll().NtCreateTransaction.unwrap()(
-            &mut transaction_handle,
+            addr_of!(transaction_handle) as _,
             winbase::TRANSACTION_ALL_ACCESS,
-            &mut object_attributes,
+            addr_of!(object_attributes) as _,
             ptr::null_mut(),
             ptr::null_mut(),
             0,
@@ -1079,12 +1096,12 @@ pub fn TransactionCreate(path: &str) -> Result<HANDLE> {
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(transaction_handle)
+            Ok(wrap_handle(transaction_handle))
         }
     }
 }
 
-pub fn TransactionRollback(transaction_handle: HANDLE) -> Result<()> {
+pub fn rollback_transaction(transaction_handle: HANDLE) -> Result<()> {
     unsafe {
         let status = NTSTATUS(api_ctx::ntdll().NtRollbackTransaction.unwrap()(
             transaction_handle,
@@ -1095,7 +1112,7 @@ pub fn TransactionRollback(transaction_handle: HANDLE) -> Result<()> {
     }
 }
 
-pub fn TransactionSet(transaction_handle: HANDLE) -> Result<()> {
+pub fn set_transaction(transaction_handle: HANDLE) -> Result<()> {
     unsafe {
         let res = api_ctx::ntdll().RtlSetCurrentTransaction.unwrap()(transaction_handle);
 
@@ -1107,7 +1124,7 @@ pub fn TransactionSet(transaction_handle: HANDLE) -> Result<()> {
     }
 }
 
-pub fn ThreadQueueUserApc(
+pub fn queue_apc_thread(
     thread_handle: HANDLE,
     apc_routine: winbase::PPS_APC_ROUTINE,
     apc_argument1: PVOID,
@@ -1127,19 +1144,19 @@ pub fn ThreadQueueUserApc(
     }
 }
 
-pub fn EventCreate() -> Result<HANDLE> {
+pub fn create_event() -> Result<UniqueHandle> {
     unsafe {
-        let mut event_handle: HANDLE = ptr::null_mut();
+        let event_handle: HANDLE = ptr::null_mut();
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
             ..Default::default()
         };
 
         let status = NTSTATUS(api_ctx::ntdll().NtCreateEvent.unwrap()(
-            &mut event_handle,
+            addr_of!(event_handle) as _,
             EVENT_ALL_ACCESS,
-            &mut object_attributes,
+            addr_of!(object_attributes) as _,
             ntdef::EVENT_TYPE::NotificationEvent as _,
             false as _,
         ));
@@ -1147,31 +1164,32 @@ pub fn EventCreate() -> Result<HANDLE> {
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(event_handle)
+            Ok(wrap_handle(event_handle))
         }
     }
 }
 
-pub fn FileOpen(path: &str) -> Result<HANDLE> {
+pub fn open_file(path: &str) -> Result<UniqueHandle> {
     unsafe {
         let nt_path = format!("\\??\\{}", path);
         let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
-            ObjectName: &mut to_unicode_string(&nt_path) as *mut _ as *mut _,
+            ObjectName: addr_of!(nt_path) as _,
             Attributes: ntdef::OBJ_CASE_INSENSITIVE,
             ..Default::default()
         };
 
-        let mut io_status_block = ntioapi::IO_STATUS_BLOCK::default();
-        let mut file_handle: HANDLE = ptr::null_mut();
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_handle: HANDLE = ptr::null_mut();
 
         let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
-            &mut file_handle,
+            addr_of!(file_handle) as _,
             FILE_GENERIC_READ,
-            &mut object_attributes,
-            &mut io_status_block as *mut _ as *mut _,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
             ptr::null_mut(),
             FILE_ATTRIBUTE_NORMAL,
             FILE_SHARE_READ,
@@ -1184,40 +1202,41 @@ pub fn FileOpen(path: &str) -> Result<HANDLE> {
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(file_handle)
+            Ok(wrap_handle(file_handle))
         }
     }
 }
 
-pub fn FileCreate(
+pub fn create_file(
     path: &str,
     access_mask: u32,
     share_access: u32,
     size: usize,
-) -> Result<HANDLE> {
+) -> Result<UniqueHandle> {
     unsafe {
         let nt_path = format!("\\??\\{}", path);
         let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
 
-        let mut object_attributes = winbase::OBJECT_ATTRIBUTES {
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
-            ObjectName: &mut to_unicode_string(&nt_path) as *mut _ as *mut _,
+            ObjectName: addr_of!(nt_path) as _,
             Attributes: ntdef::OBJ_CASE_INSENSITIVE,
             ..Default::default()
         };
 
-        let mut io_status_block = ntioapi::IO_STATUS_BLOCK::default();
-        let mut file_handle: HANDLE = ptr::null_mut();
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_handle: HANDLE = ptr::null_mut();
 
         let mut allocation_size = ntwin::LARGE_INTEGER::default();
-        allocation_size.bindgen_union_field = size as u64;
+        allocation_size.bindgen_union_field = size as _;
 
         let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
-            &mut file_handle,
+            addr_of!(file_handle) as _,
             access_mask,
-            &mut object_attributes,
-            &mut io_status_block as *mut _ as *mut _,
-            &mut allocation_size,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            addr_of!(allocation_size) as _,
             FILE_ATTRIBUTE_NORMAL,
             share_access,
             ntioapi::FILE_OVERWRITE_IF,
@@ -1229,23 +1248,23 @@ pub fn FileCreate(
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(file_handle)
+            Ok(wrap_handle(file_handle))
         }
     }
 }
 
-pub fn FileWrite(file_handle: HANDLE, data: PVOID, size: usize) -> Result<bool> {
+pub fn write_file(file_handle: HANDLE, data: PVOID, size: usize) -> Result<bool> {
     unsafe {
-        let mut io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
 
         let status = NTSTATUS(api_ctx::ntdll().NtWriteFile.unwrap()(
             file_handle,
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
-            &mut io_status_block as *mut _ as *mut _,
+            addr_of!(io_status_block) as _,
             data,
-            size as u32,
+            size as _,
             ptr::null_mut(),
             ptr::null_mut(),
         ));
@@ -1258,58 +1277,46 @@ pub fn FileWrite(file_handle: HANDLE, data: PVOID, size: usize) -> Result<bool> 
     }
 }
 
-pub fn FileGetSize(file_handle: HANDLE) -> Result<usize> {
+pub fn get_file_size(file_handle: HANDLE) -> Result<usize> {
     unsafe {
-        let mut io_status_block = ntioapi::IO_STATUS_BLOCK::default();
-        let mut file_information = ntioapi::FILE_STANDARD_INFORMATION::default();
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_information = ntioapi::FILE_STANDARD_INFORMATION::default();
 
         let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationFile.unwrap()(
             file_handle,
-            &mut io_status_block as *mut _ as *mut _,
-            &mut file_information as *mut _ as *mut _,
-            size_of::<ntioapi::FILE_STANDARD_INFORMATION>() as u32,
+            addr_of!(io_status_block) as _,
+            addr_of!(file_information) as _,
+            size_of::<ntioapi::FILE_STANDARD_INFORMATION>() as _,
             ntioapi::FILE_INFORMATION_CLASS::FileStandardInformation,
         ));
 
         if !status.is_ok() {
             Err(status)
         } else {
-            Ok(file_information.EndOfFile.bindgen_union_field as usize)
+            Ok(file_information.EndOfFile.bindgen_union_field as _)
         }
     }
 }
 
-pub fn AdjustPrivilege(privilege: u32) -> Result<()> {
+pub fn adjust_privilege(privilege: u32) -> Result<()> {
     unsafe {
-        let mut was_enabled: bool = false;
+        let was_enabled: bool = false;
 
         let status = NTSTATUS(api_ctx::ntdll().RtlAdjustPrivilege.unwrap()(
             privilege,
             true as _,
             false as _,
-            &mut was_enabled as *mut _ as *mut _,
+            addr_of!(was_enabled) as _,
         ));
 
         if !status.is_ok() { Err(status) } else { Ok(()) }
     }
 }
 
-pub fn GetModuleHandle(module_name: &CStr) -> Option<HANDLE> {
-    unsafe {
-        let module_handle = GetModuleHandleA(module_name.as_ptr() as _);
-
-        if module_handle.is_null() {
-            None
-        } else {
-            Some(module_handle)
-        }
-    }
-}
-
-pub fn LoadLibraryCopy(module_path: &str) -> Result<HMODULE> {
+pub fn load_library_copy(module_path: &str) -> Result<HMODULE> {
     unsafe {
         let temp_folder = PathBuf::from(
-            to_u16cstring(&(*(*Peb()).ProcessParameters).CurrentDirectory.DosPath).to_string_lossy()
+            to_u16cstring(&(*(*peb()).ProcessParameters).CurrentDirectory.DosPath).to_string_lossy()
         );
 
         let module_path_buf = PathBuf::from(&module_path);
@@ -1317,26 +1324,25 @@ pub fn LoadLibraryCopy(module_path: &str) -> Result<HMODULE> {
         let temp_module_path = temp_folder.join(module_name).to_string_lossy().into_owned();
 
         {
-            let (handle, section_handle, src_data) = crate::fs::map_file(&module_path)?;
-            let _ = HandleWrap(handle);
-            let _ = HandleWrap(section_handle);
+            let (_, _, src_data) = fs::map_file(&module_path)?;
 
-            let file_mode = crate::fs::FsFileMode::ReadWrite;
-            let module_copy_handle = HandleWrap(FileCreate(
+            let file_mode = fs::FsFileMode::ReadWrite;
+            let module_copy_handle = create_file(
                 &temp_module_path,
                 file_mode.access_rights(),
                 file_mode.share_mode(),
-                src_data.len())?
-            );
-            let module_copy_section_handle = HandleWrap(SectionFileCreate(
+                src_data.len()
+            )?;
+
+            let module_copy_section_handle = create_file_section(
                 *module_copy_handle,
                 SECTION_ALL_ACCESS,
                 PAGE_READWRITE,
                 false,
-                Some(src_data.len()))?
-            );
+                Some(src_data.len())
+            )?;
 
-            let module_copy_data = SectionMapView(
+            let module_copy_data = map_view_of_section(
                 *module_copy_section_handle,
                 src_data.len(),
                 PAGE_READWRITE,
@@ -1345,11 +1351,10 @@ pub fn LoadLibraryCopy(module_path: &str) -> Result<HMODULE> {
             )?;
 
             let dst_data = slice::from_raw_parts_mut(module_copy_data as *mut u8, src_data.len());
-
             dst_data.copy_from_slice(src_data);
 
-            SectionUnmapView(src_data.as_ptr() as _, NT_CURRENT_PROCESS)?;
-            SectionUnmapView(dst_data.as_ptr() as _, NT_CURRENT_PROCESS)?;
+            unmap_view_of_section(src_data.as_ptr() as _, NT_CURRENT_PROCESS)?;
+            unmap_view_of_section(dst_data.as_ptr() as _, NT_CURRENT_PROCESS)?;
         }
 
         let hr = HMODULE(LoadLibraryA(CString::new(temp_module_path).unwrap().into_raw() as _));
@@ -1361,11 +1366,11 @@ pub fn LoadLibraryCopy(module_path: &str) -> Result<HMODULE> {
     }
 }
 
-pub fn DumpLiveSystem(
+pub fn dump_live_system(
     file_handle: HANDLE,
 ) -> Result<()> {
     unsafe {
-        if AdjustPrivilege(ntseapi::SE_DEBUG_PRIVILEGE).is_err() {
+        if adjust_privilege(ntseapi::SE_DEBUG_PRIVILEGE).is_err() {
             return Err(NTSTATUS(ntstatus::STATUS_PRIVILEGE_NOT_HELD));
         }
 

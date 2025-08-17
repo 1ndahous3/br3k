@@ -29,7 +29,7 @@ impl Constructor for Transaction {
     fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         Self {
             name: args.name.to_string().into(),
-            handle: sysapi::HandleWrap(ptr::null_mut()).into(),
+            handle: sysapi::null_handle().into(),
         }
         .into_ref_with_type(vm, cls)
         .map(Into::into)
@@ -42,14 +42,14 @@ impl Transaction {
     fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
         let name = self.name.borrow();
 
-        let handle = sysapi::TransactionCreate(name.as_str()).map_err(|e| {
+        let handle = sysapi::create_transaction(name.as_str()).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to create transaction: {}",
                 sysapi::ntstatus_decode(e)
             ))
         })?;
 
-        self.handle.replace(sysapi::HandleWrap(handle).into());
+        self.handle.replace(handle.into());
 
         Ok(())
     }
@@ -58,7 +58,7 @@ impl Transaction {
     fn rollback(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.handle.borrow();
 
-        sysapi::TransactionRollback(**handle).map_err(|e| {
+        sysapi::rollback_transaction(**handle).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to rollback transaction: {}",
                 sysapi::ntstatus_decode(e)
@@ -72,7 +72,7 @@ impl Transaction {
     fn set(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.handle.borrow();
 
-        sysapi::TransactionSet(**handle).map_err(|e| {
+        sysapi::set_transaction(**handle).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to set transaction: {}",
                 sysapi::ntstatus_decode(e)
@@ -84,7 +84,7 @@ impl Transaction {
 
     #[pymethod]
     fn unset(&self, vm: &VirtualMachine) -> PyResult<()> {
-        sysapi::TransactionSet(ptr::null_mut()).map_err(|e| {
+        sysapi::set_transaction(ptr::null_mut()).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to unset transaction: {}",
                 sysapi::ntstatus_decode(e)

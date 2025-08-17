@@ -1,4 +1,5 @@
-use crate::{sysapi, fs, modules, python};
+use crate::{fs, python, sysapi};
+use python::api_strategy;
 
 use rustpython_vm::{
     VirtualMachine, Interpreter,
@@ -48,9 +49,10 @@ impl Handle {}
 pub mod br3k {
 
     use crate::prelude::*;
-    use crate::{sysapi_ctx, sysapi, fs, modules, python};
+    use crate::{sysapi_ctx, sysapi, fs, python, pe_module, shellcode};
 
     use sysapi_ctx::SysApiCtx as api_ctx;
+    use python::py_module::Handle;
 
     use rustpython_vm::{
         VirtualMachine,
@@ -58,8 +60,6 @@ pub mod br3k {
         PyRef, PyObjectRef, PyResult,
         builtins::{PyStr, PyStrRef}
     };
-
-    use python::py_module::Handle;
 
     #[derive(FromArgs)]
     pub struct InitSysApiArgs {
@@ -94,7 +94,7 @@ pub mod br3k {
     fn get_module_handle(args: GetModuleHandleArgs) -> PyResult<Option<u64>> {
         let module_name = CString::new(args.module_name).unwrap();
 
-        match sysapi::GetModuleHandle(module_name.as_c_str()) {
+        match pe_module::get_module_handle(module_name.as_c_str()) {
             Some(handle) => Ok(Some(handle as u64)),
             None => Ok(None),
         }
@@ -119,7 +119,7 @@ pub mod br3k {
         let file_mode = fs::FsFileMode::from_repr(args.file_mode)
             .ok_or_else(|| vm.new_value_error("Invalid FsFileMode".to_string()))?;
 
-        let handle = sysapi::FileCreate(
+        let handle = sysapi::create_file(
             args.filepath.as_str(),
             file_mode.access_rights(),
             file_mode.share_mode(),
@@ -133,7 +133,7 @@ pub mod br3k {
         })?;
 
         Ok(Handle {
-            handle: sysapi::HandleWrap(handle),
+            handle
         })
     }
 
@@ -145,7 +145,7 @@ pub mod br3k {
 
     #[pyfunction]
     fn fs_open_file(args: FsOpenFileArgs, vm: &VirtualMachine) -> PyResult<Handle> {
-        let handle = sysapi::FileOpen(args.filepath.as_str()).map_err(|e| {
+        let handle = sysapi::open_file(args.filepath.as_str()).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to open file: {}",
                 sysapi::ntstatus_decode(e)
@@ -153,7 +153,7 @@ pub mod br3k {
         })?;
 
         Ok(Handle {
-            handle: sysapi::HandleWrap(handle),
+            handle
         })
     }
 
@@ -170,7 +170,7 @@ pub mod br3k {
 
     #[pyfunction]
     fn fs_write_file(args: FsWriteFileArgs, vm: &VirtualMachine) -> PyResult<()> {
-        sysapi::FileWrite(*args.handle.handle, args.data as _, args.size).map_err(|e| {
+        sysapi::write_file(*args.handle.handle, args.data as _, args.size).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to write file: {}",
                 sysapi::ntstatus_decode(e)
@@ -192,7 +192,7 @@ pub mod br3k {
         let sect_mode = fs::FsSectionMode::from_repr(args.sect_mode)
             .ok_or_else(|| vm.new_value_error("Invalid FsSectionMode".to_string()))?;
 
-        let handle = sysapi::SectionFileCreate(
+        let handle = sysapi::create_file_section(
             *args.handle.handle,
             sect_mode.access_rights(),
             2,
@@ -207,7 +207,7 @@ pub mod br3k {
         })?;
 
         Ok(Handle {
-            handle: sysapi::HandleWrap(handle),
+            handle
         })
     }
 
@@ -231,7 +231,7 @@ pub mod br3k {
 
     #[pyfunction]
     fn shellcode_get_messageboxw(vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        let data = modules::shellcode_messageboxw();
+        let data = shellcode::shellcode_messageboxw();
         let bytes = vm.ctx.new_bytes(data.to_vec());
         Ok(bytes.into())
     }
@@ -272,8 +272,8 @@ pub struct PythonCore {
 
 impl PythonCore {
     fn register_enums(vm: &VirtualMachine, module: &PyRef<PyModule>) {
-        register_enum!(vm, module, modules::ProcessMemoryStrategy);
-        register_enum!(vm, module, modules::ProcessOpenMethod);
+        register_enum!(vm, module, api_strategy::ProcessMemoryStrategy);
+        register_enum!(vm, module, api_strategy::ProcessOpenMethod);
         register_enum!(vm, module, fs::FsFileMode);
         register_enum!(vm, module, fs::FsSectionMode);
     }

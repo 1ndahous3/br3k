@@ -6,9 +6,8 @@ use path::PathBuf;
 use sync::Arc;
 use exe::PtrPE;
 
-use windef::{winbase, ntstatus, ntpebteb, ntwin, ntobapi};
+use windef::{winbase, ntstatus, ntwin, ntobapi};
 use winbase::{ACCESS_MASK, NT_CURRENT_PROCESS};
-use ntpebteb::PEB;
 
 use windows::Win32::Foundation::NTSTATUS;
 use windows_sys::Win32::Foundation::{FALSE, HANDLE, HWND, TRUE};
@@ -22,6 +21,7 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
+use crate::sysapi::UniqueHandle;
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
@@ -94,7 +94,7 @@ impl ProcessMemory {
 
         {
             let file_mode = fs::FsFileMode::Write;
-            let dump_file = sysapi::FileCreate(
+            let dump_file = sysapi::create_file(
                 dump_filepath,
                 file_mode.access_rights(),
                 file_mode.share_mode(),
@@ -103,22 +103,17 @@ impl ProcessMemory {
                 log::error!("Failed to create dump file: {}", sysapi::ntstatus_decode(e));
             });
 
-            let dump_file = sysapi::HandleWrap(dump_file.unwrap());
-
-            sysapi::DumpLiveSystem(*dump_file).map_err(|e| {
+            sysapi::dump_live_system(*dump_file.unwrap()).map_err(|e| {
                 log::error!("Failed to dump live system: {}", sysapi::ntstatus_decode(e));
             })?;
         }
 
-        let (handle, section_handle, src_data) = fs::map_file(
+        let (_, _, src_data) = fs::map_file(
             "c:\\windows\\system32\\ntoskrnl.exe"
         )
             .map_err(|e| {
                 log::error!("Failed to map dump file: {}", sysapi::ntstatus_decode(e));
             })?;
-
-        let _ = sysapi::HandleWrap(handle);
-        let _ = sysapi::HandleWrap(section_handle);
 
         let kernel_pe = PtrPE::new_memory(src_data.as_ptr(), src_data.len());
 
@@ -161,7 +156,7 @@ impl ProcessMemory {
                 handle,
                 base_addr_remote,
             } => {
-                *base_addr_remote = sysapi::VirtualMemoryAllocate(
+                *base_addr_remote = sysapi::allocate_virtual_memory(
                     size,
                     PAGE_EXECUTE_READWRITE,
                     *handle,
@@ -176,8 +171,8 @@ impl ProcessMemory {
                 section,
                 base_addr_remote,
             } => {
-                *section = sysapi::SectionCreate(size)?;
-                *base_addr_remote = sysapi::SectionMapView(
+                *section = sysapi::create_section(size)?.release();
+                *base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_EXECUTE_READWRITE,
@@ -193,15 +188,15 @@ impl ProcessMemory {
                 base_addr_remote,
                 base_addr_local,
             } => {
-                *section = sysapi::SectionCreate(size)?;
-                *base_addr_remote = sysapi::SectionMapView(
+                *section = sysapi::create_section(size)?.release();
+                *base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_EXECUTE_READWRITE,
                     *handle,
                     *base_addr_remote,
                 )?;
-                *base_addr_local = sysapi::SectionMapView(
+                *base_addr_local = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_READWRITE,
@@ -230,7 +225,7 @@ impl ProcessMemory {
                     base_addr_remote,
                 } => {
                     let buffer = slice::from_raw_parts_mut(data as *mut u8, size);
-                    sysapi::VirtualMemoryRead(
+                    sysapi::read_virtual_memory(
                         buffer,
                         base_addr_remote.wrapping_add(offset),
                         *handle,
@@ -244,7 +239,7 @@ impl ProcessMemory {
                     ..
                 } => {
                     let buffer = slice::from_raw_parts_mut(data as *mut u8, size);
-                    sysapi::VirtualMemoryRead(
+                    sysapi::read_virtual_memory(
                         buffer,
                         base_addr_remote.wrapping_add(offset),
                         *handle,
@@ -296,28 +291,34 @@ impl ProcessMemory {
                 handle,
                 base_addr_remote,
             } => {
-                sysapi::VirtualMemoryWrite(
-                    data,
-                    size,
-                    base_addr_remote.wrapping_add(offset),
-                    *handle,
-                )?;
+                unsafe {
+                    let buffer = slice::from_raw_parts(data as *const u8, size);
 
-                Ok(())
+                    sysapi::write_virtual_memory(
+                        buffer,
+                        base_addr_remote.wrapping_add(offset),
+                        *handle,
+                    )?;
+
+                    Ok(())
+                }
             }
             ProcessMemory::CreateSectionMap {
                 handle,
                 base_addr_remote,
                 ..
             } => {
-                sysapi::VirtualMemoryWrite(
-                    data,
-                    size,
-                    base_addr_remote.wrapping_add(offset),
-                    *handle,
-                )?;
+                unsafe {
+                    let buffer = slice::from_raw_parts(data as *const u8, size);
 
-                Ok(())
+                    sysapi::write_virtual_memory(
+                        buffer,
+                        base_addr_remote.wrapping_add(offset),
+                        *handle,
+                    )?;
+
+                    Ok(())
+                }
             }
             ProcessMemory::CreateSectionMapLocalMap {
                 base_addr_local,
@@ -358,6 +359,7 @@ impl ProcessMemory {
             addr_of!(remote_base_addr) as _,
             size_of::<PVOID>(),
         )?;
+
         Ok(())
     }
 
@@ -436,9 +438,9 @@ extern "system" fn EnumWindowsProc(hWnd: HWND, lParam: isize) -> i32 {
 }
 
 impl ProcessOpenMethod {
-    pub fn open(&self, pid: u32, access_mask: ACCESS_MASK) -> Result<HANDLE, NTSTATUS> {
+    pub fn open(&self, pid: u32, access_mask: ACCESS_MASK) -> Result<UniqueHandle, NTSTATUS> {
         match self {
-            ProcessOpenMethod::OpenProcess => sysapi::ProcessOpen(pid, access_mask),
+            ProcessOpenMethod::OpenProcess => sysapi::open_process(pid, access_mask),
             ProcessOpenMethod::OpenProcessByHwnd => {
                 let mut opts = EnumWindowsProcOpts {
                     pid,
@@ -460,7 +462,7 @@ impl ProcessOpenMethod {
                 log::debug!("Window found, HWND = 0x{:x}", opts.hWnd as usize);
 
                 // sysapi::ProcessOpenByHwnd(opts.hWnd, access_mask); // TODO: research access restrictions
-                sysapi::ProcessOpenByHwnd(
+                sysapi::open_process_by_hwnd(
                     opts.hWnd,
                     PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_DUP_HANDLE,
                 )
@@ -474,7 +476,7 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
     exec_address: PVOID,
 ) -> Result<(), NTSTATUS> {
     if IS_64 {
-        let mut context = sysapi::ThreadGetContext(thread_handle)?;
+        let mut context = sysapi::get_thread_context(thread_handle)?;
 
         if IS_NEW_THREAD {
             context.Rcx = exec_address as u64;
@@ -482,9 +484,9 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
             context.Rip = exec_address as u64;
         }
 
-        sysapi::ThreadSetContext(thread_handle, &context)?;
+        sysapi::set_thread_context(thread_handle, &context)?;
     } else {
-        let mut context = sysapi::ThreadGetWow64Context(thread_handle)?;
+        let mut context = sysapi::get_thread_wow64_context(thread_handle)?;
 
         if IS_NEW_THREAD {
             context.Eax = exec_address as u32;
@@ -492,7 +494,7 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
             context.Eip = exec_address as u32;
         }
 
-        sysapi::ThreadSetWow64Context(thread_handle, &context)?;
+        sysapi::set_thread_wow64_context(thread_handle, &context)?;
     }
 
     Ok(())
@@ -526,13 +528,13 @@ pub fn thread_set_ep_x86(
     thread_set_ep::<false, false>(thread_handle, exec_address)
 }
 
-pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<HANDLE, NTSTATUS> {
+pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<UniqueHandle, NTSTATUS> {
     unsafe {
-        let mut thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+        let mut thread_handle = sysapi::open_next_thread(
             process_handle,
             ptr::null_mut(),
             THREAD_ALL_ACCESS,
-        )?);
+        )?;
 
         let nt_set_event_addr =
             api_ctx::get_proc_address("ntdll.dll", "NtSetEvent").map_err(|_| {
@@ -541,53 +543,53 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<HANDLE, N
             })?;
 
         while thread_handle != ptr::null_mut() {
-            let local_event = sysapi::HandleWrap(sysapi::EventCreate()?);
+            let local_event = sysapi::create_event()?;
 
             let remote_event =
-                match sysapi::HandleDuplicate(process_handle, *local_event, NT_CURRENT_PROCESS) {
+                match sysapi::duplicate_handle(process_handle, *local_event, NT_CURRENT_PROCESS) {
                     Ok(event) => event,
                     Err(_) => {
-                        thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+                        thread_handle = sysapi::open_next_thread(
                             process_handle,
                             *thread_handle,
                             THREAD_ALL_ACCESS,
-                        )?);
+                        )?;
                         continue;
                     }
                 };
 
-            if sysapi::ThreadSuspend(*thread_handle).is_err() {
-                thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+            if sysapi::suspend_thread(*thread_handle).is_err() {
+                thread_handle = sysapi::open_next_thread(
                     process_handle,
                     *thread_handle,
                     THREAD_ALL_ACCESS,
-                )?);
+                )?;
                 continue;
             }
 
-            if sysapi::ThreadQueueUserApc(
+            if sysapi::queue_apc_thread(
                 *thread_handle,
                 nt_set_event_addr as _,
-                remote_event,
+                *remote_event,
                 ptr::null_mut(),
                 ptr::null_mut(),
             )
                 .is_err()
             {
-                thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+                thread_handle = sysapi::open_next_thread(
                     process_handle,
                     *thread_handle,
                     THREAD_ALL_ACCESS,
-                )?);
+                )?;
                 continue;
             }
 
-            if sysapi::ThreadResume(*thread_handle).is_err() {
-                thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+            if sysapi::resume_thread(*thread_handle).is_err() {
+                thread_handle = sysapi::open_next_thread(
                     process_handle,
                     *thread_handle,
                     THREAD_ALL_ACCESS,
-                )?);
+                )?;
                 continue;
             }
 
@@ -602,11 +604,11 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<HANDLE, N
             ));
             if status.is_err() {
                 log::error!("unable to wait for event, {}", status.0);
-                thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+                thread_handle = sysapi::open_next_thread(
                     process_handle,
                     *thread_handle,
                     THREAD_ALL_ACCESS,
-                )?);
+                )?;
                 continue;
             }
 
@@ -615,11 +617,11 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<HANDLE, N
                     "probably not an alertable thread (HANDLE = 0x{:x})",
                     *thread_handle as usize
                 );
-                thread_handle = sysapi::HandleWrap(sysapi::ThreadOpenNext(
+                thread_handle = sysapi::open_next_thread(
                     process_handle,
                     *thread_handle,
                     THREAD_ALL_ACCESS,
-                )?);
+                )?;
                 continue;
             }
 
@@ -627,7 +629,7 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<HANDLE, N
                 "alertable thread found, HANDLE = 0x{:x}",
                 *thread_handle as usize
             );
-            return Ok(thread_handle.release());
+            return Ok(thread_handle);
         }
 
         log::error!(
@@ -637,26 +639,4 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<HANDLE, N
 
         Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND))
     }
-}
-
-// TODO: remove?
-pub fn process_read_peb(process_handle: HANDLE) -> Result<Box<PEB>, NTSTATUS> {
-    unsafe {
-        let basic_info = sysapi::ProcessGetBasicInfo(process_handle)?;
-        let mut peb = Box::new(PEB::default());
-
-        let peb_data =
-            slice::from_raw_parts_mut(peb.as_mut() as *mut PEB as *mut u8, size_of::<PEB>());
-
-        sysapi::VirtualMemoryRead(peb_data, basic_info.PebBaseAddress as _, process_handle)?;
-
-        Ok(peb)
-    }
-}
-
-pub fn shellcode_messageboxw() -> Vec<u8> {
-    let shellcode = include_bytes!("shellcode_MessageBoxA.bin");
-    let mut data = Vec::with_capacity(shellcode.len());
-    data.extend_from_slice(shellcode);
-    data
 }

@@ -4,7 +4,6 @@ use crate::sysapi;
 use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
 
 use windows::Win32::Foundation::NTSTATUS;
-use windows_sys::Win32::Foundation::HANDLE;
 
 use windef::winbase::NT_CURRENT_PROCESS;
 
@@ -16,7 +15,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ACCESS_RIGHTS, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
     FILE_SHARE_MODE, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
-
+use crate::sysapi::UniqueHandle;
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
@@ -85,19 +84,19 @@ pub fn get_temp_folder() -> String {
     }
 }
 
-pub fn map_file(path: &str) -> Result<(HANDLE, HANDLE, &[u8]), NTSTATUS> {
+pub fn map_file(path: &str) -> Result<(UniqueHandle, UniqueHandle, &[u8]), NTSTATUS> {
     unsafe {
-        let handle = sysapi::HandleWrap(sysapi::FileOpen(path)?);
-        let size = sysapi::FileGetSize(*handle)?;
+        let handle = sysapi::open_file(path)?;
+        let size = sysapi::get_file_size(*handle)?;
 
-        let section_handle = sysapi::HandleWrap(sysapi::SectionFileCreate(
+        let section_handle = sysapi::create_file_section(
             *handle,
             SECTION_MAP_READ,
             PAGE_READONLY,
             false,
             None,
-        )?);
-        let data = sysapi::SectionMapView(
+        )?;
+        let data = sysapi::map_view_of_section(
             *section_handle,
             size,
             PAGE_READONLY,
@@ -105,7 +104,7 @@ pub fn map_file(path: &str) -> Result<(HANDLE, HANDLE, &[u8]), NTSTATUS> {
             ptr::null_mut(),
         )?;
 
-        Ok((handle.release(), section_handle.release(),
+        Ok((handle, section_handle,
             slice::from_raw_parts(data as *const u8, size)
         ))
     }

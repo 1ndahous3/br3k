@@ -49,8 +49,8 @@ impl Constructor for FileMapping {
     fn py_new(cls: PyTypeRef, path: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         match fs::map_file(&path) {
             Ok((handle, section_handle, data)) => Self {
-                handle: sysapi::HandleWrap(handle),
-                section_handle: sysapi::HandleWrap(section_handle),
+                handle,
+                section_handle,
                 data: data.as_ptr() as usize,
                 size: data.len(),
             }

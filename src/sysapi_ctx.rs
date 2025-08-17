@@ -92,7 +92,7 @@ impl NtDllApi {
     pub fn new(opts: &InitOptions) -> Self {
         unsafe {
             let module = if opts.ntdll_copy {
-                sysapi::LoadLibraryCopy("c:\\windows\\system32\\ntdll.dll").unwrap().0
+                sysapi::load_library_copy("c:\\windows\\system32\\ntdll.dll").unwrap().0
             } else {
                 GetModuleHandleA(c"ntdll.dll".as_ptr() as _)
             };

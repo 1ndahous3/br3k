@@ -283,13 +283,13 @@ impl ComIRundown {
                 let mut server_ctx_addr: PVOID = ptr::null_mut();
 
                 if valid_tid {
-                    let thread = sysapi::HandleWrap(sysapi::ThreadOpen(self.process.pid, ipid_values.tid as _, THREAD_QUERY_INFORMATION)
+                    let thread = sysapi::open_thread(self.process.pid, ipid_values.tid as _, THREAD_QUERY_INFORMATION)
                         .map_err(|e| vm.new_system_error(format!(
                             "Failed to open thread {}: {}",
                             ipid_values.tid, sysapi::ntstatus_decode(e)
-                        )))?);
+                        )))?;
 
-                    let basic_info = sysapi::ThreadGetBasicInfo(*thread)
+                    let basic_info = sysapi::get_thread_basic_info(*thread)
                         .map_err(|e| vm.new_system_error(format!(
                             "Failed to get thread {} basic info: {}",
                             ipid_values.tid, sysapi::ntstatus_decode(e)

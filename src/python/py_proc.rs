@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-use crate::modules;
+use crate::python::api_strategy;
 use crate::sysapi;
 use crate::python;
 
@@ -24,7 +24,7 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use exe::{PE, Buffer, VecPE, RelocationDirectory, types, headers};
-
+use windef::ntpebteb::PEB;
 
 #[pyclass(module = false, name = "PROCESS_BASIC_INFORMATION")]
 #[derive(PyPayload)]
@@ -93,7 +93,7 @@ impl Constructor for CPUserProcessParameters {
     type Args = CPUserProcessParametersNewArgs;
 
     fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        let params = sysapi::ProcessParametersCreate(args.filepath.as_str()).map_err(|e| {
+        let params = sysapi::create_process_parameters(args.filepath.as_str()).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to create process parameters: {}",
                 sysapi::ntstatus_decode(e)
@@ -101,7 +101,7 @@ impl Constructor for CPUserProcessParameters {
         })?;
 
         Self {
-            params: sysapi::ProcessParametersWrap(params).into(),
+            params: params.into(),
         }
         .into_ref_with_type(vm, cls)
         .map(Into::into)
@@ -115,12 +115,12 @@ pub struct Process {
     pub image_path: RefCell<Option<String>>,
     pub section_handle: RefCell<Option<HANDLE>>,
 
-    pub open_method: RefCell<Option<modules::ProcessOpenMethod>>,
-    pub memory_strategy: RefCell<Option<modules::ProcessMemoryStrategy>>,
+    pub open_method: RefCell<Option<api_strategy::ProcessOpenMethod>>,
+    pub memory_strategy: RefCell<Option<api_strategy::ProcessMemoryStrategy>>,
 
     pub process_handle: RefCell<sysapi::UniqueHandle>,
     pub thread_handle: RefCell<sysapi::UniqueHandle>,
-    pub memory: RefCell<Option<modules::ProcessMemory>>,
+    pub memory: RefCell<Option<api_strategy::ProcessMemory>>,
 }
 
 #[derive(FromArgs)]
@@ -154,7 +154,7 @@ impl Constructor for Process {
                 .map_err(|_| vm.new_value_error(format!("Invalid PID format: '{}'", pid_str)))?
         } else if let OptionalArg::Present(v) = args.name {
             let name_str = v.as_str();
-            pid = sysapi::ProcessFind(name_str).map_err(|e| {
+            pid = sysapi::find_process(name_str).map_err(|e| {
                 vm.new_value_error(format!(
                     "Unable to find process '{}': {}",
                     name_str,
@@ -176,7 +176,7 @@ impl Constructor for Process {
             .memory_strategy
             .into_option()
             .map(|v| {
-                modules::ProcessMemoryStrategy::from_repr(v)
+                api_strategy::ProcessMemoryStrategy::from_repr(v)
                     .ok_or_else(|| vm.new_value_error("Invalid ProcessMemoryStrategy".to_string()))
             })
             .transpose()?;
@@ -185,7 +185,7 @@ impl Constructor for Process {
             .open_method
             .into_option()
             .map(|v| {
-                modules::ProcessOpenMethod::from_repr(v)
+                api_strategy::ProcessOpenMethod::from_repr(v)
                     .ok_or_else(|| vm.new_value_error("Invalid ProcessOpenMethod".to_string()))
             })
             .transpose()?;
@@ -196,8 +196,8 @@ impl Constructor for Process {
             section_handle: section_handle.into(),
             memory_strategy: memory_strategy.into(),
             open_method: open_method.into(),
-            process_handle: sysapi::HandleWrap(ptr::null_mut()).into(),
-            thread_handle: sysapi::HandleWrap(ptr::null_mut()).into(),
+            process_handle: sysapi::null_handle().into(),
+            thread_handle: sysapi::null_handle().into(),
             memory: None.into(),
         }
         .into_ref_with_type(vm, cls)
@@ -281,8 +281,7 @@ impl Process {
                 ))
             })?;
 
-        self.process_handle
-            .replace(sysapi::HandleWrap(handle).into());
+        self.process_handle.replace(handle.into());
 
         Ok(())
     }
@@ -294,7 +293,7 @@ impl Process {
             .as_mut()
             .ok_or_else(|| vm.new_value_error("Process image path is not set".to_string()))?;
 
-        let (process_handle, thread_handle) = sysapi::ProcessCreateUser(&image_path, args.suspended)
+        let (process_handle, thread_handle) = sysapi::create_user_process(&image_path, args.suspended)
             .map_err(|e| {
                 vm.new_system_error(format!(
                     "Unable to create process: {}",
@@ -302,10 +301,8 @@ impl Process {
                 ))
             })?;
 
-        self.process_handle
-            .replace(sysapi::HandleWrap(process_handle).into());
-        self.thread_handle
-            .replace(sysapi::HandleWrap(thread_handle).into());
+        self.process_handle.replace(process_handle.into());
+        self.thread_handle.replace(thread_handle.into());
 
         Ok(())
     }
@@ -317,15 +314,14 @@ impl Process {
             .as_mut()
             .ok_or_else(|| vm.new_value_error("Process section handle is not set".to_string()))?;
 
-        let process_handle = sysapi::ProcessCreate(*section_handle).map_err(|e| {
+        let process_handle = sysapi::create_process(*section_handle).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to create process: {}",
                 sysapi::ntstatus_decode(e)
             ))
         })?;
 
-        self.process_handle
-            .replace(sysapi::HandleWrap(process_handle).into());
+        self.process_handle.replace(process_handle.into());
 
         Ok(())
     }
@@ -340,17 +336,17 @@ impl Process {
         let process_handle = *self.process_handle.borrow().get();
 
         let memory = match memory_strategy {
-            modules::ProcessMemoryStrategy::AllocateInAddr => {
-                modules::ProcessMemory::init_allocate_in_addr(process_handle)
+            api_strategy::ProcessMemoryStrategy::AllocateInAddr => {
+                api_strategy::ProcessMemory::init_allocate_in_addr(process_handle)
             }
-            modules::ProcessMemoryStrategy::CreateSectionMap => {
-                modules::ProcessMemory::init_create_section_map(process_handle)
+            api_strategy::ProcessMemoryStrategy::CreateSectionMap => {
+                api_strategy::ProcessMemory::init_create_section_map(process_handle)
             }
-            modules::ProcessMemoryStrategy::CreateSectionMapLocalMap => {
-                modules::ProcessMemory::init_create_section_map_local_map(process_handle)
+            api_strategy::ProcessMemoryStrategy::CreateSectionMapLocalMap => {
+                api_strategy::ProcessMemory::init_create_section_map_local_map(process_handle)
             }
-            modules::ProcessMemoryStrategy::LiveDumpParse => {
-                modules::ProcessMemory::init_live_dump_parse(self.pid)
+            api_strategy::ProcessMemoryStrategy::LiveDumpParse => {
+                api_strategy::ProcessMemory::init_live_dump_parse(self.pid)
             }
         };
 
@@ -421,16 +417,16 @@ impl Process {
 
         match (args.new_thread, self.is_x64(vm)?) {
             (true, true) => {
-                modules::new_thread_set_ep_x64(*self.thread_handle.borrow().get(), args.ep as _)
+                api_strategy::new_thread_set_ep_x64(*self.thread_handle.borrow().get(), args.ep as _)
             }
             (true, false) => {
-                modules::new_thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
+                api_strategy::new_thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
             }
             (false, true) => {
-                modules::thread_set_ep_x64(*self.thread_handle.borrow().get(), args.ep as _)
+                api_strategy::thread_set_ep_x64(*self.thread_handle.borrow().get(), args.ep as _)
             }
             (false, false) => {
-                modules::thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
+                api_strategy::thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
             }
         }
         .or_else(|e| {
@@ -446,7 +442,7 @@ impl Process {
     #[pymethod]
     fn create_thread(&self, args: CreateThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
 
-        let thread_handle = sysapi::ThreadCreate(*self.process_handle.borrow().get(), args.ep as _)
+        let thread_handle = sysapi::create_thread(*self.process_handle.borrow().get(), args.ep as _)
             .map_err(|e| {
                 vm.new_system_error(format!(
                     "Unable to create thread: {}",
@@ -454,8 +450,7 @@ impl Process {
                 ))
             })?;
 
-        self.thread_handle
-            .replace(sysapi::HandleWrap(thread_handle));
+        self.thread_handle.replace(thread_handle);
 
         //Ok(thread_handle as u32)
         Ok(())
@@ -463,7 +458,7 @@ impl Process {
 
     #[pymethod]
     fn open_any_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let thread_handle = sysapi::ThreadOpenNext(
+        let thread_handle = sysapi::open_next_thread(
             *self.process_handle.borrow().get(),
             ptr::null_mut(),
             THREAD_ALL_ACCESS,
@@ -475,8 +470,7 @@ impl Process {
             ))
         })?;
 
-        self.thread_handle
-            .replace(sysapi::HandleWrap(thread_handle));
+        self.thread_handle.replace(thread_handle);
 
         //Ok(thread_handle as u32)
         Ok(())
@@ -485,15 +479,14 @@ impl Process {
     #[pymethod]
     fn open_thread(&self, args: OpenThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
 
-        let thread_handle = sysapi::ThreadOpen(self.pid, args.tid, THREAD_ALL_ACCESS).map_err(|e| {
+        let thread_handle = sysapi::open_thread(self.pid, args.tid, THREAD_ALL_ACCESS).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to open thread: {}",
                 sysapi::ntstatus_decode(e)
             ))
         })?;
 
-        self.thread_handle
-            .replace(sysapi::HandleWrap(thread_handle));
+        self.thread_handle.replace(thread_handle);
 
         //Ok(thread_handle as u32)
         Ok(())
@@ -501,7 +494,7 @@ impl Process {
 
     #[pymethod]
     fn open_alertable_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let thread_handle = modules::process_open_alertable_thread(
+        let thread_handle = api_strategy::process_open_alertable_thread(
             *self.process_handle.borrow().get(),
         )
         .map_err(|e| {
@@ -511,8 +504,7 @@ impl Process {
             ))
         })?;
 
-        self.thread_handle
-            .replace(sysapi::HandleWrap(thread_handle));
+        self.thread_handle.replace(thread_handle);
 
         //Ok(thread_handle as u32)
         Ok(())
@@ -520,7 +512,7 @@ impl Process {
 
     #[pymethod]
     fn suspend_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        match sysapi::ThreadSuspend(*self.thread_handle.borrow().get()) {
+        match sysapi::suspend_thread(*self.thread_handle.borrow().get()) {
             Ok(()) => Ok(()),
             Err(status) => Err(vm.new_system_error(format!(
                 "Failed to suspend thread: {}",
@@ -531,7 +523,7 @@ impl Process {
 
     #[pymethod]
     fn resume_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        match sysapi::ThreadResume(*self.thread_handle.borrow().get()) {
+        match sysapi::resume_thread(*self.thread_handle.borrow().get()) {
             Ok(()) => Ok(()),
             Err(status) => Err(vm.new_system_error(format!(
                 "Failed to resume thread: {}",
@@ -543,7 +535,7 @@ impl Process {
     #[pymethod]
     fn thread_queue_user_apc(&self, args: CreateThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
 
-        match sysapi::ThreadQueueUserApc(
+        match sysapi::queue_apc_thread(
             *self.thread_handle.borrow().get(),
             args.ep as _,
             ptr::null_mut(),
@@ -560,7 +552,7 @@ impl Process {
 
     #[pymethod]
     fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
-        match sysapi::ProcessGetWow64Info(*self.process_handle.borrow().get()) {
+        match sysapi::get_process_wow64_info(*self.process_handle.borrow().get()) {
             Ok(is_x64) => Ok(is_x64),
             Err(status) => Err(vm.new_system_error(format!(
                 "Unable to get Wow64 info: {}",
@@ -574,7 +566,7 @@ impl Process {
     #[pymethod]
     fn get_basic_info(&self, vm: &VirtualMachine) -> PyResult<CProcessBasicInformation> {
         let basic_info =
-            sysapi::ProcessGetBasicInfo(*self.process_handle.borrow().get()).map_err(|e| {
+            sysapi::get_process_basic_info(*self.process_handle.borrow().get()).map_err(|e| {
                 vm.new_system_error(format!(
                     "Unable to get process basic info: {}",
                     sysapi::ntstatus_decode(e)
@@ -587,12 +579,28 @@ impl Process {
     #[pymethod]
     fn read_peb(&self, vm: &VirtualMachine) -> PyResult<CPeb> {
         unsafe {
-            let peb = modules::process_read_peb(*self.process_handle.borrow().get()).map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to read process PEB: {}",
-                    sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            let process_handle = *self.process_handle.borrow().get();
+
+            let basic_info = sysapi::get_process_basic_info(process_handle)
+                .map_err(|e| {
+                    vm.new_system_error(format!(
+                        "Unable to read process basic info: {}",
+                        sysapi::ntstatus_decode(e)
+                    ))
+                })?;
+
+            let mut peb = Box::new(PEB::default());
+
+            let peb_data =
+                slice::from_raw_parts_mut(peb.as_mut() as *mut PEB as *mut u8, size_of::<PEB>());
+
+            sysapi::read_virtual_memory(peb_data, basic_info.PebBaseAddress as _, process_handle)
+                .map_err(|e| {
+                    vm.new_system_error(format!(
+                        "Unable to read process PEB: {}",
+                        sysapi::ntstatus_decode(e)
+                    ))
+                })?;
 
             Ok(CPeb {
                 data: mem::transmute_copy(&*peb),
@@ -653,63 +661,6 @@ impl Process {
             Ok(())
         }
     }
-
-    //
-
-    // #[pymethod]
-    // fn write_image(&self, pe: PyRef<py_pe::Pe>, vm: &VirtualMachine) -> PyResult<()> {
-    //     unsafe {
-    //         let mut memory = self.memory.borrow_mut();
-    //         let mut memory = memory.as_mut().ok_or_else(|| {
-    //             vm.new_value_error("Memory context is not initialized".to_string())
-    //         })?;
-    //
-    //         // let data = pe.data as PVOID;
-    //         //
-    //         // let dos_header = data as *const IMAGE_DOS_HEADER;
-    //         // let nt_header32 = data.add((*dos_header).e_lfanew as _) as *const IMAGE_NT_HEADERS32;
-    //         //
-    //         // memory
-    //         //     .write_memory(0, data, (*nt_header32).OptionalHeader.SizeOfHeaders as _)
-    //         //     .map_err(|e| {
-    //         //         vm.new_system_error(format!(
-    //         //             "Unable to write image headers: {}",
-    //         //             sysapi::ntstatus_decode(e)
-    //         //         ))
-    //         //     })?;
-    //         //
-    //         // let sections = data.add((*dos_header).e_lfanew as _).add(if pe.is_x64() {
-    //         //     size_of::<IMAGE_NT_HEADERS64>()
-    //         // } else {
-    //         //     size_of::<IMAGE_NT_HEADERS32>()
-    //         // }) as *const IMAGE_SECTION_HEADER;
-    //         //
-    //         // for i in 0..(*nt_header32).FileHeader.NumberOfSections {
-    //         //     let section = sections.add(i as _);
-    //         //     if (*section).PointerToRawData == 0 {
-    //         //         continue;
-    //         //     }
-    //         //
-    //         //     memory
-    //         //         .write_memory(
-    //         //             (*section).VirtualAddress as _,
-    //         //             data.add((*section).PointerToRawData as _),
-    //         //             (*section).SizeOfRawData as _,
-    //         //         )
-    //         //         .map_err(|e| {
-    //         //             vm.new_system_error(format!(
-    //         //                 "Unable to write section {}: {}",
-    //         //                 std::str::from_utf8(&(*section).Name).unwrap(),
-    //         //                 sysapi::ntstatus_decode(e)
-    //         //             ))
-    //         //         })?;
-    //         // }
-    //
-    //         pe.
-    //
-    //         Ok(())
-    //     }
-    // }
 
     #[pymethod]
     fn write_mem_image(&self, args: WriteMemImageArgs, vm: &VirtualMachine) -> PyResult<()> {
@@ -775,169 +726,5 @@ impl Process {
             })?;
 
         Ok(())
-
-        // let data = pe.data as PVOID;
-        //
-        // let dos_header = data as *const IMAGE_DOS_HEADER;
-        // let nt_header32 = data.add((*dos_header).e_lfanew as _) as *const IMAGE_NT_HEADERS32;
-        // let nt_header64 = nt_header32 as *const IMAGE_NT_HEADERS64;
-        //
-        // let is_64 = self.is_x64(vm)?;
-        // let remote_base_addr = memory.get_remote_base_addr();
-        //
-        // memory
-        //     .write_memory(
-        //         if is_64 {
-        //             offset_of!(IMAGE_NT_HEADERS64, OptionalHeader.ImageBase)
-        //         } else {
-        //             offset_of!(IMAGE_NT_HEADERS32, OptionalHeader.ImageBase)
-        //         },
-        //         &remote_base_addr as *const _ as _,
-        //         if is_64 {
-        //             size_of::<u64>()
-        //         } else {
-        //             size_of::<u32>()
-        //         },
-        //     )
-        //     .map_err(|e| {
-        //         vm.new_system_error(format!(
-        //             "Unable to write image base address: {}",
-        //             sysapi::ntstatus_decode(e)
-        //         ))
-        //     })?;
-        //
-        // let delta = remote_base_addr as isize
-        //     - if is_64 {
-        //         (*nt_header64).OptionalHeader.ImageBase as isize
-        //     } else {
-        //         (*nt_header32).OptionalHeader.ImageBase as isize
-        //     };
-        //
-        // if delta == 0 {
-        //     return Ok(());
-        // }
-        //
-        // let sections = data.add((*dos_header).e_lfanew as _).add(if is_64 {
-        //     size_of::<IMAGE_NT_HEADERS64>()
-        // } else {
-        //     size_of::<IMAGE_NT_HEADERS32>()
-        // }) as *const IMAGE_SECTION_HEADER;
-        //
-        // let mut section: Option<*const IMAGE_SECTION_HEADER> = None;
-        // let mut reloc_addr: Option<usize> = None;
-        //
-        // for i in 0..(*nt_header32).FileHeader.NumberOfSections {
-        //     let sect = sections.add(i as _);
-        //
-        //     if std::str::from_utf8(&(*sect).Name)
-        //         .unwrap()
-        //         .trim_end_matches('\0')
-        //         == ".reloc"
-        //     {
-        //         section = Some(sect);
-        //         reloc_addr = Some((*sect).PointerToRawData as usize);
-        //         break;
-        //     }
-        // }
-        //
-        // if reloc_addr.is_none() {
-        //     return Err(vm.new_value_error("Unable to find \".reloc\" section".to_string()));
-        // }
-        //
-        // let reloc_data: *const IMAGE_DATA_DIRECTORY = if is_64 {
-        //     &(*nt_header64).OptionalHeader.DataDirectory
-        //         [IMAGE_DIRECTORY_ENTRY_BASERELOC as usize]
-        // } else {
-        //     &(*nt_header32).OptionalHeader.DataDirectory
-        //         [IMAGE_DIRECTORY_ENTRY_BASERELOC as usize]
-        // };
-        //
-        // let reloc_addr = reloc_addr.unwrap();
-        //
-        // let reloc_data_size = (*reloc_data).Size as usize;
-        // let mut offset = 0;
-        //
-        // while offset < reloc_data_size {
-        //     let block_header =
-        //         data.add(reloc_addr + offset) as *const ntwin::BASE_RELOCATION_BLOCK;
-        //     offset += size_of::<ntwin::BASE_RELOCATION_BLOCK>();
-        //
-        //     let entry_count = ((*block_header).BlockSize as usize
-        //         - size_of::<ntwin::BASE_RELOCATION_BLOCK>())
-        //         / size_of::<ntwin::BASE_RELOCATION_ENTRY>();
-        //     let entries = data.add(reloc_addr + offset) as *const ntwin::BASE_RELOCATION_ENTRY;
-        //
-        //     for j in 0..entry_count {
-        //         let entry = entries.add(j as _);
-        //         if (*entry).Type() == 0 {
-        //             continue;
-        //         }
-        //
-        //         let field_address: usize =
-        //             (*block_header).PageAddress as usize + (*entry).Offset() as usize;
-        //
-        //         if is_64 {
-        //             let mut field = 0u64;
-        //             memory
-        //                 .read_memory(
-        //                     field_address as _,
-        //                     &field as *const _ as _,
-        //                     size_of::<u64>(),
-        //                 )
-        //                 .map_err(|e| {
-        //                     vm.new_system_error(format!(
-        //                         "Unable to read 64-bit relocation: {}",
-        //                         sysapi::ntstatus_decode(e)
-        //                     ))
-        //                 })?;
-        //
-        //             field = field.wrapping_add(delta as u64);
-        //             memory
-        //                 .write_memory(
-        //                     field_address as _,
-        //                     &mut field as *mut _ as _,
-        //                     size_of::<u64>(),
-        //                 )
-        //                 .map_err(|e| {
-        //                     vm.new_system_error(format!(
-        //                         "Unable to write 64-bit relocation: {}",
-        //                         sysapi::ntstatus_decode(e)
-        //                     ))
-        //                 })?;
-        //         } else {
-        //             let mut field = 0u32;
-        //             memory
-        //                 .read_memory(
-        //                     field_address as _,
-        //                     &field as *const _ as _,
-        //                     size_of::<u32>(),
-        //                 )
-        //                 .map_err(|e| {
-        //                     vm.new_system_error(format!(
-        //                         "Unable to read 32-bit relocation: {}",
-        //                         sysapi::ntstatus_decode(e)
-        //                     ))
-        //                 })?;
-        //
-        //             field = field.wrapping_add(delta as u32);
-        //             memory
-        //                 .write_memory(
-        //                     field_address as _,
-        //                     &mut field as *mut _ as _,
-        //                     size_of::<u32>(),
-        //                 )
-        //                 .map_err(|e| {
-        //                     vm.new_system_error(format!(
-        //                         "Unable to write 32-bit relocation: {}",
-        //                         sysapi::ntstatus_decode(e)
-        //                     ))
-        //                 })?;
-        //         }
-        //     }
-        //
-        //     offset += entry_count * size_of::<ntwin::BASE_RELOCATION_ENTRY>();
-        // }
-        //
-        // Ok(())
     }
 }
