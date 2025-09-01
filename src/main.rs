@@ -1,5 +1,3 @@
-#![feature(default_field_values)]
-
 mod prelude;
 mod python;
 mod sysapi_ctx;
@@ -14,10 +12,12 @@ mod shellcode;
 
 use clap::{Arg, Command};
 
+const BR3K_VERSION: &str = env!("BR3K_VERSION");
+
 fn main() {
     env_logger::init();
 
-    let matches = Command::new("br3k v0.2")
+    let matches = Command::new("br3k")
         .arg(
             Arg::new("script")
                 .long("script")
@@ -25,11 +25,15 @@ fn main() {
         )
         .get_matches();
 
-    println!();
-    println!(" ╔═══════════╗");
-    println!(" ║ br3k v0.2 ║");
-    println!(" ╚═══════════╝");
-    println!();
+    {
+        let header = format!("br3k v{BR3K_VERSION}");
+        let separator = "═".repeat(header.chars().count() + 2);
+
+        println!();
+        println!("╔{separator}╗");
+        println!("  {header}  ");
+        println!("╚{separator}╝");
+    }
 
     if let Some(script_path) = matches.get_one::<String>("script") {
         let script_data = std::fs::read_to_string(script_path).expect("Unable to open script file");
