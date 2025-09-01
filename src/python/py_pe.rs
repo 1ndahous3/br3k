@@ -5,10 +5,10 @@ use rustpython_vm::{
     PyPayload, PyObjectRef, PyResult,
     builtins::PyTypeRef,
     types::Constructor,
+    function::OptionalArg
 };
 
 use exe::{PtrPE, types, NTHeaders, PE, PEType};
-use rustpython_vm::function::OptionalArg;
 
 #[derive(FromArgs)]
 pub struct PeNewArgs {
