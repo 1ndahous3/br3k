@@ -1,17 +1,15 @@
 use crate::prelude::*;
 use crate::pdb::Pdb;
 
-use std::cmp::min;
 use std::collections::VecDeque;
 
 use kdmp_parser::{
     KernelDumpParser,
-    Gpa, Gva, Gxa, Pxe,
-    KdmpParserError, AddrTranslationError,
-    PxeNotPresent
+    Gva, Gpa,
+    KdmpParserError
 };
 
-pub type Result<R> = std::result::Result<R, KdmpParserError>;
+pub type Result<R> = result::Result<R, KdmpParserError>;
 
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
@@ -73,99 +71,6 @@ pub struct KernelDump {
 }
 
 impl KernelDump {
-
-    // TODO: implement directory_table_base option in read/translate methods in upstream
-
-    /// Translate a [`Gva`] into a [`Gpa`].
-    pub fn virt_translate(&self, gva: Gva, directory_table_base: usize) -> Result<Gpa> {
-        // Aligning in case PCID bits are set (bits 11:0)
-        let pml4_base = Gpa::from(directory_table_base as u64).page_align();
-        let pml4e_gpa = Gpa::new(pml4_base.u64() + (gva.pml4e_idx() * 8));
-        let pml4e = Pxe::from(self.parser.phys_read_struct::<u64>(pml4e_gpa)?);
-        if !pml4e.present() {
-            return Err(AddrTranslationError::Virt(gva, PxeNotPresent::Pml4e).into());
-        }
-
-        let pdpt_base = pml4e.pfn.gpa();
-        let pdpte_gpa = Gpa::new(pdpt_base.u64() + (gva.pdpe_idx() * 8));
-        let pdpte = Pxe::from(self.parser.phys_read_struct::<u64>(pdpte_gpa)?);
-        if !pdpte.present() {
-            return Err(AddrTranslationError::Virt(gva, PxeNotPresent::Pdpte).into());
-        }
-
-        // huge pages:
-        // 7 (PS) - Page size; must be 1 (otherwise, this entry references a page
-        // directory; see Table 4-1
-        let pd_base = pdpte.pfn.gpa();
-        if pdpte.large_page() {
-            return Ok(Gpa::new(pd_base.u64() + (gva.u64() & 0x3fff_ffff)));
-        }
-
-        let pde_gpa = Gpa::new(pd_base.u64() + (gva.pde_idx() * 8));
-        let pde = Pxe::from(self.parser.phys_read_struct::<u64>(pde_gpa)?);
-        if !pde.present() {
-            return Err(AddrTranslationError::Virt(gva, PxeNotPresent::Pde).into());
-        }
-
-        // large pages:
-        // 7 (PS) - Page size; must be 1 (otherwise, this entry references a page
-        // table; see Table 4-18
-        let pt_base = pde.pfn.gpa();
-        if pde.large_page() {
-            return Ok(Gpa::new(pt_base.u64() + (gva.u64() & 0x1f_ffff)));
-        }
-
-        let pte_gpa = Gpa::new(pt_base.u64() + (gva.pte_idx() * 8));
-        let pte = Pxe::from(self.parser.phys_read_struct::<u64>(pte_gpa)?);
-        if !pte.present() {
-            // We'll allow reading from a transition PTE, so return an error only if it's
-            // not one, otherwise we'll carry on.
-            if !pte.transition() {
-                return Err(AddrTranslationError::Virt(gva, PxeNotPresent::Pte).into());
-            }
-        }
-
-        let page_base = pte.pfn.gpa();
-
-        Ok(Gpa::new(page_base.u64() + gva.offset()))
-    }
-
-    pub fn virt_read(&self, gva: Gva, buf: &mut [u8], directory_table_base: usize) -> kdmp_parser::Result<usize> {
-        // Amount of bytes left to read.
-        let mut amount_left = buf.len();
-        // Total amount of bytes that we have successfully read.
-        let mut total_read = 0;
-        // The current gva we are reading from.
-        let mut addr = gva;
-        // Let's try to read as much as the user wants.
-        while amount_left > 0 {
-            // We need to take care of reads that straddle different virtual memory pages.
-            // So let's figure out the maximum amount of bytes we can read off this page.
-            // Either, we read it until its end, or we stop if the user wants us to read
-            // less.
-            let left_in_page = (0x1_000 - addr.offset()) as usize;
-            let amount_wanted = min(amount_left, left_in_page);
-            // Figure out where we should read into.
-            let slice = &mut buf[total_read..total_read + amount_wanted];
-            // Translate the gva into a gpa..
-            let gpa = self.virt_translate(addr, directory_table_base)?;
-            // .. and read the physical memory!
-            let amount_read = self.parser.phys_read(gpa, slice)?;
-            // Update the total amount of read bytes and how much work we have left.
-            total_read += amount_read;
-            amount_left -= amount_read;
-            // If we couldn't read as much as we wanted, we're done.
-            if amount_read != amount_wanted {
-                return Ok(total_read);
-            }
-
-            // We have more work to do, so let's move to the next page.
-            addr = addr.next_aligned_page();
-        }
-
-        // Yay, we read as much bytes as the user wanted!
-        Ok(total_read)
-    }
 
     pub fn new(dump_filepath: &str, pdb: &mut Pdb) -> Result<Self> {
         let kernel_offsets = KernelOffsets {
@@ -327,7 +232,7 @@ impl KernelDump {
     }
 
     pub fn read_memory(&self, buf: &mut [u8], process: &Process, basic_addres: usize) -> Result<()> { 
-        self.virt_read(Gva::from(basic_addres as u64), buf, process.dtb as usize)?;
+        self.parser.virt_read_with_dtb(Gva::from(basic_addres as u64), buf, Gpa::from(process.dtb))?;
         Ok(())
     }
 }
