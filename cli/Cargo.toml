@@ -1,0 +1,8 @@
+[package]
+name = "br3k-cli"
+edition = "2024"
+
+[dependencies]
+br3k = { path = "../lib" }
+clap = "4.0"
+env_logger = "0.11"

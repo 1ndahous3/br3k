@@ -1,18 +1,6 @@
-mod prelude;
-mod python;
-mod sysapi_ctx;
-mod sysapi;
-mod str;
-mod fs;
-mod kdump;
-mod pdb;
-mod unique_resource;
-mod pe_module;
-mod shellcode;
+use br3k::*;
 
 use clap::{Arg, Command};
-
-const BR3K_VERSION: &str = env!("BR3K_VERSION");
 
 fn main() {
     env_logger::init();
@@ -41,10 +29,10 @@ fn main() {
         let py = python::py_module::PythonCore::new();
         match py.execute_script(&script_data) {
             Ok(_) => {
-                log::info!("Script executed successfully.");
+                println!("Script executed successfully.");
             }
             Err(e) => {
-                log::error!("Error executing script: {}", e);
+                eprintln!("Error executing script: {}", e);
                 std::process::exit(1);
             }
         }

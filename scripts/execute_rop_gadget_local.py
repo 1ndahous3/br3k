@@ -8,7 +8,7 @@ if __name__ == "__main__":
     br3k.init_sysapi(ntdll_copy=True)
 
     process = br3k.Process(
-        name="br3k.exe",
+        name="br3k-cli.exe",
         memory_strategy=ProcessMemoryStrategy.AllocateInAddr,
         open_method=ProcessOpenMethod.OpenProcess
     )

@@ -1,35 +1,6 @@
-[package]
-name = "br3k"
-version = "0.0.0" # internal versioning in build.rs
-edition = "2024"
-
-[dependencies]
-rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", branch = "main", features = ["freeze-stdlib"] }
-rustpython-pylib = { git = "https://github.com/RustPython/RustPython.git", branch = "main", features = ["freeze-stdlib"] }
-clap = "4.0"
-log = "0.4"
-env_logger = "0.11"
-strum = "0.27"
-strum_macros = "0.27"
-thiserror = "2"
-widestring = "1.2"
-windef = { path = "windef" }
-windows-sys = { version = "0.60", features = [
-    "Win32_System_LibraryLoader",
-    "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_Com"
-] }
-windows = { version = "0.60", features = [
-    "Win32_Foundation",
-    "Win32_System_Environment"
-] }
-pdb = "0.8"
-kdmp-parser = "0.7"
-minidump = "0.26.0"
-exe = "0.5.6"
-scroll = "0.12"
-reqwest = { version = "0.12", features = ["blocking"] }
-base64 = "0.22.1"
-
-[build-dependencies]
-chrono = "0.4"
+[workspace]
+resolver = "3"
+members = [
+    "lib",
+    "cli",
+]
