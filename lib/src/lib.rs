@@ -10,7 +10,7 @@ mod unique_resource;
 mod pe_module;
 mod shellcode;
 
-pub mod python;
+pub mod vm;
 pub mod logging;
 
 pub const BR3K_VERSION: &str = env!("BR3K_VERSION");

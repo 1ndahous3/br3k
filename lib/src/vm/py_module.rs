@@ -1,43 +1,6 @@
-use crate::fs;
 use crate::sysapi;
-use crate::python;
+use crate::vm::prelude::*;
 
-use python::api_strategy;
-
-use rustpython_vm::{
-    VirtualMachine, Interpreter,
-    pyclass, pymodule,
-    AsObject,
-    PyPayload, PyRef,
-    class::PyClassImpl,
-    builtins::PyModule,
-};
-
-#[macro_export]
-macro_rules! register_enum {
-    ($vm:expr, $module:expr, $enum_type:path) => {{
-        let enum_name = std::any::type_name::<$enum_type>()
-            .rsplit("::")
-            .next()
-            .unwrap();
-
-        let type_obj = $vm.ctx.new_class(
-            Some(enum_name),
-            enum_name,
-            $vm.ctx.types.object_type.to_owned(),
-            Default::default(),
-        );
-
-        for item in <$enum_type as strum::VariantArray>::VARIANTS {
-            let name: &'static str = item.into();
-            let attr_name = $vm.ctx.intern_str(name);
-            let value = $vm.ctx.new_int(item.clone() as u32);
-            type_obj.set_attr(attr_name, value.into());
-        }
-
-        $module.set_attr(enum_name, type_obj, $vm).unwrap();
-    }};
-}
 
 #[pyclass(module = false, name = "Handle")]
 #[derive(Debug, PyPayload)]
@@ -61,24 +24,19 @@ fn test_func(
 pub mod br3k {
 
     use crate::prelude::*;
+    use crate::vm::prelude::*;
+    use crate::vm;
     use crate::sysapi_ctx;
     use crate::sysapi;
     use crate::fs;
-    use crate::python;
+
     use crate::pe_module;
     use crate::shellcode;
     use crate::slog_info;
 
     use sysapi_ctx::SysApiCtx as api_ctx;
-    use python::py_module::Handle;
-    use python::py_proc::Process;
-
-    use rustpython_vm::{
-        VirtualMachine,
-        FromArgs,
-        PyRef, PyObjectRef, PyResult,
-        builtins::{PyStr, PyStrRef}
-    };
+    use vm::py_module::Handle;
+    use vm::py_proc::Process;
 
     #[derive(FromArgs)]
     pub struct InitSysApiArgs {
@@ -233,7 +191,7 @@ pub mod br3k {
     #[derive(FromArgs)]
     pub struct PdbDownloadArgs {
         #[pyarg(any)]
-        pe: PyRef<python::py_pe::Pe>,
+        pe: PyRef<vm::py_pe::Pe>,
         #[pyarg(any)]
         folder_path: PyStrRef,
     }
@@ -346,72 +304,3 @@ pub mod br3k {
     }
 }
 
-
-pub struct PythonCore {
-    interpreter: Interpreter,
-}
-
-impl PythonCore {
-    fn register_enums(vm: &VirtualMachine, module: &PyRef<PyModule>) {
-        register_enum!(vm, module, api_strategy::ProcessMemoryStrategy);
-        register_enum!(vm, module, api_strategy::ProcessOpenMethod);
-        register_enum!(vm, module, fs::FsFileMode);
-        register_enum!(vm, module, fs::FsSectionMode);
-    }
-
-    pub fn new() -> Self {
-        let interpreter = Interpreter::with_init(Default::default(), |vm| {
-            vm.add_frozen(rustpython_pylib::FROZEN_STDLIB);
-
-            let br3k_module = br3k::make_module(vm);
-
-            let module_classes = [
-                ("Handle", Handle::make_class(&vm.ctx)),
-                ("Process", python::py_proc::Process::make_class(&vm.ctx)),
-                ("Ipc", python::py_ipc::Ipc::make_class(&vm.ctx)),
-                ("FileMapping", python::py_fs::FileMapping::make_class(&vm.ctx)),
-                ("Pe", python::py_pe::Pe::make_class(&vm.ctx)),
-                ("Transaction", python::py_tx::Transaction::make_class(&vm.ctx)),
-                ("Pdb", python::py_pdb::Pdb::make_class(&vm.ctx)),
-                ("PEB", python::py_proc::CPeb::make_class(&vm.ctx)),
-                ("PRTL_USER_PROCESS_PARAMETERS", python::py_proc::CPUserProcessParameters::make_class(&vm.ctx)),
-                ("PROCESS_BASIC_INFORMATION", python::py_proc::CProcessBasicInformation::make_class(&vm.ctx)),
-                ("ComIRundown", python::py_com_irundown::ComIRundown::make_class(&vm.ctx)),
-            ];
-
-            for (name, class) in module_classes {
-                br3k_module.set_attr(name, class, vm).unwrap();
-            }
-
-            Self::register_enums(vm, &br3k_module);
-
-            vm.add_native_module("br3k".to_string(), Box::new(move |_vm| br3k_module.clone()))
-        });
-
-        Self { interpreter }
-    }
-
-    pub fn execute_script(&self, script: &str) -> Result<(), String> {
-        self.interpreter
-            .enter(|vm| {
-                let scope = vm.new_scope_with_builtins();
-                scope
-                    .globals
-                    .set_item("__name__", vm.ctx.new_str("__main__").into(), vm)
-                    .map_err(|e| format!("Failed to set __name__: {e:?}"))?;
-
-                vm.run_code_string(scope, script, "<script>".to_owned())
-                    .map(drop)
-                    .map_err(|e| {
-                        let err_str = vm
-                            .call_method(e.as_object(), "__str__", ())
-                            .ok()
-                            .and_then(|s| s.downcast::<rustpython_vm::builtins::PyStr>().ok())
-                            .map(|s| s.as_str().to_string())
-                            .unwrap_or_else(|| "<unprintable>".into());
-                        format!("Python error: {err_str}")
-                    })
-            })
-            .map_err(|e| format!("Interpreter error: {e}"))
-    }
-}

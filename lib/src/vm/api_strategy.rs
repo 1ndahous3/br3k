@@ -1,5 +1,8 @@
 use crate::prelude::*;
-use crate::{sysapi, fs, pdb, kdump};
+use crate::fs;
+use crate::pdb;
+use crate::kdump;
+use crate::sysapi;
 use crate::sysapi_ctx::SysApiCtx as api_ctx;
 
 use path::PathBuf;
@@ -21,7 +24,8 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
-use crate::sysapi::UniqueHandle;
+
+use sysapi::UniqueHandle;
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]

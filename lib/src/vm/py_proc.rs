@@ -1,21 +1,11 @@
 use crate::prelude::*;
-
-use crate::python::api_strategy;
+use crate::vm::prelude::*;
+use crate::vm;
 use crate::sysapi;
-use crate::python;
 
-use python::py_module::Handle;
+use vm::api_strategy;
+use vm::py_module::Handle;
 
-use rustpython_vm::{
-    VirtualMachine,
-    pyclass,
-    FromArgs,
-    PyPayload, PyRef, PyObjectRef, PyResult,
-    function::OptionalArg,
-    types::Constructor,
-    builtins::{PyTypeRef, PyStrRef},
-};
-use rustpython_vm::builtins::PyBytes;
 use windef::{ntrtl, ntpsapi, ntpebteb};
 
 use windows_sys::Win32::Foundation::HANDLE;

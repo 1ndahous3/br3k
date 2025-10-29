@@ -1,15 +1,6 @@
-use std::slice;
+use crate::vm::prelude::*;
+use crate::prelude::*;
 use crate::sysapi;
-
-use rustpython_vm::{
-    VirtualMachine,
-    pyclass,
-    PyPayload,
-    PyObjectRef, PyResult,
-    types::Constructor,
-    builtins::PyTypeRef
-};
-
 use crate::fs;
 
 #[pyclass(module = false, name = "FileMapping")]

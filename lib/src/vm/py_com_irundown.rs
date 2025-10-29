@@ -1,6 +1,8 @@
 use crate::prelude::*;
+use crate::vm::prelude::*;
+use crate::vm;
 use crate::sysapi;
-use crate::python;
+
 
 use std::ops::Add;
 use base64::prelude::*;
@@ -14,16 +16,7 @@ use windows_sys::Win32::System::Com::{CoGetObject, CoInitialize};
 use windows::core::{GUID, HRESULT};
 use winbase::ULONG_PTR;
 
-use rustpython_vm::{
-    VirtualMachine,
-    pyclass,
-    FromArgs,
-    PyPayload, PyRef, PyObjectRef, PyResult,
-    types::Constructor,
-    builtins::{PyTypeRef},
-};
-
-use python::py_proc::Process;
+use vm::py_proc::Process;
 
 #[allow(non_upper_case_globals)]
 static IID_IRundown: GUID = GUID {

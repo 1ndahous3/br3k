@@ -1,12 +1,4 @@
-use rustpython_vm::{
-    VirtualMachine,
-    pyclass,
-    FromArgs,
-    PyPayload, PyObjectRef, PyResult,
-    builtins::PyTypeRef,
-    types::Constructor,
-    function::OptionalArg
-};
+use crate::vm::prelude::*;
 
 use exe::{PtrPE, types, NTHeaders, PE, PEType};
 

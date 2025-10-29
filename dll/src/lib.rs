@@ -8,7 +8,7 @@ use windows_sys::Win32::System::SystemServices::{
 
 use br3k::ipc;
 use br3k::logging;
-use br3k::python;
+use br3k::vm;
 use br3k::{sysapi, sysapi_ctx};
 
 use windef::ntstatus;
@@ -47,8 +47,8 @@ extern "system" fn DllMain(
 
                         let script = String::from_utf8(script_data).unwrap();
 
-                        let py = python::py_module::PythonCore::new();
-                        match py.execute_script(&script) {
+                        let vm = vm::Vm::default();
+                        match vm.execute_script(&script, None) {
                             Ok(_) => {
                                 log::info!("Script executed successfully.");
                             }

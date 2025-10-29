@@ -1,13 +1,5 @@
 use crate::prelude::*;
-
-use rustpython_vm::{
-    VirtualMachine,
-    pyclass,
-    FromArgs,
-    PyPayload, PyObjectRef, PyResult,
-    types::Constructor,
-    builtins::{PyTypeRef, PyStrRef},
-};
+use crate::vm::prelude::*;
 
 #[pyclass(module = false, name = "Pdb")]
 #[derive(Debug, PyPayload)]

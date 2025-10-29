@@ -4,7 +4,7 @@ use br3k::ipc;
 use br3k::logging;
 use br3k::sysapi;
 use br3k::sysapi_ctx;
-use br3k::python;
+use br3k::vm;
 
 fn main() {
     logging::init(true, true);
@@ -20,10 +20,11 @@ fn main() {
 
     if let Some(script_path) = matches.get_one::<String>("script") {
         log::info!("Mode: script file ({})", script_path);
-        let script_data = std::fs::read_to_string(script_path).expect("Unable to open script file");
+        let script_data = std::fs::read_to_string(script_path)
+            .expect("Unable to open script file");
 
-        let py = python::py_module::PythonCore::new();
-        match py.execute_script(&script_data) {
+        let vm = vm::Vm::default();
+        match vm.execute_script(&script_data, Some(script_path.clone())) {
             Ok(_) => {
                 log::info!("Script executed successfully.");
             }
@@ -56,8 +57,8 @@ fn main() {
 
         let script = String::from_utf8(script_data).unwrap();
 
-        let py = python::py_module::PythonCore::new();
-        match py.execute_script(&script) {
+        let vm = vm::Vm::default();
+        match vm.execute_script(&script, None) {
             Ok(_) => {
                 log::info!("Script executed successfully.");
             }

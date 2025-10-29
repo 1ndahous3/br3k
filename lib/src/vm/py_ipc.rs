@@ -1,23 +1,15 @@
 use std::time::Duration;
 
 use windef::ntstatus;
-use rustpython_vm::{
-    VirtualMachine,
-    pyclass,
-    FromArgs,
-    PyPayload,
-    PyRef, PyObjectRef, PyResult,
-    builtins::PyTypeRef,
-    types::Constructor,
-};
 
 use crate::prelude::*;
-use crate::python;
+use crate::vm::prelude::*;
+use crate::vm;
 use crate::sysapi;
 use crate::ipc;
 use crate::{slog_info, slog_warn};
 
-use python::py_proc::Process;
+use vm::py_proc::Process;
 
 #[derive(FromArgs)]
 pub struct IpcNewArgs {
