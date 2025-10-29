@@ -25,7 +25,10 @@ use windows_sys::Win32::System::Memory::{
     SECTION_FLAGS, SECTION_MAP_EXECUTE, SECTION_MAP_READ, SECTION_MAP_WRITE, SECTION_ALL_ACCESS
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_SHARE_READ
+    SYNCHRONIZE,
+    FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, 
+    FILE_READ_DATA, FILE_WRITE_DATA,
+    FILE_SHARE_READ, FILE_SHARE_WRITE
 };
 
 use windef::{
@@ -99,15 +102,34 @@ pub fn peb() -> ntpebteb::PPEB {
         unsafe {
             let peb: u64;
             arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
-            peb as ntpebteb::PPEB
+            peb as _
         }
     }
     #[cfg(target_pointer_width = "32")]
     {
         unsafe {
             let peb: u32;
-            arch::asm!("mov {}, gs:[0x30]", out(reg) peb);
-            peb as ntpebteb::PPEB
+            arch::asm!("mov {}, fs:[0x30]", out(reg) peb);
+            peb as _
+        }
+    }
+}
+
+pub fn teb() -> ntexapi::PTEB {
+    #[cfg(target_pointer_width = "64")]
+    {
+        unsafe {
+            let teb: u64;
+            arch::asm!("mov {}, gs:[0x30]", out(reg) teb);
+            teb as _
+        }
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        unsafe {
+            let peb: u32;
+            arch::asm!("mov {}, fs:[0x18]", out(reg) teb);
+            teb as _
         }
     }
 }
@@ -1169,6 +1191,86 @@ pub fn create_event() -> Result<UniqueHandle> {
     }
 }
 
+pub fn create_named_pipe(name: &str) -> Result<UniqueHandle> {
+    unsafe {
+        let nt_name = format!("\\Device\\NamedPipe\\{}", name);
+        let nt_name = U16CString::from_str(nt_name).unwrap();
+        let nt_name = to_unicode_string(&nt_name);
+
+        let file_handle: HANDLE = ptr::null_mut();
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_name) as _,
+            ..Default::default()
+        };
+
+        let mut default_timeout: ntwin::LARGE_INTEGER = mem::zeroed();
+        default_timeout.bindgen_union_field = -1200000000 as _; // 120 seconds
+
+        let status = NTSTATUS(api_ctx::ntdll().NtCreateNamedPipeFile.unwrap()(
+            addr_of!(file_handle) as _,
+            FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ntioapi::FILE_CREATE,
+            ntioapi::FILE_SYNCHRONOUS_IO_NONALERT,
+            ntioapi::FILE_PIPE_BYTE_STREAM_TYPE,
+            ntioapi::FILE_PIPE_BYTE_STREAM_MODE,
+            ntioapi::FILE_PIPE_QUEUE_OPERATION,
+            1,
+            4096,
+            4096,
+            addr_of!(default_timeout) as _
+        ));
+
+        if !status.is_ok() {
+            Err(status)
+        } else {
+            Ok(wrap_handle(file_handle))
+        }
+    }
+}
+
+pub fn open_named_pipe(name: &str) -> Result<UniqueHandle> {
+    unsafe {
+        let nt_name = format!("\\Device\\NamedPipe\\{}", name);
+        let nt_name = U16CString::from_str(nt_name).unwrap();
+        let nt_name = to_unicode_string(&nt_name);
+
+        let file_handle: HANDLE = ptr::null_mut();
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_name) as _,
+            ..Default::default()
+        };
+
+        let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
+            addr_of!(file_handle) as _,
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            ptr::null_mut(),
+            FILE_ATTRIBUTE_NORMAL,
+            0,
+            ntioapi::FILE_OPEN,
+            ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT,
+            ptr::null_mut(),
+            0,
+        ));
+
+        if !status.is_ok() {
+            Err(status)
+        } else {
+            Ok(wrap_handle(file_handle))
+        }
+    }
+}
+
 pub fn open_file(path: &str) -> Result<UniqueHandle> {
     unsafe {
         let nt_path = format!("\\??\\{}", path);
@@ -1258,6 +1360,30 @@ pub fn write_file(file_handle: HANDLE, data: PVOID, size: usize) -> Result<bool>
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
 
         let status = NTSTATUS(api_ctx::ntdll().NtWriteFile.unwrap()(
+            file_handle,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            addr_of!(io_status_block) as _,
+            data,
+            size as _,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        ));
+
+        if !status.is_ok() {
+            Err(status)
+        } else {
+            Ok(io_status_block.Information == size)
+        }
+    }
+}
+
+pub fn read_file(file_handle: HANDLE, data: PVOID, size: usize) -> Result<bool> {
+    unsafe {
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+
+        let status = NTSTATUS(api_ctx::ntdll().NtReadFile.unwrap()(
             file_handle,
             ptr::null_mut(),
             ptr::null_mut(),

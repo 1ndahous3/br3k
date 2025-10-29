@@ -46,8 +46,11 @@ if __name__ == "__main__":
     process.init_memory()
     process.write_peb_proc_params(basic_info.PebBaseAddress, proc_params)
 
-    injected_pe = br3k.Pe(injected_image)
-    injected_pe.ep_address()
+    injected_pe = br3k.Pe(
+        data=injected_image.data,
+        size=injected_image.size,
+        is_file = True
+    )
 
     peb = process.read_peb()
     process.create_thread(ep=peb.ImageBaseAddress + injected_pe.ep_address())

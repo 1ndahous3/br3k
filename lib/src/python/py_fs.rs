@@ -1,3 +1,4 @@
+use std::slice;
 use crate::sysapi;
 
 use rustpython_vm::{
@@ -40,6 +41,14 @@ impl FileMapping {
     #[pygetset]
     fn size(&self) -> usize {
         self.size
+    }
+
+    #[pymethod]
+    fn bytes(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+        unsafe {
+            let bytes = vm.ctx.new_bytes(slice::from_raw_parts(self.data as *const u8, self.size).to_vec());
+            Ok(bytes.into())
+        }
     }
 }
 

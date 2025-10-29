@@ -111,7 +111,7 @@ impl Constructor for CPUserProcessParameters {
 #[pyclass(module = false, name = "Process")]
 #[derive(Debug, PyPayload)]
 pub struct Process {
-    pub pid: u32,
+    pub pid: RefCell<u32>,
     pub image_path: RefCell<Option<String>>,
     pub section_handle: RefCell<Option<HANDLE>>,
 
@@ -191,7 +191,7 @@ impl Constructor for Process {
             .transpose()?;
 
         Self {
-            pid,
+            pid: pid.into(),
             image_path: image_path.into(),
             section_handle: section_handle.into(),
             memory_strategy: memory_strategy.into(),
@@ -273,7 +273,7 @@ impl Process {
             .ok_or_else(|| vm.new_value_error("Process open method is not set".to_string()))?;
 
         let handle = open_method
-            .open(self.pid, PROCESS_ALL_ACCESS)
+            .open(*self.pid.borrow(), PROCESS_ALL_ACCESS)
             .map_err(|e| {
                 vm.new_system_error(format!(
                     "Unable to open process: {}",
@@ -301,8 +301,18 @@ impl Process {
                 ))
             })?;
 
+        let basic_info = sysapi::get_process_basic_info(*process_handle)
+            .map_err(|e| {
+                vm.new_system_error(format!(
+                    "Unable to read process basic info: {}",
+                    sysapi::ntstatus_decode(e)
+                ))
+            })?;
+
         self.process_handle.replace(process_handle.into());
         self.thread_handle.replace(thread_handle.into());
+
+        self.pid.replace(basic_info.UniqueProcessId as _);
 
         Ok(())
     }
@@ -346,7 +356,7 @@ impl Process {
                 api_strategy::ProcessMemory::init_create_section_map_local_map(process_handle)
             }
             api_strategy::ProcessMemoryStrategy::LiveDumpParse => {
-                api_strategy::ProcessMemory::init_live_dump_parse(self.pid)
+                api_strategy::ProcessMemory::init_live_dump_parse(*self.pid.borrow())
             }
         };
 
@@ -479,7 +489,7 @@ impl Process {
     #[pymethod]
     fn open_thread(&self, args: OpenThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
 
-        let thread_handle = sysapi::open_thread(self.pid, args.tid, THREAD_ALL_ACCESS).map_err(|e| {
+        let thread_handle = sysapi::open_thread(*self.pid.borrow(), args.tid, THREAD_ALL_ACCESS).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to open thread: {}",
                 sysapi::ntstatus_decode(e)

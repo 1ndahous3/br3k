@@ -1,4 +1,7 @@
-use crate::{fs, python, sysapi};
+use crate::fs;
+use crate::sysapi;
+use crate::python;
+
 use python::api_strategy;
 
 use rustpython_vm::{
@@ -58,7 +61,13 @@ fn test_func(
 pub mod br3k {
 
     use crate::prelude::*;
-    use crate::{sysapi_ctx, sysapi, fs, python, pe_module, shellcode};
+    use crate::sysapi_ctx;
+    use crate::sysapi;
+    use crate::fs;
+    use crate::python;
+    use crate::pe_module;
+    use crate::shellcode;
+    use crate::slog_info;
 
     use sysapi_ctx::SysApiCtx as api_ctx;
     use python::py_module::Handle;
@@ -82,9 +91,9 @@ pub mod br3k {
     #[pyfunction]
     fn init_sysapi(args: InitSysApiArgs) -> PyResult<()> {
 
-        log::info!("| System API options:");
-        log::info!("|   Load and use copy of ntdll.dll: {}", args.ntdll_copy);
-        log::info!("|   Use NT alternative API: {}", args.ntdll_alt_api);
+        slog_info!("| System API options:");
+        slog_info!("|   Load and use copy of ntdll.dll: {}", args.ntdll_copy);
+        slog_info!("|   Use NT alternative API: {}", args.ntdll_alt_api);
 
         sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
             ntdll_copy: args.ntdll_copy,
@@ -333,7 +342,7 @@ pub mod br3k {
 
     #[pyfunction]
     fn script_success() -> PyResult<()> {
-        log::info!("[+] Success");
+        slog_info!("[+] Success");
         Ok(())
     }
 }
@@ -360,6 +369,7 @@ impl PythonCore {
             let module_classes = [
                 ("Handle", Handle::make_class(&vm.ctx)),
                 ("Process", python::py_proc::Process::make_class(&vm.ctx)),
+                ("Ipc", python::py_ipc::Ipc::make_class(&vm.ctx)),
                 ("FileMapping", python::py_fs::FileMapping::make_class(&vm.ctx)),
                 ("Pe", python::py_pe::Pe::make_class(&vm.ctx)),
                 ("Transaction", python::py_tx::Transaction::make_class(&vm.ctx)),

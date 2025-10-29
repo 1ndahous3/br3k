@@ -3,4 +3,5 @@ resolver = "3"
 members = [
     "lib",
     "cli",
+    "dll",
 ]

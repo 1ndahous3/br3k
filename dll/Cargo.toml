@@ -1,0 +1,16 @@
+[package]
+name = "br3k-dll"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+br3k = { path = "../lib" }
+windef = { path = "../lib/windef" }
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_System_SystemServices",
+    "Win32_UI_WindowsAndMessaging",
+] }
+log = "0.4"

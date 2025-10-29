@@ -283,7 +283,7 @@ impl ComIRundown {
                 let mut server_ctx_addr: PVOID = ptr::null_mut();
 
                 if valid_tid {
-                    let thread = sysapi::open_thread(self.process.pid, ipid_values.tid as _, THREAD_QUERY_INFORMATION)
+                    let thread = sysapi::open_thread(*self.process.pid.borrow(), ipid_values.tid as _, THREAD_QUERY_INFORMATION)
                         .map_err(|e| vm.new_system_error(format!(
                             "Failed to open thread {}: {}",
                             ipid_values.tid, sysapi::ntstatus_decode(e)
@@ -387,7 +387,7 @@ impl ComIRundown {
 
             Err(vm.new_system_error(format!(
                 "No valid IPID entry found for IRundown in the process {}",
-                self.process.pid
+                *self.process.pid.borrow()
             )))
         }
     }

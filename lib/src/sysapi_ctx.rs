@@ -18,6 +18,7 @@ static SYSAPI: AtomicPtr<SysApiCtx> = AtomicPtr::new(ptr::null_mut());
 pub struct NtDllApi {
     module: Option<HMODULE>,
 
+    pub NtReadFile: Option<ntioapi::PFN_NtReadFile>,
     pub NtQuerySystemInformation: Option<ntexapi::PFN_NtQuerySystemInformation>,
     pub NtAllocateVirtualMemory: Option<ntmmapi::PFN_NtAllocateVirtualMemory>,
     pub NtReadVirtualMemory: Option<ntmmapi::PFN_NtReadVirtualMemory>,
@@ -49,6 +50,7 @@ pub struct NtDllApi {
     pub NtQueueApcThread: Option<ntpsapi::PFN_NtQueueApcThread>,
     pub NtQueueApcThreadEx: Option<ntpsapi::PFN_NtQueueApcThreadEx>,
     pub NtCreateEvent: Option<ntexapi::PFN_NtCreateEvent>,
+    pub NtCreateNamedPipeFile: Option<ntioapi::PFN_NtCreateNamedPipeFile>,
     pub NtSystemDebugControl: Option<ntexapi::PFN_NtSystemDebugControl>,
     pub RtlAdjustPrivilege: Option<ntrtl::PFN_RtlAdjustPrivilege>,
     pub RtlCreateProcessParametersEx: Option<ntrtl::PFN_RtlCreateProcessParametersEx>,
@@ -104,6 +106,7 @@ impl NtDllApi {
             Self {
                 module: Some(module),
 
+                NtReadFile: Self::get_proc_address(module, "NtReadFile"),
                 NtQuerySystemInformation: Self::get_proc_address(module, "NtQuerySystemInformation"),
                 NtAllocateVirtualMemory: Self::get_proc_address(module, "NtAllocateVirtualMemory"),
                 NtReadVirtualMemory: Self::get_proc_address(module, "NtReadVirtualMemory"),
@@ -135,6 +138,7 @@ impl NtDllApi {
                 NtQueueApcThread: Self::get_proc_address(module, "NtQueueApcThread"),
                 NtQueueApcThreadEx: Self::get_proc_address(module, "NtQueueApcThreadEx"),
                 NtCreateEvent: Self::get_proc_address(module, "NtCreateEvent"),
+                NtCreateNamedPipeFile: Self::get_proc_address(module, "NtCreateNamedPipeFile"),
                 NtSystemDebugControl: Self::get_proc_address(module, "NtSystemDebugControl"),
                 RtlAdjustPrivilege: Self::get_proc_address(module, "RtlAdjustPrivilege"),
                 RtlCreateProcessParametersEx: Self::get_proc_address(module, "RtlCreateProcessParametersEx"),

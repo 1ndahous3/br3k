@@ -1,11 +1,11 @@
 # br3k
 
-**br3k** (short for "Breaking Bat") is a mini-framework for Windows pentesting, designed to implement non-standard scenarios and combine interesting methods.
+**br3k** is a mini-framework for Windows pentesting, designed to implement non-standard scenarios and combine interesting methods.
 
 ### Usage
 
 The tool consists of two parts:
-1. **Core**: a `.exe` binary with low-level code and a built-in Python interpreter (runtime provides the `br3k` module).
+1. **Core**: a `.exe`/`.dll` binary with low-level code and a built-in Python interpreter (runtime provides the `br3k` module).
 2. **Scripts**: python3 scripts that leverage the `br3k` module API to implement logic.
 
 ---
@@ -86,8 +86,8 @@ The core provides APIs to simplify stack/shellcode construction for both cases.
 
 #### Other features
 
-- **[TODO]** Execute commands in separate threads (bypassing thread-correlation detections). 
-- **[TODO]** The core is also compiled as a DLL and embedded in the EXE (ability to drop DLL and inject it into a remote process to continue the chain).
+- Since the core part is built as an EXE/DLL with IPC protocol, it is possible to implement complex scenarios with chained execution of scripts in several processes (e.g., one script can send another to be executed via the br3k DLL in the context of another process).
+- **[TODO]** Execute commands in separate threads (bypassing thread-correlation detections).
 
 ---
 
