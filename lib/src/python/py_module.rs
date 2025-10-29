@@ -53,7 +53,7 @@ fn test_func(
     a1: u64, a2: u64, a3: u64, a4: u64,
     a5: u64, a6: u64, a7: u64, a8: u64
 ) -> u64 {
-    log::info!("test_func({}, {}, {}, {}, {}, {}, {}, {})", a1, a2, a3, a4, a5, a6, a7, a8);
+    log::info!("test_func({a1}, {a2}, {a3}, {a4}, {a5}, {a6}, {a7}, {a8})");
     10
 }
 
@@ -242,8 +242,7 @@ pub mod br3k {
     fn pdb_download(args: PdbDownloadArgs, vm: &VirtualMachine) -> PyResult<PyStr> {
 
         let pdb_filepath = crate::pdb::download_pdb(&args.pe.pe, args.folder_path.as_str())
-            .map_err(|e| vm.new_system_error(format!(
-                "Failed to download PDB: {}", e)))?;
+            .map_err(|e| vm.new_system_error(format!("Failed to download PDB: {e}")))?;
 
         Ok(pdb_filepath.into())
     }
@@ -399,7 +398,7 @@ impl PythonCore {
                 scope
                     .globals
                     .set_item("__name__", vm.ctx.new_str("__main__").into(), vm)
-                    .map_err(|e| format!("Failed to set __name__: {:?}", e))?;
+                    .map_err(|e| format!("Failed to set __name__: {e:?}"))?;
 
                 vm.run_code_string(scope, script, "<script>".to_owned())
                     .map(drop)
@@ -410,9 +409,9 @@ impl PythonCore {
                             .and_then(|s| s.downcast::<rustpython_vm::builtins::PyStr>().ok())
                             .map(|s| s.as_str().to_string())
                             .unwrap_or_else(|| "<unprintable>".into());
-                        format!("Python error: {}", err_str)
+                        format!("Python error: {err_str}")
                     })
             })
-            .map_err(|e| format!("Interpreter error: {}", e))
+            .map_err(|e| format!("Interpreter error: {e}"))
     }
 }

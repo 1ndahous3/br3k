@@ -69,34 +69,28 @@ fn main() {
         .expect("Failed to copy winbase.rs");
 
     let ntstatus_module = PathBuf::from("src/ntstatus.rs");
-    fs::copy(
-        &ntstatus_module,
-        format!("{}/ntstatus.rs", out_dir.display()),
-    )
-    .expect("Failed to copy ntstatus.rs");
+    fs::copy(&ntstatus_module, format!("{}/ntstatus.rs", out_dir.display()))
+        .expect("Failed to copy ntstatus.rs");
 
     // println!("cargo:rerun-if-changed={}", ntstatus_module.display());
 
     modules.par_iter().for_each(|module| {
-        let header_path: PathBuf;
-
-        if module.0.starts_with("rpc") {
-            header_path = PathBuf::from(module.1);
-        } else if module.0 == "ntwin" || module.0 == "ntwin" {
-            header_path = PathBuf::from(module.1);
-        } else {
-            header_path = PathBuf::from(format!("{}/{}", phnt_path.display(), module.1));
-        }
+        let header_path =
+            if module.0.starts_with("rpc") || module.0 == "ntwin" {
+                PathBuf::from(module.1)
+            } else {
+                PathBuf::from(format!("{}/{}", phnt_path.display(), module.1))
+            };
 
         let out_file = out_dir.join(format!("{}.rs", module.0));
 
         let mut builder = bindgen::Builder::default()
             .anon_fields_prefix("a")
             .header(header_path.to_str().unwrap())
-            .clang_arg(&format!("-include{}/phnt_windows.h", phnt_path.display()))
-            .clang_arg(&format!("-include{}/phnt.h", phnt_path.display()))
+            .clang_arg(format!("-include{}/phnt_windows.h", phnt_path.display()))
+            .clang_arg(format!("-include{}/phnt.h", phnt_path.display()))
             .clang_arg("-includehstring.h")
-            .clang_arg(&format!("-I{}", phnt_path.display()))
+            .clang_arg(format!("-I{}", phnt_path.display()))
             .blocklist_type("WNF_STATE_NAME") // windows_sys::Win32::System::Kernel::*
             .blocklist_type("PPS_APC_ROUTINE") //
             .blocklist_type("PIO_APC_ROUTINE") //
@@ -112,10 +106,10 @@ fn main() {
         for (k, v) in &defines {
             match v {
                 Some(val) => {
-                    builder = builder.clang_arg(&format!("-D{}={}", k, val));
+                    builder = builder.clang_arg(format!("-D{k}={val}"));
                 }
                 None => {
-                    builder = builder.clang_arg(&format!("-D{}", k));
+                    builder = builder.clang_arg(format!("-D{k}"));
                 }
             }
         }
@@ -175,7 +169,8 @@ fn generate_cross_use(file_path: &PathBuf, modules: &[(&str, &str)], module: &st
         header.push_str(&format!("use crate::{}::*;\n", other_module.0));
     }
 
-    fs::write(file_path, format!("{}\n{}", header, content)).expect("Failed to write updated file");
+    fs::write(file_path, format!("{header}\n{content}"))
+        .expect("Failed to write updated file");
 }
 
 fn generate_mod_rs(out_dir: &PathBuf, modules: &[(&str, &str)]) {
@@ -189,11 +184,13 @@ fn generate_mod_rs(out_dir: &PathBuf, modules: &[(&str, &str)]) {
     }
 
     let mod_path = out_dir.join("mod.rs");
-    fs::write(mod_path, content).expect("Failed to write mod.rs");
+    fs::write(mod_path, content)
+        .expect("Failed to write mod.rs");
 }
 
 fn generate_pfn_types(file_path: &PathBuf) {
-    let content = fs::read_to_string(file_path).expect("Failed to read generated file");
+    let content = fs::read_to_string(file_path)
+        .expect("Failed to read generated file");
 
     let fn_regex = Regex::new(
         r#"unsafe extern "C" \{\s*pub fn ([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*((?:[^)]*\n?)*?)\s*\)\s*->\s*([^;{]+);"#
@@ -211,8 +208,7 @@ fn generate_pfn_types(file_path: &PathBuf) {
         }
 
         let pfn_type = format!(
-            "pub type PFN_{} = unsafe extern \"C\" fn({}) -> {};",
-            fn_name, params, return_type
+            "pub type PFN_{fn_name} = unsafe extern \"C\" fn({params}) -> {return_type};"
         );
         pfn_types.push(pfn_type);
     }
@@ -221,9 +217,10 @@ fn generate_pfn_types(file_path: &PathBuf) {
         let mut updated_content = content;
         updated_content.push_str("\n// Generated PFN types\n");
         for pfn_type in pfn_types {
-            updated_content.push_str(&format!("{}\n", pfn_type));
+            updated_content.push_str(&format!("{pfn_type}\n"));
         }
 
-        fs::write(file_path, updated_content).expect("Failed to write updated file");
+        fs::write(file_path, updated_content)
+            .expect("Failed to write updated file");
     }
 }

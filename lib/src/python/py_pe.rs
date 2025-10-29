@@ -37,15 +37,14 @@ impl Constructor for Pe {
             }
 
             PtrPE::new_disk(args.data as _, args.size.unwrap())
+        } else if let OptionalArg::Present(size) = args.size {
+            PtrPE::new_memory(args.data as _, size)
         } else {
-            if let OptionalArg::Present(size) = args.size {
-                PtrPE::new_memory(args.data as _, size)
-            } else {
-                unsafe {
-                    PtrPE::from_memory(args.data as _)
-                        .map_err(|e| vm.new_system_error(format!(
-                            "Unable to load PE: {}", e)))?
-                }
+            unsafe {
+                PtrPE::from_memory(args.data as _)
+                    .map_err(|e| vm.new_system_error(format!(
+                        "Unable to load PE: {e}")
+                    ))?
             }
         };
 

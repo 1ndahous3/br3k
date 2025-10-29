@@ -79,14 +79,11 @@ impl NtDllApi {
         unsafe {
             let proc = CString::new(proc_name).unwrap();
             let address = GetProcAddress(module, proc.as_ptr() as _);
-            if address.is_none() {
-                log::error!(
-                    "Unable to get address of \"{}\" from ntdll.dll",
-                    proc_name.to_string()
-                );
-                None
+            if let Some(address) = address {
+                Some(mem::transmute_copy(&address))
             } else {
-                Some(mem::transmute_copy(&address.unwrap()))
+                log::error!("Unable to get address of \"{proc_name}\" from ntdll.dll");
+                None
             }
         }
     }
@@ -198,14 +195,11 @@ impl Win32uApi {
         unsafe {
             let proc = CString::new(proc_name).unwrap();
             let address = GetProcAddress(module, proc.as_ptr() as _);
-            if address.is_none() {
-                log::error!(
-                    "Unable to get address of \"{}\" from win32u.dll",
-                    proc_name.to_string()
-                );
-                None
+            if let Some(address) = address {
+                Some(mem::transmute_copy(&address))
             } else {
-                Some(mem::transmute_copy(&address.unwrap()))
+                log::error!("Unable to get address of \"{proc_name}\" from win32u.dll");
+                None
             }
         }
     }
@@ -266,7 +260,7 @@ impl SysApiCtx {
     pub fn ntdll() -> &'static NtDllApi {
         unsafe {
             let api = SYSAPI.load(Ordering::Relaxed);
-            if api == ptr::null_mut() {
+            if api.is_null() {
                 panic!("SysApiCtx is not initialized");
             }
 
@@ -277,7 +271,7 @@ impl SysApiCtx {
     pub fn win32u() -> &'static Win32uApi {
         unsafe {
             let api = SYSAPI.load(Ordering::Relaxed);
-            if api == ptr::null_mut() {
+            if api.is_null() {
                 panic!("SysApiCtx is not initialized");
             }
 
@@ -288,7 +282,7 @@ impl SysApiCtx {
     pub fn ntstatus_decoder() -> &'static HashMap<NTSTATUS, &'static str> {
         unsafe {
             let api = SYSAPI.load(Ordering::Relaxed);
-            if api == ptr::null_mut() {
+            if api.is_null() {
                 panic!("SysApiCtx is not initialized");
             }
 
@@ -306,8 +300,8 @@ impl SysApiCtx {
                 .borrow_mut();
 
             let address = proc_addresses.get(proc_name);
-            if address.is_some() {
-                return Ok(*address.unwrap());
+            if let Some(address) = address {
+                return Ok(*address);
             }
 
             let module = CString::new(module_name).unwrap();
@@ -323,11 +317,7 @@ impl SysApiCtx {
                     Ok(address_raw)
                 }
                 None => {
-                    log::error!(
-                        "Unable to get address of \"{}\" from {}",
-                        proc_name.to_string(),
-                        module_name.to_string()
-                    );
+                    log::error!("Unable to get address of \"{proc_name}\" from {module_name}");
                     Err(())
                 }
             }

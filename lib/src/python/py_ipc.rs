@@ -68,7 +68,7 @@ impl Ipc {
                 ))
             })?;
 
-        self.pipe_handle.replace(pipe_handle.into());
+        self.pipe_handle.replace(pipe_handle);
         Ok(())
     }
 
@@ -110,7 +110,7 @@ impl Ipc {
                 ))
             })?;
 
-        self.pipe_handle.replace(pipe_handle.into());
+        self.pipe_handle.replace(pipe_handle);
         Ok(())
     }
 }

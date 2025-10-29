@@ -10,5 +10,5 @@ fn main() {
     let seq = (today - epoch).num_days();
 
     let version = format!("{MAJOR_VERSION}.{seq}.{PATCH_VERSION}");
-    println!("cargo:rustc-env=BR3K_VERSION={}", version);
+    println!("cargo:rustc-env=BR3K_VERSION={version}");
 }

@@ -40,7 +40,7 @@ where
     D: FnOnce(R),
 {
     fn eq(&self, other: &R) -> bool {
-        self.resource.as_ref().map_or(false, |res| res == other)
+        self.resource.as_ref() == Some(other)
     }
 }
 

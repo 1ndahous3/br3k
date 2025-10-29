@@ -26,7 +26,7 @@ use windows_sys::Win32::System::Memory::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     SYNCHRONIZE,
-    FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, 
+    FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
     FILE_READ_DATA, FILE_WRITE_DATA,
     FILE_SHARE_READ, FILE_SHARE_WRITE
 };
@@ -143,7 +143,7 @@ pub fn create_process_parameters(
     name: &str,
 ) -> Result<UniqueProcessParameters> {
     unsafe {
-        let nt_name = format!("\\??\\{}", name);
+        let nt_name = format!("\\??\\{name}");
         let nt_name = U16CString::from_str(nt_name).unwrap();
         let nt_name = to_unicode_string(&nt_name);
 
@@ -187,7 +187,7 @@ fn wrap_process_parameters(
     fn process_parameters_destroy_deleter(
         process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS,
     ) {
-        let _ = destroy_process_parameters(process_parameters);
+        destroy_process_parameters(process_parameters);
     }
     UniqueResource::new(process_parameters, process_parameters_destroy_deleter)
 }
@@ -195,7 +195,7 @@ fn wrap_process_parameters(
 // ProcessHandle, ThreadHandle
 pub fn create_user_process(name: &str, suspended: bool) -> Result<(UniqueHandle, UniqueHandle)> {
     unsafe {
-        let nt_name = format!("\\??\\{}", name);
+        let nt_name = format!("\\??\\{name}");
         let nt_name = U16CString::from_str(nt_name).unwrap();
         let nt_name = to_unicode_string(&nt_name);
 
@@ -261,8 +261,7 @@ pub fn create_user_process(name: &str, suspended: bool) -> Result<(UniqueHandle,
         if !status.is_ok() {
             if status.0 == ntstatus::STATUS_OBJECT_PATH_INVALID {
                 log::warn!(
-                    "the process \"{}\" probably has an IFEO key without a 'Debugger' value",
-                    name
+                    "the process \"{name}\" probably has an IFEO key without a 'Debugger' value"
                 );
             }
 
@@ -359,8 +358,10 @@ pub fn get_process_wow64_info(process_handle: HANDLE) -> Result<bool> {
 
 pub fn find_process(name: &str) -> Result<u32> {
     unsafe {
-        let mut entry = PROCESSENTRY32W::default();
-        entry.dwSize = size_of::<PROCESSENTRY32W>() as _;
+        let entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as _,
+            ..Default::default()
+        };
 
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot.is_null() {
@@ -808,8 +809,6 @@ pub fn allocate_virtual_memory(
     allocation_type: ULONG,
 ) -> Result<PVOID> {
     unsafe {
-        let base_address = base_address;
-        let size = size;
 
         let status = if api_ctx::ntdll().NtAllocateVirtualMemoryEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtAllocateVirtualMemoryEx.unwrap()(
@@ -844,8 +843,10 @@ pub fn create_section(size: usize) -> Result<UniqueHandle> {
     unsafe {
         let section_handle: HANDLE = ptr::null_mut();
 
-        let mut maximum_size = ntwin::LARGE_INTEGER::default();
-        maximum_size.bindgen_union_field = size as _;
+        let maximum_size = ntwin::LARGE_INTEGER {
+            bindgen_union_field: size as _,
+            ..Default::default()
+        };
 
         let status = if api_ctx::ntdll().NtCreateSectionEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtCreateSectionEx.unwrap()(
@@ -934,8 +935,6 @@ pub fn map_view_of_section(
     base_address: PVOID,
 ) -> Result<PVOID> {
     unsafe {
-        let base_address = base_address;
-        let size = size;
 
         let status = if api_ctx::ntdll().NtMapViewOfSectionEx.is_some() {
             NTSTATUS(api_ctx::ntdll().NtMapViewOfSectionEx.unwrap()(
@@ -1001,8 +1000,6 @@ pub fn protect_virtual_memory(
     process_handle: HANDLE,
 ) -> Result<()> {
     unsafe {
-        let base_address = base_address;
-        let size = size;
 
         let new_protect = protect;
 
@@ -1089,7 +1086,7 @@ where
 
 pub fn create_transaction(path: &str) -> Result<UniqueHandle> {
     unsafe {
-        let nt_path = format!("\\??\\{}", path);
+        let nt_path = format!("\\??\\{path}");
         let nt_path = U16CString::from_str(nt_path).unwrap();
         let nt_path = to_unicode_string(&nt_path);
 
@@ -1193,7 +1190,7 @@ pub fn create_event() -> Result<UniqueHandle> {
 
 pub fn create_named_pipe(name: &str) -> Result<UniqueHandle> {
     unsafe {
-        let nt_name = format!("\\Device\\NamedPipe\\{}", name);
+        let nt_name = format!("\\Device\\NamedPipe\\{name}");
         let nt_name = U16CString::from_str(nt_name).unwrap();
         let nt_name = to_unicode_string(&nt_name);
 
@@ -1236,7 +1233,7 @@ pub fn create_named_pipe(name: &str) -> Result<UniqueHandle> {
 
 pub fn open_named_pipe(name: &str) -> Result<UniqueHandle> {
     unsafe {
-        let nt_name = format!("\\Device\\NamedPipe\\{}", name);
+        let nt_name = format!("\\Device\\NamedPipe\\{name}");
         let nt_name = U16CString::from_str(nt_name).unwrap();
         let nt_name = to_unicode_string(&nt_name);
 
@@ -1273,7 +1270,7 @@ pub fn open_named_pipe(name: &str) -> Result<UniqueHandle> {
 
 pub fn open_file(path: &str) -> Result<UniqueHandle> {
     unsafe {
-        let nt_path = format!("\\??\\{}", path);
+        let nt_path = format!("\\??\\{path}");
         let nt_path = U16CString::from_str(nt_path).unwrap();
         let nt_path = to_unicode_string(&nt_path);
 
@@ -1316,7 +1313,7 @@ pub fn create_file(
     size: usize,
 ) -> Result<UniqueHandle> {
     unsafe {
-        let nt_path = format!("\\??\\{}", path);
+        let nt_path = format!("\\??\\{path}");
         let nt_path = U16CString::from_str(nt_path).unwrap();
         let nt_path = to_unicode_string(&nt_path);
 
@@ -1330,8 +1327,10 @@ pub fn create_file(
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
         let file_handle: HANDLE = ptr::null_mut();
 
-        let mut allocation_size = ntwin::LARGE_INTEGER::default();
-        allocation_size.bindgen_union_field = size as _;
+        let allocation_size = ntwin::LARGE_INTEGER {
+            bindgen_union_field: size as _,
+            ..Default::default()
+        };
 
         let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
             addr_of!(file_handle) as _,

@@ -27,7 +27,7 @@ impl Constructor for Pdb {
     fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
 
         let pdb = crate::pdb::Pdb::init(args.filepath.as_str())
-            .map_err(|e| vm.new_value_error(format!("Failed to initialize PDB: {}", e)))?;
+            .map_err(|e| vm.new_value_error(format!("Failed to initialize PDB: {e}")))?;
 
         Self {
             pdb: pdb.into()
@@ -60,7 +60,7 @@ impl Pdb {
         let mut pdb = self.pdb.borrow_mut();
 
         let rva = pdb.get_symbol_rva(args.name.as_str())
-            .map_err(|e| vm.new_value_error(format!("Failed to get symbol RVA: {}", e)))?;
+            .map_err(|e| vm.new_value_error(format!("Failed to get symbol RVA: {e}")))?;
 
         Ok(rva)
     }
@@ -71,7 +71,7 @@ impl Pdb {
         let mut pdb = self.pdb.borrow_mut();
 
         let rva = pdb.get_field_offset(args.struct_name.as_str(), args.field_name.as_str())
-            .map_err(|e| vm.new_value_error(format!("Failed to get struct field offset: {}", e)))?;
+            .map_err(|e| vm.new_value_error(format!("Failed to get struct field offset: {e}")))?;
 
         Ok(rva)
     }

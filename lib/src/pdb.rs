@@ -179,14 +179,14 @@ pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> std::result::Result<String
 
             let pdb_filename = CStr::from_ptr(cv_info.pdb_file_name.as_ptr() as _).to_string_lossy();
             let pdb_extention_path = format!("{}/{:#}{}/{}", pdb_filename, cv_info.signature, cv_info.age, pdb_filename);
-            let pdb_filepath = format!("{}/{}", folder_path, pdb_filename);
-            let url = format!("{}{}", SYMBOL_SERVER, pdb_extention_path);
+            let pdb_filepath = format!("{folder_path}/{pdb_filename}");
+            let url = format!("{SYMBOL_SERVER}{pdb_extention_path}");
 
-            log::info!("PDB URL: {}", url);
+            log::info!("PDB URL: {url}");
             log::info!("downloading, it can take a while...");
 
             let response = reqwest::blocking::get(&url).map_err(|e| {
-                log::error!("unable to download PDB: {}", e);
+                log::error!("unable to download PDB: {e}");
                 exe::Error::IoError(std::io::ErrorKind::NetworkUnreachable.into())
             })?;
 
@@ -196,15 +196,15 @@ pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> std::result::Result<String
             }
 
             let mut file = fs::File::create(&pdb_filepath).map_err(|e| {
-                log::error!("unable to create PDB file: {}", e);
+                log::error!("unable to create PDB file: {e}");
                 exe::Error::IoError(std::io::ErrorKind::Other.into())
             })?;
 
             file.write_all(&response.bytes().map_err(|e| {
-                log::error!("unable to read response body: {}", e);
+                log::error!("unable to read response body: {e}");
                 exe::Error::IoError(std::io::ErrorKind::Other.into())
             })?).map_err(|e| {
-                log::error!("unable to write to PDB file: {}", e);
+                log::error!("unable to write to PDB file: {e}");
                 exe::Error::IoError(std::io::ErrorKind::Other.into())
             })?;
 

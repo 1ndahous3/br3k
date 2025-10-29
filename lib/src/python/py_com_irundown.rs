@@ -109,10 +109,12 @@ fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> result::Result<*mut 
             return Err(hr);
         }
 
-        let mut obj_ref: OBJREF = Default::default();
-        obj_ref.signature = OBJREF_SIGNATURE;
-        obj_ref.flags = OBJREF_STANDARD;
-        obj_ref.iid = mem::transmute::<GUID, windows_sys::core::GUID>(IID_IRundown);
+        let mut obj_ref = OBJREF {
+            signature: OBJREF_SIGNATURE,
+            flags: OBJREF_STANDARD,
+            iid: mem::transmute::<GUID, windows_sys::core::GUID>(IID_IRundown),
+            ..Default::default()
+        };
 
         let u_standard = obj_ref.u_objref.u_standard.as_mut();
         u_standard.std.flags = 0;
@@ -173,7 +175,7 @@ impl ComIRundown {
                 ))
             })?;
 
-            let pages_cnt = palloc._pgalloc._cPages as usize;
+            let pages_cnt = palloc._pgalloc._cPages;
             let pages_size = pages_cnt * size_of::<ULONG_PTR>();
 
             let pages: Vec<ULONG_PTR> = vec![0; pages_cnt];
@@ -211,7 +213,7 @@ impl ComIRundown {
                 for j in 0..ipid_cnt {
                     let entry = &ipid_entries_raw[j];
 
-                    if entry.pOXIDEntry == ptr::null_mut() || entry.dwFlags == 0 {
+                    if entry.pOXIDEntry.is_null() || entry.dwFlags == 0 {
                         continue;
                     }
 
@@ -324,8 +326,8 @@ impl ComIRundown {
                     server_ctx_addr = ole_tls_data.pCurrentContext;
                 }
 
-                if server_ctx_addr == ptr::null_mut() {
-                    if self.global_ctx_addr == ptr::null_mut() {
+                if server_ctx_addr.is_null() {
+                    if self.global_ctx_addr.is_null() {
                         memory.read_memory(
                             self.ole32_address.add(self.ole32_emptyctx_rva) as _,
                             addr_of!(self.global_ctx_addr) as _,
@@ -341,10 +343,12 @@ impl ComIRundown {
                     server_ctx_addr = self.global_ctx_addr;
                 }
 
-                let mut params: XAptCallback = Default::default();
-                params.pServerCtx = server_ctx_addr as _;
-                params.pfnCallback = args.ep as _;
-                params.pParam = args.arg1 as _;
+                let mut params = XAptCallback {
+                    pServerCtx: server_ctx_addr as _,
+                    pfnCallback: args.ep as _,
+                    pParam: args.arg1 as _,
+                    ..Default::default()
+                };
 
                 if self.ole32_secret == GUID::default() {
                     memory.read_memory(

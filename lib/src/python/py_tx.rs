@@ -49,7 +49,7 @@ impl Transaction {
             ))
         })?;
 
-        self.handle.replace(handle.into());
+        self.handle.replace(handle);
 
         Ok(())
     }

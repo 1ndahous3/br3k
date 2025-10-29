@@ -34,7 +34,7 @@ pub enum ProcessMemoryStrategy {
 
 impl fmt::Display for ProcessMemoryStrategy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -119,27 +119,27 @@ impl ProcessMemory {
 
         let pdb_path = pdb::download_pdb(&kernel_pe, fs::get_temp_folder().as_str())
             .map_err(|e| {
-                log::error!("Failed to download PDB: {}", e);
+                log::error!("Failed to download PDB: {e}");
             })?;
 
         let mut pdb = pdb::Pdb::init(pdb_path.as_str())
             .map_err(|e| {
-                log::error!("Failed to initialize PDB: {}", e);
+                log::error!("Failed to initialize PDB: {e}");
             })?;
 
         let kdump = kdump::KernelDump::new(dump_filepath, &mut pdb)
             .map_err(|e| {
-                log::error!("Failed to parse kernel dump: {}", e);
+                log::error!("Failed to parse kernel dump: {e}");
             })?;
 
         let processes = kdump.get_processes()
             .map_err(|e| {
-                log::error!("Failed to get processes from kernel dump: {}", e);
+                log::error!("Failed to get processes from kernel dump: {e}");
             })?;
 
         let process = processes.iter().find(|p| p.pid == pid);
         if process.is_none() {
-            log::error!("Failed to find process with pid: {}", pid);
+            log::error!("Failed to find process with pid: {pid}");
             return Err(());
         }
 
@@ -269,7 +269,7 @@ impl ProcessMemory {
                     kdump.read_memory(dst, kdump_process, base_addr_remote.add(offset) as _)
                         .map_err(
                             |e| {
-                                log::error!("Failed to read memory from kernel dump: {}", e);
+                                log::error!("Failed to read memory from kernel dump: {e}");
                                 NTSTATUS(ntstatus::STATUS_INVALID_ADDRESS)
                             }
                         )?;
@@ -451,11 +451,8 @@ impl ProcessOpenMethod {
                     EnumWindows(Some(EnumWindowsProc), &mut opts as *mut _ as _);
                 }
 
-                if opts.hWnd == ptr::null_mut() {
-                    log::error!(
-                        "Unable to find any windows for the process with PID {}",
-                        pid
-                    );
+                if opts.hWnd.is_null() {
+                    log::error!("Unable to find any windows for the process with PID {pid}");
                     return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL));
                 }
 
@@ -542,7 +539,7 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<UniqueHan
                 NTSTATUS(ntstatus::STATUS_PROCEDURE_NOT_FOUND)
             })?;
 
-        while thread_handle != ptr::null_mut() {
+        while !thread_handle.is_null() {
             let local_event = sysapi::create_event()?;
 
             let remote_event =
@@ -593,9 +590,10 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<UniqueHan
                 continue;
             }
 
-            let mut timeout = ntwin::LARGE_INTEGER::default();
-            timeout.bindgen_union_field = (-10_000_000i64) as u64;
-
+            let mut timeout = ntwin::LARGE_INTEGER {
+                bindgen_union_field: (-10_000_000i64) as u64,
+                ..Default::default()
+            };
 
             let status = NTSTATUS(ntobapi::NtWaitForSingleObject(
                 *local_event,

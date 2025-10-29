@@ -151,7 +151,7 @@ impl Constructor for Process {
             let pid_str = v.as_str();
             pid = pid_str
                 .parse::<u32>()
-                .map_err(|_| vm.new_value_error(format!("Invalid PID format: '{}'", pid_str)))?
+                .map_err(|_| vm.new_value_error(format!("Invalid PID format: '{pid_str}'")))?
         } else if let OptionalArg::Present(v) = args.name {
             let name_str = v.as_str();
             pid = sysapi::find_process(name_str).map_err(|e| {
@@ -281,7 +281,7 @@ impl Process {
                 ))
             })?;
 
-        self.process_handle.replace(handle.into());
+        self.process_handle.replace(handle);
 
         Ok(())
     }
@@ -309,8 +309,8 @@ impl Process {
                 ))
             })?;
 
-        self.process_handle.replace(process_handle.into());
-        self.thread_handle.replace(thread_handle.into());
+        self.process_handle.replace(process_handle);
+        self.thread_handle.replace(thread_handle);
 
         self.pid.replace(basic_info.UniqueProcessId as _);
 
@@ -331,7 +331,7 @@ impl Process {
             ))
         })?;
 
-        self.process_handle.replace(process_handle.into());
+        self.process_handle.replace(process_handle);
 
         Ok(())
     }
@@ -362,8 +362,7 @@ impl Process {
 
         if memory.is_err() {
             return Err(vm.new_value_error(format!(
-                "Failed to initialize memory strategy: {:?}",
-                memory_strategy
+                "Failed to initialize memory strategy: {memory_strategy:?}"
             )));
         }
 
@@ -439,11 +438,10 @@ impl Process {
                 api_strategy::thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
             }
         }
-        .or_else(|e| {
-            Err(vm.new_system_error(format!(
-                "Unable to set thread entry point: {}",
-                sysapi::ntstatus_decode(e)
-            )))
+        .map_err(|e| {
+            vm.new_system_error(format!(
+                "Unable to set thread entry point: {}", sysapi::ntstatus_decode(e)
+            ))
         })?;
 
         Ok(())
@@ -651,7 +649,7 @@ impl Process {
                     ))
                 })?;
 
-            if (*(*proc_params)).Environment == ptr::null_mut() {
+            if (*(*proc_params)).Environment.is_null() {
                 let mut env_memory = memory.clone();
                 env_memory
                     .create_write_memory_fixup_addr(
@@ -697,8 +695,7 @@ impl Process {
                 new_mem_image.write(image_base_offset, base_address.to_le_bytes())
                     .map_err(|e| {
                         vm.new_system_error(format!(
-                            "Unable to write image base address: {}",
-                            e
+                            "Unable to write image base address: {e}"
                         ))
                     })?;
             },
@@ -711,8 +708,7 @@ impl Process {
                 new_mem_image.write(image_base_offset, base_address.to_le_bytes())
                     .map_err(|e| {
                         vm.new_system_error(format!(
-                            "Unable to write image base address: {}",
-                            e
+                            "Unable to write image base address: {e}"
                         ))
                     })?;
             }
@@ -722,8 +718,7 @@ impl Process {
         reloc_dir.relocate(&mut new_mem_image, base_address as _)
             .map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to relocate memory image: {}",
-                    e
+                    "Unable to relocate memory image: {e}"
                 ))
             })?;
 

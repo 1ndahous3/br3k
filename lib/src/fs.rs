@@ -27,7 +27,7 @@ pub enum FsFileMode {
 
 impl fmt::Display for FsFileMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -61,7 +61,7 @@ pub enum FsSectionMode {
 
 impl fmt::Display for FsSectionMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

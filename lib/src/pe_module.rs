@@ -16,7 +16,7 @@ pub fn get_module_handle(module_name: &CStr) -> Option<HMODULE> {
     }
 }
 
-pub fn get_module_text_section<'a>(module_data: PVOID) -> &'static[u8] {
+pub fn get_module_text_section(module_data: PVOID) -> &'static[u8] {
     unsafe {
         let pe = PtrPE::from_memory(module_data as _).unwrap();
 
@@ -29,7 +29,7 @@ pub fn get_module_text_section<'a>(module_data: PVOID) -> &'static[u8] {
     }
 }
 
-pub fn find_code_in_module_data<'a>(module_data: PVOID, code: &[u8]) -> Option<&'static[u8]> {
+pub fn find_code_in_module_data(module_data: PVOID, code: &[u8]) -> Option<&'static[u8]> {
     let section_data = get_module_text_section(module_data);
     section_data
         .windows(code.len())
@@ -37,7 +37,7 @@ pub fn find_code_in_module_data<'a>(module_data: PVOID, code: &[u8]) -> Option<&
         .map(|index| &section_data[index..index + code.len()])
 }
 
-pub fn find_code_in_module<'a>(module_name: &str, code: &[u8]) -> Option<&'static[u8]> {
+pub fn find_code_in_module(module_name: &str, code: &[u8]) -> Option<&'static[u8]> {
     let module_name = CString::new(module_name).unwrap();
     let handle = get_module_handle(module_name.as_ref()).unwrap();
 

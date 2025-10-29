@@ -191,7 +191,7 @@ impl KernelDump {
             .parser
             .virt_read_struct(header.ps_active_process_head.into())?;
 
-        let mut va_current_process = ps_active_process_head.Flink as u64;
+        let mut va_current_process = ps_active_process_head.Flink;
         while va_current_process != header.ps_active_process_head {
             let mut process = Process::default();
 
@@ -217,10 +217,7 @@ impl KernelDump {
                 match self.parser.virt_read_struct(va_current_process.into()) {
                     Ok(entry) => entry,
                     Err(_) => {
-                        log::error!(
-                            "Failed to read process entry at VA: {:#x}",
-                            va_current_process
-                        );
+                        log::error!("Failed to read process entry at VA: {va_current_process:#x}");
                         return Ok(processes);
                     }
                 };
