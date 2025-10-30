@@ -92,6 +92,7 @@ impl Default for Vm {
     fn default() -> Self {
         let interpreter = Interpreter::with_init(Default::default(), |vm| {
             vm.add_frozen(rustpython_pylib::FROZEN_STDLIB);
+            vm.add_native_modules(rustpython_stdlib::get_module_inits());
 
             let br3k_module = br3k::make_module(vm);
 

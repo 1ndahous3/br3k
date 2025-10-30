@@ -5,6 +5,7 @@ edition = "2024"
 [dependencies]
 rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", branch = "main", features = ["freeze-stdlib"] }
 rustpython-pylib = { git = "https://github.com/RustPython/RustPython.git", branch = "main", features = ["freeze-stdlib"] }
+rustpython-stdlib = { git = "https://github.com/RustPython/RustPython.git", branch = "main" }
 log = "0.4"
 strum = "0.27"
 strum_macros = "0.27"
