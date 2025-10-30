@@ -17,8 +17,7 @@ static LOGGER: OnceLock<Br3kLogger> = OnceLock::new();
 
 struct Br3kLogger {
     log_console: bool,
-    log_file: bool,
-    file: Mutex<File>,
+    file: Option<Mutex<File>>,
 }
 
 impl Log for Br3kLogger {
@@ -36,10 +35,10 @@ impl Log for Br3kLogger {
             let _ = io::stdout().write_all(line.as_bytes());
         }
 
-        if self.log_file {
+        if let Some(file) = &self.file {
             let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
             let line_f = format!("[{}] [{:<5}] {}\n", ts, record.level(), record.args());
-            if let Ok(mut f) = self.file.lock() {
+            if let Ok(mut f) = file.lock() {
                 let _ = f.write_all(line_f.as_bytes());
             }
         }
@@ -50,8 +49,8 @@ impl Log for Br3kLogger {
             let _ = io::stdout().flush();
         }
 
-        if self.log_file {
-            if let Ok(mut f) = self.file.lock() {
+        if let Some(file) = &self.file {
+            if let Ok(mut f) = file.lock() {
                 let _ = f.flush();
             }
         }
@@ -60,32 +59,34 @@ impl Log for Br3kLogger {
 
 pub fn init(log_console: bool, log_file: bool) {
 
-    let exe_path = std::env::current_exe().expect("exe path");
-    let process_name = exe_path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("process");
-
-    let pid = std::process::id();
-    let log_path= PathBuf::from(format!("{}_br3k_{}.log", process_name, pid));
-
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .expect("open log");
-
-    let logger = Br3kLogger {
-        file: Mutex::new(file),
-        log_console,
-        log_file,
+    let mut logger = Br3kLogger {
+        file: None,
+        log_console
     };
+
+    if log_file {
+        let exe_path = std::env::current_exe().expect("exe path");
+        let process_name = exe_path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("process");
+
+        let pid = std::process::id();
+        let log_path = PathBuf::from(format!("{}_br3k_{}.log", process_name, pid));
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .expect("open log");
+
+        logger.file = Mutex::new(file).into();
+        println!("Logging to file: {}", log_path.display());
+    }
 
     LOGGER.set(logger).ok();
 
     log::set_logger(LOGGER.get().expect("logger set")).unwrap();
     log::set_max_level(LevelFilter::Info);
-
-    println!("Logging to file: {}", log_path.display());
 }
 
 pub fn log_header() {
