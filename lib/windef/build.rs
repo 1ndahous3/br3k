@@ -9,7 +9,7 @@ fn main() {
         ("_WIN32", None),
         ("_WIN64", None),
         ("PHNT_INLINE_FREE_FORWARDERS", None),
-        ("PHNT_VERSION", Some("PHNT_WIN11_24H2")),
+        ("PHNT_VERSION", Some("PHNT_WINDOWS_11_24H2")),
         ("_MSC_VER", Some("1900")),
     ];
 
@@ -193,22 +193,23 @@ fn generate_pfn_types(file_path: &PathBuf) {
         .expect("Failed to read generated file");
 
     let fn_regex = Regex::new(
-        r#"unsafe extern "C" \{\s*pub fn ([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*((?:[^)]*\n?)*?)\s*\)\s*->\s*([^;{]+);"#
+        r#"pub fn (Nt|Rtl|Pss)([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*((?:[^)]*\n?)*?)\s*\)\s*->\s*([^;{]+);"#
     ).unwrap();
 
     let mut pfn_types = Vec::new();
 
     for cap in fn_regex.captures_iter(&content) {
-        let fn_name = &cap[1];
-        let params = cap[2].trim().replace('\n', " ").replace("  ", " ");
-        let return_type = cap[3].trim();
+        let fn_name_prefix = &cap[1];
+        let fn_name_suffix = &cap[2];
+        let params = cap[3].trim().replace('\n', " ").replace("  ", " ");
+        let return_type = cap[4].trim();
 
         if params.contains("&self") || params.contains("&mut self") {
             continue;
         }
 
         let pfn_type = format!(
-            "pub type PFN_{fn_name} = unsafe extern \"C\" fn({params}) -> {return_type};"
+            "pub type PFN_{fn_name_prefix}{fn_name_suffix} = unsafe extern \"C\" fn({params}) -> {return_type};"
         );
         pfn_types.push(pfn_type);
     }
