@@ -1,3 +1,7 @@
+#![feature(panic_update_hook)]
+use std::panic;
+use std::backtrace;
+
 use std::thread;
 use std::time::Duration;
 
@@ -23,6 +27,17 @@ extern "system" fn DllMain(
 {
     match call_reason {
         DLL_PROCESS_ATTACH => {
+
+            unsafe { std::env::set_var("RUST_BACKTRACE", "1"); }
+            panic::update_hook(move |prev, info| {
+                let backtrace = backtrace::Backtrace::capture();
+                log::error!("Panic: {info}");
+                log::error!("Backtrace:\n {backtrace}");
+                prev(info);
+            });
+
+            //
+
             logging::init(true, true);
             logging::log_header();
 
