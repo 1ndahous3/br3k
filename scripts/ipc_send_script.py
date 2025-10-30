@@ -1,5 +1,5 @@
 import br3k
-from br3k import ProcessMemoryStrategy
+from br3k import ProcessVmStrategy
 
 BR3K_CLI_FILEPATH = "path\\to\\br3k-cli.exe"
 SCRIPT_FILEPATH = "path\\to\\script.py"
@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         image_path=BR3K_CLI_FILEPATH,
-        memory_strategy=ProcessMemoryStrategy.AllocateInAddr
+        memory_strategy=ProcessVmStrategy.AllocateInAddr
     )
 
     process.create_user(suspended=True)

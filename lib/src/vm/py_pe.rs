@@ -29,7 +29,7 @@ impl Constructor for Pe {
             }
 
             PtrPE::new_disk(args.data as _, args.size.unwrap())
-        } else if let OptionalArg::Present(size) = args.size {
+        } else if let Some(size) = args.size.present() {
             PtrPE::new_memory(args.data as _, size)
         } else {
             unsafe {

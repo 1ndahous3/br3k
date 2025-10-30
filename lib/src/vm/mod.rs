@@ -4,6 +4,7 @@ mod prelude;
 mod py_fs;
 mod py_pe;
 mod py_proc;
+mod py_thread;
 mod py_ipc;
 mod py_tx;
 mod py_pdb;
@@ -97,6 +98,7 @@ impl Default for Vm {
             let module_classes = [
                 ("Handle", Handle::make_class(&vm.ctx)),
                 ("Process", py_proc::Process::make_class(&vm.ctx)),
+                ("Thread", py_thread::Thread::make_class(&vm.ctx)),
                 ("Ipc", py_ipc::Ipc::make_class(&vm.ctx)),
                 ("FileMapping", py_fs::FileMapping::make_class(&vm.ctx)),
                 ("Pe", py_pe::Pe::make_class(&vm.ctx)),
@@ -123,11 +125,12 @@ impl Default for Vm {
 
 impl Vm {
     fn register_enums(vm: &VirtualMachine, module: &PyRef<PyModule>) {
-        register_enum!(vm, module, api_strategy::ProcessMemoryStrategy);
-        register_enum!(vm, module, api_strategy::ProcessOpenMethod);
+        register_enum!(vm, module, api_strategy::ProcessVmStrategy);
+        register_enum!(vm, module, api_strategy::ProcessOpenStrategy);
+        register_enum!(vm, module, api_strategy::ThreadOpenStrategy);
         register_enum!(vm, module, fs::FsFileMode);
         register_enum!(vm, module, fs::FsSectionMode);
-    }    
+    }
 
     pub fn execute_script(&self, script: &str, script_path: Option<String>) -> Result<(), String> {
         self.interpreter

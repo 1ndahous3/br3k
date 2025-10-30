@@ -1,14 +1,17 @@
 import br3k
-from br3k import ProcessMemoryStrategy
+from br3k import ProcessVmStrategy
+
+ORIGINAL_IMAGE_FILEPATH = "C:\\Windows\\System32\\notepad.exe"
+INJECTED_IMAGE_FILEPATH = "C:\\Windows\\System32\\calc.exe"
 
 if __name__ == "__main__":
 
     print("Script: Inject via process hollowing")
     print()
 
-    br3k.init_sysapi(ntdll_copy=True)
+    br3k.init_sysapi()
 
-    image = br3k.FileMapping("C:\\Windows\\System32\\notepad.exe")
+    image = br3k.FileMapping(ORIGINAL_IMAGE_FILEPATH)
     pe = br3k.Pe(
         data=image.data,
         size=image.size,
@@ -17,8 +20,8 @@ if __name__ == "__main__":
     mem_image = pe.build_mem_image()
 
     process = br3k.Process(
-        image_path="C:\\Windows\\System32\\calc.exe",
-        memory_strategy=ProcessMemoryStrategy.AllocateInAddr
+        image_path=INJECTED_IMAGE_FILEPATH,
+        memory_strategy=ProcessVmStrategy.AllocateInAddr
     )
     process.create_user(suspended=True)
     process.init_memory()
@@ -26,7 +29,8 @@ if __name__ == "__main__":
     ep = process.get_memory_remote_address()
     process.write_mem_image(mem_image)
 
-    process.set_thread_ep(new_thread=True, ep=ep)
-    process.resume_thread()
+    thread = process.main_thread
+    thread.set_ep(new_thread=True, ep=ep)
+    thread.resume()
 
     br3k.script_success()

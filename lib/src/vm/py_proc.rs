@@ -5,13 +5,12 @@ use crate::sysapi;
 
 use vm::api_strategy;
 use vm::py_module::Handle;
+use vm::py_thread::Thread;
 
 use windef::{ntrtl, ntpsapi, ntpebteb};
 
 use windows_sys::Win32::Foundation::HANDLE;
-use windows_sys::Win32::System::Threading::{
-    PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS,
-};
+use windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS;
 
 use exe::{PE, Buffer, VecPE, RelocationDirectory, types, headers};
 use windef::ntpebteb::PEB;
@@ -105,11 +104,12 @@ pub struct Process {
     pub image_path: RefCell<Option<String>>,
     pub section_handle: RefCell<Option<HANDLE>>,
 
-    pub open_method: RefCell<Option<api_strategy::ProcessOpenMethod>>,
-    pub memory_strategy: RefCell<Option<api_strategy::ProcessMemoryStrategy>>,
+    pub process_open_strategy: RefCell<Option<api_strategy::ProcessOpenStrategy>>,
+    pub thread_open_strategy: RefCell<Option<api_strategy::ThreadOpenStrategy>>,
+    pub memory_strategy: RefCell<Option<api_strategy::ProcessVmStrategy>>,
 
     pub process_handle: RefCell<sysapi::UniqueHandle>,
-    pub thread_handle: RefCell<sysapi::UniqueHandle>,
+    pub thread: RefCell<Option<PyRef<Thread>>>,
     pub memory: RefCell<Option<api_strategy::ProcessMemory>>,
 }
 
@@ -126,7 +126,9 @@ pub struct ProcessNewArgs {
     #[pyarg(named, optional)]
     memory_strategy: OptionalArg<u32>,
     #[pyarg(named, optional)]
-    open_method: OptionalArg<u32>,
+    process_open_strategy: OptionalArg<u32>,
+    #[pyarg(named, optional)]
+    thread_open_strategy: OptionalArg<u32>,
 }
 
 impl Constructor for Process {
@@ -137,23 +139,22 @@ impl Constructor for Process {
         let mut image_path: Option<String> = None;
         let mut section_handle: Option<HANDLE> = None;
 
-        if let OptionalArg::Present(v) = args.pid {
+        if let Some(v) = args.pid.present() {
             let pid_str = v.as_str();
             pid = pid_str
                 .parse::<u32>()
                 .map_err(|_| vm.new_value_error(format!("Invalid PID format: '{pid_str}'")))?
-        } else if let OptionalArg::Present(v) = args.name {
+        } else if let Some(v) = args.name.present() {
             let name_str = v.as_str();
             pid = sysapi::find_process(name_str).map_err(|e| {
                 vm.new_value_error(format!(
-                    "Unable to find process '{}': {}",
-                    name_str,
+                    "Unable to find process '{name_str}': {}",
                     sysapi::ntstatus_decode(e)
                 ))
             })?
-        } else if let OptionalArg::Present(v) = args.image_path {
+        } else if let Some(v) = args.image_path.present() {
             image_path = v.as_str().to_string().into()
-        } else if let OptionalArg::Present(v) = args.section_handle {
+        } else if let Some(v) = args.section_handle.present() {
             let s = *v.handle.get();
             section_handle = Some(s)
         } else {
@@ -166,17 +167,26 @@ impl Constructor for Process {
             .memory_strategy
             .into_option()
             .map(|v| {
-                api_strategy::ProcessMemoryStrategy::from_repr(v)
-                    .ok_or_else(|| vm.new_value_error("Invalid ProcessMemoryStrategy".to_string()))
+                api_strategy::ProcessVmStrategy::from_repr(v)
+                    .ok_or_else(|| vm.new_value_error("Invalid ProcessVmStrategy".to_string()))
             })
             .transpose()?;
 
-        let open_method = args
-            .open_method
+        let process_open_strategy = args
+            .process_open_strategy
             .into_option()
             .map(|v| {
-                api_strategy::ProcessOpenMethod::from_repr(v)
-                    .ok_or_else(|| vm.new_value_error("Invalid ProcessOpenMethod".to_string()))
+                api_strategy::ProcessOpenStrategy::from_repr(v)
+                    .ok_or_else(|| vm.new_value_error("Invalid ProcessOpenStrategy".to_string()))
+            })
+            .transpose()?;
+
+        let thread_open_strategy = args
+            .thread_open_strategy
+            .into_option()
+            .map(|v| {
+                api_strategy::ThreadOpenStrategy::from_repr(v)
+                    .ok_or_else(|| vm.new_value_error("Invalid ThreadOpenStrategy".to_string()))
             })
             .transpose()?;
 
@@ -185,9 +195,10 @@ impl Constructor for Process {
             image_path: image_path.into(),
             section_handle: section_handle.into(),
             memory_strategy: memory_strategy.into(),
-            open_method: open_method.into(),
+            process_open_strategy: process_open_strategy.into(),
+            thread_open_strategy: thread_open_strategy.into(),
             process_handle: sysapi::null_handle().into(),
-            thread_handle: sysapi::null_handle().into(),
+            thread: None.into(),
             memory: None.into(),
         }
         .into_ref_with_type(vm, cls)
@@ -217,25 +228,7 @@ pub struct CreateMemoryArgs {
     size: usize,
 }
 
-#[derive(FromArgs)]
-pub struct SetThreadEpArgs {
-    #[pyarg(any)]
-    new_thread: bool,
-    #[pyarg(any)]
-    ep: u64
-}
 
-#[derive(FromArgs)]
-pub struct CreateThreadArgs {
-    #[pyarg(any)]
-    ep: u64
-}
-
-#[derive(FromArgs)]
-pub struct OpenThreadArgs {
-    #[pyarg(any)]
-    tid: u32
-}
 
 #[derive(FromArgs)]
 pub struct WritePebProcParmsArgs {
@@ -255,14 +248,25 @@ pub struct WriteMemImageArgs {
 
 #[pyclass(with(Constructor))]
 impl Process {
+
+    #[pygetset]
+    fn main_thread(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+
+        let thread = self.thread.borrow_mut()
+            .as_mut()
+            .ok_or_else(|| vm.new_value_error("Process main thread is not opened".to_string()))?.clone();
+
+        Ok(thread.into())
+    }
+
     #[pymethod]
     fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let mut open_method = self.open_method.borrow_mut();
-        let open_method = open_method
+        let mut process_open_strategy = self.process_open_strategy.borrow_mut();
+        let process_open_strategy = process_open_strategy
             .as_mut()
             .ok_or_else(|| vm.new_value_error("Process open method is not set".to_string()))?;
 
-        let handle = open_method
+        let handle = process_open_strategy
             .open(*self.pid.borrow(), PROCESS_ALL_ACCESS)
             .map_err(|e| {
                 vm.new_system_error(format!(
@@ -277,8 +281,9 @@ impl Process {
     }
 
     #[pymethod]
-    fn create_user(&self, args: CreateUserArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let mut image_path = self.image_path.borrow_mut();
+    fn create_user(zelf: PyRef<Self>, args: CreateUserArgs, vm: &VirtualMachine) -> PyResult<()> {
+
+        let mut image_path = zelf.image_path.borrow_mut();
         let image_path = image_path
             .as_mut()
             .ok_or_else(|| vm.new_value_error("Process image path is not set".to_string()))?;
@@ -299,11 +304,20 @@ impl Process {
                 ))
             })?;
 
-        self.process_handle.replace(process_handle);
-        self.thread_handle.replace(thread_handle);
+        zelf.process_handle.replace(process_handle);
+        zelf.pid.replace(basic_info.UniqueProcessId as _);
 
-        self.pid.replace(basic_info.UniqueProcessId as _);
+        let py_handle = Handle {
+            handle: thread_handle
+        }.into_ref(&vm.ctx);
 
+        let py_thread = Thread {
+            process: zelf.clone(),
+            tid: None.into(),
+            handle: Some(py_handle.clone()).into()
+        }.into_ref(&vm.ctx);
+
+        zelf.thread.replace(py_thread.into());
         Ok(())
     }
 
@@ -336,16 +350,16 @@ impl Process {
         let process_handle = *self.process_handle.borrow().get();
 
         let memory = match memory_strategy {
-            api_strategy::ProcessMemoryStrategy::AllocateInAddr => {
+            api_strategy::ProcessVmStrategy::AllocateInAddr => {
                 api_strategy::ProcessMemory::init_allocate_in_addr(process_handle)
             }
-            api_strategy::ProcessMemoryStrategy::CreateSectionMap => {
+            api_strategy::ProcessVmStrategy::CreateSectionMap => {
                 api_strategy::ProcessMemory::init_create_section_map(process_handle)
             }
-            api_strategy::ProcessMemoryStrategy::CreateSectionMapLocalMap => {
+            api_strategy::ProcessVmStrategy::CreateSectionMapLocalMap => {
                 api_strategy::ProcessMemory::init_create_section_map_local_map(process_handle)
             }
-            api_strategy::ProcessMemoryStrategy::LiveDumpParse => {
+            api_strategy::ProcessVmStrategy::LiveDumpParse => {
                 api_strategy::ProcessMemory::init_live_dump_parse(*self.pid.borrow())
             }
         };
@@ -412,144 +426,7 @@ impl Process {
     //
 
     #[pymethod]
-    fn set_thread_ep(&self, args: SetThreadEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-
-        match (args.new_thread, self.is_x64(vm)?) {
-            (true, true) => {
-                api_strategy::new_thread_set_ep_x64(*self.thread_handle.borrow().get(), args.ep as _)
-            }
-            (true, false) => {
-                api_strategy::new_thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
-            }
-            (false, true) => {
-                api_strategy::thread_set_ep_x64(*self.thread_handle.borrow().get(), args.ep as _)
-            }
-            (false, false) => {
-                api_strategy::thread_set_ep_x86(*self.thread_handle.borrow().get(), args.ep as _)
-            }
-        }
-        .map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to set thread entry point: {}", sysapi::ntstatus_decode(e)
-            ))
-        })?;
-
-        Ok(())
-    }
-
-    #[pymethod]
-    fn create_thread(&self, args: CreateThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
-
-        let thread_handle = sysapi::create_thread(*self.process_handle.borrow().get(), args.ep as _)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to create thread: {}",
-                    sysapi::ntstatus_decode(e)
-                ))
-            })?;
-
-        self.thread_handle.replace(thread_handle);
-
-        //Ok(thread_handle as u32)
-        Ok(())
-    }
-
-    #[pymethod]
-    fn open_any_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let thread_handle = sysapi::open_next_thread(
-            *self.process_handle.borrow().get(),
-            ptr::null_mut(),
-            THREAD_ALL_ACCESS,
-        )
-        .map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to open thread: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
-
-        self.thread_handle.replace(thread_handle);
-
-        //Ok(thread_handle as u32)
-        Ok(())
-    }
-
-    #[pymethod]
-    fn open_thread(&self, args: OpenThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
-
-        let thread_handle = sysapi::open_thread(*self.pid.borrow(), args.tid, THREAD_ALL_ACCESS).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to open thread: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
-
-        self.thread_handle.replace(thread_handle);
-
-        //Ok(thread_handle as u32)
-        Ok(())
-    }
-
-    #[pymethod]
-    fn open_alertable_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let thread_handle = api_strategy::process_open_alertable_thread(
-            *self.process_handle.borrow().get(),
-        )
-        .map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to open alertable thread: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
-
-        self.thread_handle.replace(thread_handle);
-
-        //Ok(thread_handle as u32)
-        Ok(())
-    }
-
-    #[pymethod]
-    fn suspend_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        match sysapi::suspend_thread(*self.thread_handle.borrow().get()) {
-            Ok(()) => Ok(()),
-            Err(status) => Err(vm.new_system_error(format!(
-                "Failed to suspend thread: {}",
-                sysapi::ntstatus_decode(status)
-            ))),
-        }
-    }
-
-    #[pymethod]
-    fn resume_thread(&self, vm: &VirtualMachine) -> PyResult<()> {
-        match sysapi::resume_thread(*self.thread_handle.borrow().get()) {
-            Ok(()) => Ok(()),
-            Err(status) => Err(vm.new_system_error(format!(
-                "Failed to resume thread: {}",
-                sysapi::ntstatus_decode(status)
-            ))),
-        }
-    }
-
-    #[pymethod]
-    fn thread_queue_user_apc(&self, args: CreateThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
-
-        match sysapi::queue_apc_thread(
-            *self.thread_handle.borrow().get(),
-            args.ep as _,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-        ) {
-            Ok(()) => Ok(()),
-            Err(status) => Err(vm.new_system_error(format!(
-                "Unable to queue user APC: {}",
-                sysapi::ntstatus_decode(status)
-            ))),
-        }
-    }
-
-    #[pymethod]
-    fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
+    pub fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
         match sysapi::get_process_wow64_info(*self.process_handle.borrow().get()) {
             Ok(is_x64) => Ok(is_x64),
             Err(status) => Err(vm.new_system_error(format!(

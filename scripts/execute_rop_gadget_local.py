@@ -1,16 +1,18 @@
 import br3k
-from br3k import ProcessOpenMethod, ProcessMemoryStrategy
+from br3k import ProcessOpenStrategy, ProcessVmStrategy
+
+BR3K_CLI_PROCESS_NAME = "br3k-cli.exe"
 
 if __name__ == "__main__":
     print("Script: Execute shellcode locally (via ROP gadget)")
     print()
 
-    br3k.init_sysapi(ntdll_copy=True)
+    br3k.init_sysapi()
 
     process = br3k.Process(
-        name="br3k-cli.exe",
-        memory_strategy=ProcessMemoryStrategy.AllocateInAddr,
-        open_method=ProcessOpenMethod.OpenProcess
+        name=BR3K_CLI_PROCESS_NAME,
+        memory_strategy=ProcessVmStrategy.AllocateInAddr,
+        process_open_strategy=ProcessOpenStrategy.OpenProcess
     )
 
     process.open()

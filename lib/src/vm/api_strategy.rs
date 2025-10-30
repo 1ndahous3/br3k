@@ -29,14 +29,14 @@ use sysapi::UniqueHandle;
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
-pub enum ProcessMemoryStrategy {
+pub enum ProcessVmStrategy {
     AllocateInAddr,
     CreateSectionMap,
     CreateSectionMapLocalMap,
     LiveDumpParse,
 }
 
-impl fmt::Display for ProcessMemoryStrategy {
+impl fmt::Display for ProcessVmStrategy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self:?}")
     }
@@ -412,15 +412,17 @@ impl ProcessMemory {
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
-pub enum ProcessOpenMethod {
-    OpenProcess, /* = 1*/
+pub enum ProcessOpenStrategy {
+    OpenProcess,
     OpenProcessByHwnd,
 }
 
 #[allow(non_snake_case)]
 #[repr(C)]
+#[derive(Default)]
 struct EnumWindowsProcOpts {
     pub pid: u32,   // in
+    pub tid: u32,   // in
     pub hWnd: HWND, // out
 }
 
@@ -430,9 +432,10 @@ extern "system" fn EnumWindowsProc(hWnd: HWND, lParam: isize) -> i32 {
         let opts = &mut *(lParam as *mut EnumWindowsProcOpts);
         let mut pid: u32 = 0;
 
-        GetWindowThreadProcessId(hWnd, &mut pid);
+        let tid = GetWindowThreadProcessId(hWnd, &mut pid);
 
         if pid == opts.pid {
+            opts.tid = tid;
             opts.hWnd = hWnd;
             return FALSE;
         }
@@ -441,14 +444,15 @@ extern "system" fn EnumWindowsProc(hWnd: HWND, lParam: isize) -> i32 {
     }
 }
 
-impl ProcessOpenMethod {
+impl ProcessOpenStrategy {
     pub fn open(&self, pid: u32, access_mask: ACCESS_MASK) -> Result<UniqueHandle, NTSTATUS> {
         match self {
-            ProcessOpenMethod::OpenProcess => sysapi::open_process(pid, access_mask),
-            ProcessOpenMethod::OpenProcessByHwnd => {
+            ProcessOpenStrategy::OpenProcess => sysapi::open_process(pid, access_mask),
+            ProcessOpenStrategy::OpenProcessByHwnd => {
+
                 let mut opts = EnumWindowsProcOpts {
                     pid,
-                    hWnd: ptr::null_mut(),
+                    ..Default::default()
                 };
 
                 unsafe {
@@ -467,6 +471,53 @@ impl ProcessOpenMethod {
                     opts.hWnd,
                     PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_DUP_HANDLE,
                 )
+            }
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
+pub enum ThreadOpenStrategy {
+    ThreadOpenByTid,
+    ThreadOpenAnyNext,
+    ThreadOpenAnyByHwnd, // maybe only shell hwnd will be valid for the current process
+}
+
+#[derive(Default)]
+pub struct ThreadOpenArgs {
+    pub process_handle: Option<HANDLE>,
+    pub pid: Option<u32>,
+    pub tid: Option<u32>,
+}
+
+impl ThreadOpenStrategy {
+    pub fn open(&self, args: ThreadOpenArgs, access_mask: ACCESS_MASK) -> Result<UniqueHandle, NTSTATUS> {
+        match self {
+            ThreadOpenStrategy::ThreadOpenByTid =>
+                sysapi::open_thread(args.pid.unwrap(), args.tid.unwrap(), access_mask),
+            ThreadOpenStrategy::ThreadOpenAnyNext =>
+                sysapi::open_next_thread(args.process_handle.unwrap(), ptr::null_mut(), THREAD_ALL_ACCESS),
+            ThreadOpenStrategy::ThreadOpenAnyByHwnd => {
+                
+                let pid = args.pid.unwrap();
+
+                let mut opts = EnumWindowsProcOpts {
+                    pid,
+                    ..Default::default()
+                };
+
+                unsafe {
+                    EnumWindows(Some(EnumWindowsProc), &mut opts as *mut _ as _);
+                }
+
+                if opts.hWnd.is_null() {
+                    log::error!("Unable to find any windows for the process with PID {pid}");
+                    return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL));
+                }
+
+                log::debug!("Window found, HWND = 0x{:x}", opts.hWnd as usize);
+                sysapi::open_thread(opts.pid, opts.tid, access_mask)
             }
         }
     }

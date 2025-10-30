@@ -1,16 +1,18 @@
 import br3k
-from br3k import ProcessOpenMethod, ProcessMemoryStrategy
+from br3k import ProcessOpenStrategy, ProcessVmStrategy
+
+PROCESS_NAME = "notepad.exe"
 
 if __name__ == "__main__":
     print("Script: Inject via COM IRundown::DoCallback()")
     print()
 
-    br3k.init_sysapi(ntdll_copy=True)
+    br3k.init_sysapi()
 
     process = br3k.Process(
-        name="notepad.exe",
-        memory_strategy=ProcessMemoryStrategy.AllocateInAddr,
-        open_method=ProcessOpenMethod.OpenProcess
+        name=PROCESS_NAME,
+        memory_strategy=ProcessVmStrategy.AllocateInAddr,
+        process_open_strategy=ProcessOpenStrategy.OpenProcess
     )
 
     process.open()
