@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         section_handle=section_handle,
-        memory_strategy=ProcessVmStrategy.AllocateInAddr
+        process_vm_strategy=ProcessVmStrategy.AllocateInAddr
     )
 
     process.create()

@@ -106,7 +106,7 @@ pub struct Process {
 
     pub process_open_strategy: RefCell<Option<api_strategy::ProcessOpenStrategy>>,
     pub thread_open_strategy: RefCell<Option<api_strategy::ThreadOpenStrategy>>,
-    pub memory_strategy: RefCell<Option<api_strategy::ProcessVmStrategy>>,
+    pub process_vm_strategy: RefCell<Option<api_strategy::ProcessVmStrategy>>,
 
     pub process_handle: RefCell<sysapi::UniqueHandle>,
     pub thread: RefCell<Option<PyRef<Thread>>>,
@@ -124,7 +124,7 @@ pub struct ProcessNewArgs {
     #[pyarg(named, optional)]
     section_handle: OptionalArg<PyRef<Handle>>,
     #[pyarg(named, optional)]
-    memory_strategy: OptionalArg<u32>,
+    process_vm_strategy: OptionalArg<u32>,
     #[pyarg(named, optional)]
     process_open_strategy: OptionalArg<u32>,
     #[pyarg(named, optional)]
@@ -163,8 +163,8 @@ impl Constructor for Process {
             ));
         };
 
-        let memory_strategy = args
-            .memory_strategy
+        let process_vm_strategy = args
+            .process_vm_strategy
             .into_option()
             .map(|v| {
                 api_strategy::ProcessVmStrategy::from_repr(v)
@@ -194,7 +194,7 @@ impl Constructor for Process {
             pid: pid.into(),
             image_path: image_path.into(),
             section_handle: section_handle.into(),
-            memory_strategy: memory_strategy.into(),
+            process_vm_strategy: process_vm_strategy.into(),
             process_open_strategy: process_open_strategy.into(),
             thread_open_strategy: thread_open_strategy.into(),
             process_handle: sysapi::null_handle().into(),
@@ -342,14 +342,14 @@ impl Process {
 
     #[pymethod]
     fn init_memory(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let mut memory_strategy = self.memory_strategy.borrow_mut();
-        let memory_strategy = memory_strategy
+        let mut process_vm_strategy = self.process_vm_strategy.borrow_mut();
+        let process_vm_strategy = process_vm_strategy
             .as_mut()
-            .ok_or_else(|| vm.new_value_error("Memory strategy is not set".to_string()))?;
+            .ok_or_else(|| vm.new_value_error("Process VM strategy is not set".to_string()))?;
 
         let process_handle = *self.process_handle.borrow().get();
 
-        let memory = match memory_strategy {
+        let memory = match process_vm_strategy {
             api_strategy::ProcessVmStrategy::AllocateInAddr => {
                 api_strategy::ProcessMemory::init_allocate_in_addr(process_handle)
             }
@@ -366,7 +366,7 @@ impl Process {
 
         if memory.is_err() {
             return Err(vm.new_value_error(format!(
-                "Failed to initialize memory strategy: {memory_strategy:?}"
+                "Failed to initialize process vm strategy: {process_vm_strategy:?}"
             )));
         }
 

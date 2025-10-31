@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         name=BR3K_CLI_PROCESS_NAME,
-        memory_strategy=ProcessVmStrategy.AllocateInAddr,
+        process_vm_strategy=ProcessVmStrategy.AllocateInAddr,
         process_open_strategy=ProcessOpenStrategy.OpenProcess
     )
 

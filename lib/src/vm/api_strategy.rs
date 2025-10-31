@@ -212,7 +212,7 @@ impl ProcessMemory {
             }
             ProcessMemory::LiveDumpParse {
                 ..
-            } => panic!("LiveDumpParse is RO memory strategy")
+            } => panic!("LiveDumpParse is RO VM strategy ")
         }
     }
 
@@ -341,7 +341,7 @@ impl ProcessMemory {
             ProcessMemory::LiveDumpParse {
                 ..
             } => {
-                panic!("LiveDumpParse is RO memory strategy");
+                panic!("LiveDumpParse is RO vm strategy");
             }
         }
     }

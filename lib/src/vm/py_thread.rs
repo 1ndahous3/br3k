@@ -31,7 +31,9 @@ pub struct SetThreadEpArgs {
 #[derive(FromArgs)]
 pub struct CreateThreadArgs {
     #[pyarg(any)]
-    ep: u64
+    ep: u64,
+    #[pyarg(any, optional)]
+    arg: OptionalArg<u64>,
 }
 
 #[pyclass(module = false, name = "Thread")]
@@ -98,7 +100,16 @@ impl Thread {
             return Err(vm.new_system_error("Process is not opened"));
         }
 
-        let handle = sysapi::create_thread(*process_handle.get(), args.ep as _)
+        let arg = match args.arg.present() {
+            Some(arg) => Some(arg as PVOID),
+            None => None,
+        };
+
+        let handle = sysapi::create_thread(
+            *process_handle.get(),
+            args.ep as _,
+            arg
+        )
             .map_err(|e| {
                 vm.new_system_error(format!(
                     "Unable to create thread: {}", sysapi::ntstatus_decode(e)

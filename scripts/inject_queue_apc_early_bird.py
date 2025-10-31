@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         image_path=IMAGE_FILEPATH,
-        memory_strategy=ProcessVmStrategy.AllocateInAddr
+        process_vm_strategy=ProcessVmStrategy.AllocateInAddr
     )
 
     process.create_user(suspended=True)

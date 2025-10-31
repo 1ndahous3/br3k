@@ -6,6 +6,7 @@ use crate::sysapi_ctx::SysApiCtx as api_ctx;
 use crate::unique_resource::*;
 
 use path::PathBuf;
+use collections::HashMap;
 
 use windows::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows::Win32::System::Environment::GetCurrentDirectoryW;
@@ -31,10 +32,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_SHARE_READ, FILE_SHARE_WRITE
 };
 
-use windef::{
-    ntdef, ntexapi, ntioapi, ntmmapi, ntpebteb, ntseapi,
-    ntpsapi, ntrtl, ntstatus, ntwin, winbase
-};
+use windef::*;
 use winbase::{ULONG, NT_CURRENT_PROCESS};
 
 pub type Result<T> = result::Result<T, NTSTATUS>;
@@ -400,6 +398,37 @@ pub fn find_process(name: &str) -> Result<u32> {
     }
 }
 
+pub fn get_processes_pid_name() -> Result<HashMap<u32, String>> {
+    unsafe {
+        let entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as _,
+            ..Default::default()
+        };
+
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot.is_null() {
+            return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL));
+        }
+
+        if Process32FirstW(snapshot, addr_of!(entry) as _) == 0 {
+            return Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND));
+        }
+
+        let mut res = HashMap::<u32, String>::new();
+
+        loop {
+            if Process32NextW(snapshot, addr_of!(entry) as _) == 0 {
+                break;
+            }
+
+            let exe_name_u = U16CString::from_ptr_str(entry.szExeFile.as_ptr());
+            res.entry(entry.th32ProcessID).insert_entry(exe_name_u.to_string_lossy());
+        }
+
+        Ok(res)
+    }
+}
+
 pub fn open_process_by_hwnd(
     hwnd: HWND,
     access_mask: winbase::ACCESS_MASK,
@@ -599,6 +628,7 @@ fn create_thread_stack(
 pub fn create_thread(
     process_handle: HANDLE,
     start_address: PVOID,
+    arg: Option<PVOID>,
 ) -> Result<UniqueHandle> {
     unsafe {
         let thread_handle: HANDLE = ptr::null_mut();
@@ -609,6 +639,10 @@ pub fn create_thread(
         };
 
         let status = if api_ctx::ntdll().NtCreateThread.is_some() {
+            if arg.is_some() {
+                return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED));
+            }
+
             let client_id = allocate_virtual_memory(
                 size_of::<ntdef::CLIENT_ID>(),
                 PAGE_READWRITE,
@@ -652,13 +686,15 @@ pub fn create_thread(
                 false as _,
             ))
         } else {
+            let arg = arg.unwrap_or(ptr::null_mut());
+
             NTSTATUS(api_ctx::ntdll().NtCreateThreadEx.unwrap()(
                 addr_of!(thread_handle) as _,
                 THREAD_ALL_ACCESS,
                 addr_of!(object_attributes) as _,
                 process_handle,
                 start_address,
-                ptr::null_mut(),
+                arg,
                 0,
                 0,
                 0,
@@ -1521,5 +1557,105 @@ pub fn dump_live_system(
         } else {
             Ok(())
         }
+    }
+}
+
+pub fn get_process_handles(pid: u32) -> Result<Vec<HANDLE>> {
+    unsafe {
+        let data_size: ULONG = 0;
+        let mut data = Vec::<u8>::new();
+
+        loop {
+            let status = NTSTATUS(api_ctx::ntdll().NtQuerySystemInformation.unwrap()(
+                ntexapi::SYSTEM_INFORMATION_CLASS::SystemHandleInformation,
+                data.as_mut_ptr() as _,
+                data.len() as _,
+                addr_of!(data_size) as _,
+            ));
+
+            if status.is_ok() {
+                break;
+            }
+
+            if status.0 == ntstatus::STATUS_INFO_LENGTH_MISMATCH {
+                data.resize(data_size as usize, 0);
+                continue;
+            }
+
+            return Err(status);
+        }
+
+        let mut res = Vec::<HANDLE>::new();
+
+        let handle_info: ntexapi::PSYSTEM_HANDLE_INFORMATION = data.as_ptr() as _;
+        for i in 0..(*handle_info).NumberOfHandles {
+            let handle = (*handle_info).Handles.as_ptr().wrapping_add(i as usize);
+
+            if (*handle).UniqueProcessId as u32 == pid {
+                res.push((*handle).HandleValue as _);
+            }
+        }
+
+        Ok(res)
+    }
+}
+
+pub fn get_handle_info(handle: HANDLE) -> Result<(String, String)> {
+    unsafe {
+        let data_size: ULONG = 0;
+        let mut data = Vec::<u8>::new();
+
+        loop {
+            let status = NTSTATUS(api_ctx::ntdll().NtQueryObject.unwrap()(
+                handle,
+                ntobapi::OBJECT_INFORMATION_CLASS::ObjectNameInformation,
+                data.as_mut_ptr() as _,
+                data.len() as _,
+                addr_of!(data_size) as _,
+            ));
+
+            if status.is_ok() {
+                break;
+            }
+
+            if status.0 == ntstatus::STATUS_INFO_LENGTH_MISMATCH {
+                data.resize(data_size as usize, 0);
+                continue;
+            }
+
+            return Err(status);
+        }
+
+        let info = data.as_ptr() as ntobapi::POBJECT_NAME_INFORMATION;
+        let name = (*info).Name.to_u16cstring();
+
+        loop {
+            let status = NTSTATUS(api_ctx::ntdll().NtQueryObject.unwrap()(
+                handle,
+                ntobapi::OBJECT_INFORMATION_CLASS::ObjectTypeInformation,
+                data.as_mut_ptr() as _,
+                data.len() as _,
+                addr_of!(data_size) as _,
+            ));
+
+            if status.is_ok() {
+                break;
+            }
+
+            if status.0 == ntstatus::STATUS_INFO_LENGTH_MISMATCH {
+                data.resize(data_size as usize, 0);
+                continue;
+            }
+
+            return Err(status);
+        }
+
+        let info = data.as_ptr() as ntobapi::POBJECT_TYPE_INFORMATION;
+        let type_name = (*info).TypeName.to_u16cstring();
+
+        Ok((
+            name.to_string_lossy().to_string(),
+            type_name.to_string_lossy().to_string()
+        ))
     }
 }

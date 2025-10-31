@@ -2,14 +2,12 @@ use crate::prelude::*;
 use crate::sysapi;
 
 use std::collections::HashMap;
-// use std::sync::RwLock;
 use std::sync::atomic::{AtomicPtr, Ordering};
-
-use windef::{ntexapi, ntioapi, ntmmapi, ntobapi, ntpsapi, ntrtl, ntstatus, nttmapi, ntwin};
 
 use windows_sys::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
+use windef::*;
 
 static SYSAPI: AtomicPtr<SysApiCtx> = AtomicPtr::new(ptr::null_mut());
 
@@ -18,6 +16,9 @@ static SYSAPI: AtomicPtr<SysApiCtx> = AtomicPtr::new(ptr::null_mut());
 pub struct NtDllApi {
     module: Option<HMODULE>,
 
+    pub PssNtCaptureSnapshot: Option<ntpsapi::PFN_PssNtCaptureSnapshot>,
+    pub PssNtQuerySnapshot: Option<ntpsapi::PFN_PssNtQuerySnapshot>,
+    pub PssNtFreeSnapshot: Option<ntpsapi::PFN_PssNtFreeSnapshot>,
     pub NtReadFile: Option<ntioapi::PFN_NtReadFile>,
     pub NtQuerySystemInformation: Option<ntexapi::PFN_NtQuerySystemInformation>,
     pub NtAllocateVirtualMemory: Option<ntmmapi::PFN_NtAllocateVirtualMemory>,
@@ -28,6 +29,7 @@ pub struct NtDllApi {
     pub NtMapViewOfSection: Option<ntmmapi::PFN_NtMapViewOfSection>,
     pub NtUnmapViewOfSection: Option<ntmmapi::PFN_NtUnmapViewOfSection>,
     pub NtClose: Option<ntobapi::PFN_NtClose>,
+    pub NtQueryObject: Option<ntobapi::PFN_NtQueryObject>,
     pub NtDuplicateObject: Option<ntobapi::PFN_NtDuplicateObject>,
     pub NtOpenProcess: Option<ntpsapi::PFN_NtOpenProcess>,
     pub NtQueryInformationProcess: Option<ntpsapi::PFN_NtQueryInformationProcess>,
@@ -103,6 +105,9 @@ impl NtDllApi {
             Self {
                 module: Some(module),
 
+                PssNtCaptureSnapshot: Self::get_proc_address(module, "PssNtCaptureSnapshot"),
+                PssNtQuerySnapshot: Self::get_proc_address(module, "PssNtQuerySnapshot"),
+                PssNtFreeSnapshot: Self::get_proc_address(module, "PssNtFreeSnapshot"),
                 NtReadFile: Self::get_proc_address(module, "NtReadFile"),
                 NtQuerySystemInformation: Self::get_proc_address(module, "NtQuerySystemInformation"),
                 NtAllocateVirtualMemory: Self::get_proc_address(module, "NtAllocateVirtualMemory"),
@@ -113,6 +118,7 @@ impl NtDllApi {
                 NtMapViewOfSection: Self::get_proc_address(module, "NtMapViewOfSection"),
                 NtUnmapViewOfSection: Self::get_proc_address(module, "NtUnmapViewOfSection"),
                 NtClose: Self::get_proc_address(module, "NtClose"),
+                NtQueryObject: Self::get_proc_address(module, "NtQueryObject"),
                 NtDuplicateObject: Self::get_proc_address(module, "NtDuplicateObject"),
                 NtOpenProcess: Self::get_proc_address(module, "NtOpenProcess"),
                 NtQueryInformationProcess: Self::get_proc_address(module, "NtQueryInformationProcess"),
