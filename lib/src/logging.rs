@@ -57,7 +57,7 @@ impl Log for Br3kLogger {
     }
 }
 
-pub fn init(log_console: bool, log_file: bool) {
+pub fn init(log_console: bool, log_file: bool) -> io::Result<()> {
 
     let mut logger = Br3kLogger {
         file: None,
@@ -71,13 +71,13 @@ pub fn init(log_console: bool, log_file: bool) {
             .unwrap_or("process");
 
         let pid = std::process::id();
-        let log_path = PathBuf::from(format!("{}_br3k_{}.log", process_name, pid));
+        let mut log_path: PathBuf = std::env::temp_dir();
+        log_path.push(format!("{}_br3k_{}.log", process_name, pid));
 
         let file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&log_path)
-            .expect("open log");
+            .open(&log_path)?;
 
         logger.file = Mutex::new(file).into();
         println!("Logging to file: {}", log_path.display());
@@ -87,6 +87,8 @@ pub fn init(log_console: bool, log_file: bool) {
 
     log::set_logger(LOGGER.get().expect("logger set")).unwrap();
     log::set_max_level(LevelFilter::Info);
+    
+    Ok(())
 }
 
 pub fn log_header() {

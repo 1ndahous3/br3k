@@ -194,7 +194,7 @@ impl Thread {
             return Err(vm.new_system_error("Process is not opened"));
         }
 
-        let handle = api_strategy::process_open_alertable_thread(*process_handle.get())
+        let handle = sysapi::process_open_alertable_thread(*process_handle.get())
             .map_err(|e| {
                 vm.new_system_error(format!(
                     "Unable to open alertable thread: {}", sysapi::ntstatus_decode(e)

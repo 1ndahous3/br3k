@@ -7,7 +7,11 @@ use br3k::sysapi_ctx;
 use br3k::vm;
 
 fn main() {
-    logging::init(true, true);
+
+    if let Err(e) = logging::init(true, false) {
+        log::error!("Unable to initialize logger: {e}");
+    }
+
     logging::log_header();
 
     let matches = Command::new("br3k")

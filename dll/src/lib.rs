@@ -17,6 +17,46 @@ use br3k::{sysapi, sysapi_ctx};
 
 use windef::ntstatus;
 
+extern "system" fn main() {
+
+    let pid: u32 = unsafe { (*sysapi::teb()).ClientId.UniqueProcess } as _;
+
+    for _ in 0..10 {
+        match ipc::open_pipe(pid) {
+            Ok(pipe_handle) => {
+
+                match ipc::receive_data(*pipe_handle.get()) {
+                    Err(status) =>
+                        log::error!("Unable to read script from pipe: {}", sysapi::ntstatus_decode(status)),
+                    Ok(script_data) => {
+                        let script = String::from_utf8(script_data).unwrap();
+
+                        let vm = vm::Vm::default();
+                        match vm.execute_script(&script, None) {
+                            Ok(_) =>
+                                log::info!("Script executed successfully"),
+                            Err(e) =>
+                                log::error!("Error executing script: {e}")
+                        }
+                    }
+                }
+            },
+            Err(status) => {
+
+                if status.0 == ntstatus::STATUS_OBJECT_NAME_NOT_FOUND {
+                    log::warn!("Server did not create the pipe, waiting...");
+                    thread::sleep(Duration::from_secs(1));
+                    continue;
+                }
+
+                log::error!("Unable to open the pipe: {}", sysapi::ntstatus_decode(status));
+            }
+        }
+    }
+
+    log::error!("Unable to open the pipe: server did not create the pipe");
+}
+
 #[unsafe(no_mangle)]
 #[allow(non_snake_case, unused_variables)]
 extern "system" fn DllMain(
@@ -36,61 +76,31 @@ extern "system" fn DllMain(
                 prev(info);
             });
 
-            //
+            // it's too hard to see what's going on in context of remote process without logs
+            if logging::init(false, true).is_err() {
+                return false;
+            }
 
-            logging::init(true, true);
             logging::log_header();
-
-            let pid: u32 = unsafe { (*sysapi::teb()).ClientId.UniqueProcess } as _;
-            log::info!("Mode: IPC client ({pid})");
 
             sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
                 ntdll_copy: false,
                 ntdll_alt_api: false,
             });
 
-
-            for _ in 0..10 {
-                match ipc::open_pipe(pid) {
-                    Ok(pipe_handle) => {
-
-                        let script_data = ipc::receive_data(*pipe_handle.get())
-                            .map_err(|status| {
-                                log::error!("Unable to read script from pipe: {}", sysapi::ntstatus_decode(status));
-                                std::process::exit(1);
-                            }).unwrap();
-
-                        let script = String::from_utf8(script_data).unwrap();
-
-                        let vm = vm::Vm::default();
-                        match vm.execute_script(&script, None) {
-                            Ok(_) => {
-                                log::info!("Script executed successfully.");
-                            }
-                            Err(e) => {
-                                log::error!("Error executing script: {}", e);
-                                std::process::exit(1);
-                            }
-                        }
-                    },
-                    Err(status) => {
-
-                        if status.0 == ntstatus::STATUS_OBJECT_NAME_NOT_FOUND {
-                            log::warn!("Server did not create the pipe, waiting...");
-                            thread::sleep(Duration::from_secs(1));
-                            continue;
-                        }
-
-                        log::error!("Unable to open the pipe: {}", sysapi::ntstatus_decode(status));
-                        std::process::exit(1);
-                    }
+            // https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices
+            match sysapi::create_thread(windef::winbase::NT_CURRENT_PROCESS, main as _, None) {
+                Err(status) =>
+                    log::error!("Unable to create payload thread: {}", sysapi::ntstatus_decode(status)),
+                Ok(thread_handle) => {
+                    log::info!("Payload thread created");
+                    thread_handle.release();
                 }
             }
-
-            log::error!("Unable to open the pipe: server did not create the pipe");
-            std::process::exit(1);
         },
-        DLL_PROCESS_DETACH => (),
+        DLL_PROCESS_DETACH => {
+            log::warn!("Shutting down...");
+        },
         _ => ()
     }
 

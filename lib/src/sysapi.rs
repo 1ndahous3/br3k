@@ -10,7 +10,7 @@ use collections::HashMap;
 
 use windows::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows::Win32::System::Environment::GetCurrentDirectoryW;
-use windows_sys::Win32::Foundation::{HANDLE, HWND};
+use windows_sys::Win32::Foundation::{HANDLE, HWND, FALSE};
 use windows_sys::Win32::System::Diagnostics::Debug::{CONTEXT, WOW64_CONTEXT};
 use windows_sys::Win32::System::Threading::{
     EVENT_ALL_ACCESS, PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS,
@@ -1658,4 +1658,145 @@ pub fn get_handle_info(handle: HANDLE) -> Result<(String, String)> {
             type_name.to_string_lossy().to_string()
         ))
     }
+}
+
+pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<UniqueHandle> {
+    unsafe {
+        let mut thread_handle = open_next_thread(
+            process_handle,
+            ptr::null_mut(),
+            THREAD_ALL_ACCESS,
+        )?;
+
+        let nt_set_event_addr =
+            api_ctx::get_proc_address("ntdll.dll", "NtSetEvent").map_err(|_| {
+                log::error!("unable to find NtSetEvent address");
+                NTSTATUS(ntstatus::STATUS_PROCEDURE_NOT_FOUND)
+            })?;
+
+        while !thread_handle.is_null() {
+
+            let local_event = create_event()?;
+
+            let remote_event =
+                match duplicate_handle(process_handle, *local_event, NT_CURRENT_PROCESS) {
+                    Ok(event) => event,
+                    Err(_) => {
+                        thread_handle = open_next_thread(
+                            process_handle,
+                            *thread_handle,
+                            THREAD_ALL_ACCESS,
+                        )?;
+                        continue;
+                    }
+                };
+
+            if suspend_thread(*thread_handle).is_err() {
+                thread_handle = open_next_thread(
+                    process_handle,
+                    *thread_handle,
+                    THREAD_ALL_ACCESS,
+                )?;
+                continue;
+            }
+
+            if queue_apc_thread(
+                *thread_handle,
+                nt_set_event_addr as _,
+                *remote_event,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+                .is_err()
+            {
+                thread_handle = open_next_thread(
+                    process_handle,
+                    *thread_handle,
+                    THREAD_ALL_ACCESS,
+                )?;
+                continue;
+            }
+
+            if resume_thread(*thread_handle).is_err() {
+                thread_handle = open_next_thread(
+                    process_handle,
+                    *thread_handle,
+                    THREAD_ALL_ACCESS,
+                )?;
+                continue;
+            }
+
+            let mut timeout = ntwin::LARGE_INTEGER {
+                bindgen_union_field: (-10_000_000i64) as u64,
+                ..Default::default()
+            };
+
+            let status = NTSTATUS(ntobapi::NtWaitForSingleObject(
+                *local_event,
+                FALSE as _,
+                &mut timeout,
+            ));
+            if status.is_err() {
+                log::error!("unable to wait for event, {}", status.0);
+                thread_handle = open_next_thread(
+                    process_handle,
+                    *thread_handle,
+                    THREAD_ALL_ACCESS,
+                )?;
+                continue;
+            }
+
+            if status.0 == ntstatus::STATUS_TIMEOUT {
+                log::debug!(
+                    "probably not an alertable thread (HANDLE = 0x{:x})",
+                    *thread_handle as usize
+                );
+                thread_handle = open_next_thread(
+                    process_handle,
+                    *thread_handle,
+                    THREAD_ALL_ACCESS,
+                )?;
+                continue;
+            }
+
+            log::debug!(
+                "alertable thread found, HANDLE = 0x{:x}",
+                *thread_handle as usize
+            );
+            return Ok(thread_handle);
+        }
+
+        log::error!(
+            "unable to find alertable thread, process (HANDLE = 0x{:x})",
+            *thread_handle as usize
+        );
+
+        Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND))
+    }
+}
+
+pub fn process_enumerate_threads<F>(process_handle: HANDLE, f: F) -> Result<()>
+where
+    F: Fn(HANDLE)-> bool,
+{
+    let mut thread_handle = open_next_thread(
+        process_handle,
+        ptr::null_mut(),
+        THREAD_ALL_ACCESS,
+    )?;
+
+    while !thread_handle.is_null() {
+
+        if !f(*thread_handle.get()) {
+            break;
+        }
+
+        thread_handle = open_next_thread(
+            process_handle,
+            *thread_handle,
+            THREAD_ALL_ACCESS,
+        )?;
+    }
+
+    Ok(())
 }

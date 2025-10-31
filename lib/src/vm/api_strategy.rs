@@ -3,13 +3,12 @@ use crate::fs;
 use crate::pdb;
 use crate::kdump;
 use crate::sysapi;
-use crate::sysapi_ctx::SysApiCtx as api_ctx;
 
 use path::PathBuf;
 use sync::Arc;
 use exe::PtrPE;
 
-use windef::{winbase, ntstatus, ntwin, ntobapi};
+use windef::{winbase, ntstatus};
 use winbase::{ACCESS_MASK, NT_CURRENT_PROCESS};
 
 use windows::Win32::Foundation::NTSTATUS;
@@ -578,118 +577,4 @@ pub fn thread_set_ep_x86(
     exec_address: PVOID,
 ) -> Result<(), NTSTATUS> {
     thread_set_ep::<false, false>(thread_handle, exec_address)
-}
-
-pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<UniqueHandle, NTSTATUS> {
-    unsafe {
-        let mut thread_handle = sysapi::open_next_thread(
-            process_handle,
-            ptr::null_mut(),
-            THREAD_ALL_ACCESS,
-        )?;
-
-        let nt_set_event_addr =
-            api_ctx::get_proc_address("ntdll.dll", "NtSetEvent").map_err(|_| {
-                log::error!("unable to find NtSetEvent address");
-                NTSTATUS(ntstatus::STATUS_PROCEDURE_NOT_FOUND)
-            })?;
-
-        while !thread_handle.is_null() {
-            let local_event = sysapi::create_event()?;
-
-            let remote_event =
-                match sysapi::duplicate_handle(process_handle, *local_event, NT_CURRENT_PROCESS) {
-                    Ok(event) => event,
-                    Err(_) => {
-                        thread_handle = sysapi::open_next_thread(
-                            process_handle,
-                            *thread_handle,
-                            THREAD_ALL_ACCESS,
-                        )?;
-                        continue;
-                    }
-                };
-
-            if sysapi::suspend_thread(*thread_handle).is_err() {
-                thread_handle = sysapi::open_next_thread(
-                    process_handle,
-                    *thread_handle,
-                    THREAD_ALL_ACCESS,
-                )?;
-                continue;
-            }
-
-            if sysapi::queue_apc_thread(
-                *thread_handle,
-                nt_set_event_addr as _,
-                *remote_event,
-                ptr::null_mut(),
-                ptr::null_mut(),
-            )
-                .is_err()
-            {
-                thread_handle = sysapi::open_next_thread(
-                    process_handle,
-                    *thread_handle,
-                    THREAD_ALL_ACCESS,
-                )?;
-                continue;
-            }
-
-            if sysapi::resume_thread(*thread_handle).is_err() {
-                thread_handle = sysapi::open_next_thread(
-                    process_handle,
-                    *thread_handle,
-                    THREAD_ALL_ACCESS,
-                )?;
-                continue;
-            }
-
-            let mut timeout = ntwin::LARGE_INTEGER {
-                bindgen_union_field: (-10_000_000i64) as u64,
-                ..Default::default()
-            };
-
-            let status = NTSTATUS(ntobapi::NtWaitForSingleObject(
-                *local_event,
-                FALSE as _,
-                &mut timeout,
-            ));
-            if status.is_err() {
-                log::error!("unable to wait for event, {}", status.0);
-                thread_handle = sysapi::open_next_thread(
-                    process_handle,
-                    *thread_handle,
-                    THREAD_ALL_ACCESS,
-                )?;
-                continue;
-            }
-
-            if status.0 == ntstatus::STATUS_TIMEOUT {
-                log::debug!(
-                    "probably not an alertable thread (HANDLE = 0x{:x})",
-                    *thread_handle as usize
-                );
-                thread_handle = sysapi::open_next_thread(
-                    process_handle,
-                    *thread_handle,
-                    THREAD_ALL_ACCESS,
-                )?;
-                continue;
-            }
-
-            log::debug!(
-                "alertable thread found, HANDLE = 0x{:x}",
-                *thread_handle as usize
-            );
-            return Ok(thread_handle);
-        }
-
-        log::error!(
-            "unable to find alertable thread, process (HANDLE = 0x{:x})",
-            *thread_handle as usize
-        );
-
-        Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND))
-    }
 }
