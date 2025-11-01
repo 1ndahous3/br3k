@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use windows_sys::Win32::Foundation::{HMODULE, NTSTATUS};
-use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, LoadLibraryA, GetProcAddress};
 
 use windef::*;
 
@@ -211,7 +211,7 @@ impl Win32uApi {
     }
 
     pub fn new() -> Self {
-        let module = unsafe { GetModuleHandleA(c"win32u.dll".as_ptr() as _) };
+        let module = unsafe { LoadLibraryA(c"win32u.dll".as_ptr() as _) };
         if module.is_null() {
             panic!("Failed to get handle for win32u.dll");
         }

@@ -1,10 +1,11 @@
 #![feature(panic_update_hook)]
 use std::panic;
 use std::backtrace;
-
 use std::thread;
+use std::sync::OnceLock;
 use std::time::Duration;
 
+use windef::ntstatus;
 use windows_sys::Win32::Foundation::HINSTANCE;
 use windows_sys::Win32::System::SystemServices::{
     DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH
@@ -15,7 +16,14 @@ use br3k::logging;
 use br3k::vm;
 use br3k::{sysapi, sysapi_ctx};
 
-use windef::ntstatus;
+
+// Backtrace causes deadlock if panic occurs not
+// on DLL_PROCESS_ATTACH (because it loads dbghelp.dll during fmt::Display)
+// so for debugging with backtrace main payload will be executed
+// on DLL_PROCESS_ATTACH (without separate thread)
+const PANIC_BACKTRACE: bool = true;
+
+static PAYLOAD_WORKER_DEAD: OnceLock<()> = OnceLock::new();
 
 extern "system" fn main() {
 
@@ -55,6 +63,7 @@ extern "system" fn main() {
     }
 
     log::error!("Unable to open the pipe: server did not create the pipe");
+    PAYLOAD_WORKER_DEAD.set(()).unwrap();
 }
 
 #[unsafe(no_mangle)]
@@ -70,14 +79,20 @@ extern "system" fn DllMain(
 
             unsafe { std::env::set_var("RUST_BACKTRACE", "1"); }
             panic::update_hook(move |prev, info| {
-                let backtrace = backtrace::Backtrace::capture();
+
                 log::error!("Panic: {info}");
-                log::error!("Backtrace:\n {backtrace}");
+                if PANIC_BACKTRACE {
+                    let backtrace = backtrace::Backtrace::capture();
+                    log::error!("Backtrace:\n {backtrace}");
+                }
+
                 prev(info);
+                PAYLOAD_WORKER_DEAD.set(()).unwrap();
             });
 
             // it's too hard to see what's going on in context of remote process without logs
             if logging::init(false, true).is_err() {
+                PAYLOAD_WORKER_DEAD.set(()).unwrap();
                 return false;
             }
 
@@ -88,18 +103,29 @@ extern "system" fn DllMain(
                 ntdll_alt_api: false,
             });
 
-            // https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices
-            match sysapi::create_thread(windef::winbase::NT_CURRENT_PROCESS, main as _, None) {
-                Err(status) =>
-                    log::error!("Unable to create payload thread: {}", sysapi::ntstatus_decode(status)),
-                Ok(thread_handle) => {
-                    log::info!("Payload thread created");
-                    thread_handle.release();
+            if PANIC_BACKTRACE {
+                main();
+                PAYLOAD_WORKER_DEAD.set(()).unwrap();
+            }
+            else {
+                // https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices
+                match sysapi::create_thread(windef::winbase::NT_CURRENT_PROCESS, main as _, None) {
+                    Err(status) => {
+                        log::error!("Unable to create payload thread: {}", sysapi::ntstatus_decode(status));
+                        PAYLOAD_WORKER_DEAD.set(()).unwrap();
+                    },
+                    Ok(_) =>
+                        log::info!("Payload thread created")
                 }
             }
         },
         DLL_PROCESS_DETACH => {
-            log::warn!("Shutting down...");
+            if PAYLOAD_WORKER_DEAD.get().is_none() {
+                log::warn!("Unloading DLL while payload is active, holding...");
+                PAYLOAD_WORKER_DEAD.wait();
+            }
+
+            log::info!("Shutting down...");
         },
         _ => ()
     }
