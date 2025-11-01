@@ -293,7 +293,7 @@ pub mod br3k {
 
     #[pyfunction]
     fn shellcode_get_messageboxw(vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        let data = shellcode::generic::messageboxw();
+        let data = shellcode::messageboxw();
         let bytes = vm.ctx.new_bytes(data.to_vec());
         Ok(bytes.into())
     }
@@ -320,7 +320,7 @@ pub mod br3k {
             None => super::test_func as *const () as _,
         };
 
-        let shellcode = shellcode::ldrp_handle_invalid_user_call_target::build_shellcode_for_gadget(
+        let shellcode = shellcode::lhiuct::shellcode_for_gadget(
             None,
             function_address,
             args.args.unwrap_or_default().as_slice(),

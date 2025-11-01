@@ -1,30 +1,11 @@
-#![allow(dead_code)]
-
 use crate::prelude::*;
-
 use crate::pe_module;
-use pe_module::get_module_handle;
 
-static SYSTEM_DLLS: [&str; 5] = [
-    "ntdll.dll",
-    "kernelbase.dll",
-    "kernel32.dll",
-    "user32.dll",
-    "ucrtbase.dll"
-];
+use super::SYSTEM_DLLS;
 
-pub fn is_aligned(value: usize, bits: u32) -> bool {
-    value & ((1 << bits) - 1) == 0
-}
+use std::ffi::CString;
 
-pub fn messageboxw() -> Vec<u8> {
-    let shellcode = include_bytes!("MessageBoxA.bin");
-    let mut data = Vec::with_capacity(shellcode.len());
-    data.extend_from_slice(shellcode);
-    data
-}
-
-pub fn find_rop_gadget_inf_loop() -> Option<&'static[u8]> {
+pub fn gadget_inf_loop() -> Option<&'static[u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -33,7 +14,7 @@ pub fn find_rop_gadget_inf_loop() -> Option<&'static[u8]> {
     )
 }
 
-pub fn find_rop_gadget_ret() -> Option<&'static[u8]> {
+pub fn gadget_ret() -> Option<&'static[u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -42,8 +23,7 @@ pub fn find_rop_gadget_ret() -> Option<&'static[u8]> {
     )
 }
 
-#[allow(dead_code)]
-pub fn find_rop_gadget_pop_value_and_ret() -> Option<&'static[u8]> {
+pub fn gadget_pop_value_and_ret() -> Option<&'static[u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -53,7 +33,7 @@ pub fn find_rop_gadget_pop_value_and_ret() -> Option<&'static[u8]> {
     )
 }
 
-pub fn find_rop_gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> {
+pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> {
     unsafe {
         static POP8: [u8; 3] = [
             0x58, // pop rax
@@ -85,7 +65,7 @@ pub fn find_rop_gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> 
 
         for dll_name in SYSTEM_DLLS {
             let dll_name = CString::new(dll_name).unwrap();
-            let handle = get_module_handle(dll_name.as_ref()).unwrap();
+            let handle = pe_module::get_module_handle(dll_name.as_ref()).unwrap();
 
             let code_section = pe_module::get_module_text_section(handle);
 

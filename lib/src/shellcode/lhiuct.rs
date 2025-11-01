@@ -31,10 +31,9 @@
 use crate::prelude::*;
 use crate::pe_module;
 
-use crate::shellcode::generic;
-use generic::find_rop_gadget_ret;
+use super::rop;
 
-pub fn find_rop_gadget_pop_values_and_jmp() -> Option<&'static[u8]> {
+pub fn gadget_pop_values_and_jmp() -> Option<&'static[u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -50,7 +49,7 @@ pub fn find_rop_gadget_pop_values_and_jmp() -> Option<&'static[u8]> {
     )
 }
 
-pub fn find_rop_gadget_setup_reg_values_and_ret() -> Option<&'static[u8]> {
+pub fn gadget_setup_reg_values_and_ret() -> Option<&'static[u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -65,7 +64,7 @@ pub fn find_rop_gadget_setup_reg_values_and_ret() -> Option<&'static[u8]> {
     )
 }
 
-pub fn find_rop_gadget_pop_values_and_ret8(count: usize) -> Option<&'static[u8]> {
+pub fn pop_values_and_ret8(count: usize) -> Option<&'static[u8]> {
 
     assert!(count <= 8, "Count must be less than or equal to 8");
 
@@ -100,9 +99,9 @@ pub fn find_rop_gadget_pop_values_and_ret8(count: usize) -> Option<&'static[u8]>
     pe_module::find_code_in_module("ntdll.dll", &code)
 }
 
-pub fn find_clean_stack_gadget(count: usize, extra_imm64: &mut usize) -> Option<&'static[u8]> {
+pub fn gadget_clean_stack(count: usize, extra_imm64: &mut usize) -> Option<&'static[u8]> {
     for i in 0..10 {
-        if let Some(gadget) = generic::find_rop_gadget_pop_values_and_ret(count + i) {
+        if let Some(gadget) = rop::gadget_pop_values_and_ret(count + i) {
             *extra_imm64 += i;
             return Some(gadget);
         }
@@ -111,7 +110,7 @@ pub fn find_clean_stack_gadget(count: usize, extra_imm64: &mut usize) -> Option<
     None
 }
 
-pub fn build_stack_for_gadget(
+pub fn stack_for_gadget(
     ret_addr: Option<*const u8>,
     function_address: *const u8,
     args: &[u64],
@@ -125,11 +124,11 @@ pub fn build_stack_for_gadget(
 
     let mut extra_imm64 = 0;
 
-    let stack_placeholder_gadget = generic::find_rop_gadget_pop_values_and_ret(0)?;
+    let stack_placeholder_gadget = rop::gadget_pop_values_and_ret(0)?;
 
     loop {
         // gadget to clean stack from shadow space, stack args and alignment
-        let stack_clean_gadget = find_clean_stack_gadget(4 + args_extra.len(), &mut extra_imm64)?;
+        let stack_clean_gadget = gadget_clean_stack(4 + args_extra.len(), &mut extra_imm64)?;
 
         let mut stack = Vec::new();
 
@@ -176,7 +175,7 @@ pub fn build_stack_for_gadget(
         }
 
         // when rip becomes equal to FunctionAddress, we should have an unaligned stack (aligned + imm64 RetAddr)
-        if sp_aligned != generic::is_aligned(imm64_count * size_of::<u64>(), 4) {
+        if sp_aligned != super::is_aligned(imm64_count * size_of::<u64>(), 4) {
             return Some(stack);
         }
 
@@ -184,7 +183,7 @@ pub fn build_stack_for_gadget(
     }
 }
 
-pub fn build_shellcode_for_gadget(
+pub fn shellcode_for_gadget(
     ret_addr: Option<*const u8>,
     function_address: *const u8,
     args: &[u64],
@@ -199,11 +198,11 @@ pub fn build_shellcode_for_gadget(
     let mut extra_imm64 = 0;
 
     // the main gadget to setup registers and jump via ret
-    let call_gadget = find_rop_gadget_setup_reg_values_and_ret()?;
-    let stack_placeholder_gadget = find_rop_gadget_ret()?;
+    let call_gadget = gadget_setup_reg_values_and_ret()?;
+    let stack_placeholder_gadget = rop::gadget_ret()?;
 
     loop {
-        let stack_clean_gadget = find_clean_stack_gadget(4 + args_extra.len(), &mut extra_imm64)?;
+        let stack_clean_gadget = gadget_clean_stack(4 + args_extra.len(), &mut extra_imm64)?;
 
         let mut shellcode = Vec::new();
 
@@ -259,7 +258,7 @@ pub fn build_shellcode_for_gadget(
         shellcode.extend_from_slice(&[0xFF, 0xE0]); // jmp rax
 
         // when rip becomes equal to FunctionAddress, we should have an unaligned stack (aligned + imm64 RetAddr)
-        if sp_aligned != generic::is_aligned(imm64_count * size_of::<u64>(), 4) {
+        if sp_aligned != super::is_aligned(imm64_count * size_of::<u64>(), 4) {
             return Some(shellcode);
         }
 
