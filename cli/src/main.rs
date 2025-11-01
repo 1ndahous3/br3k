@@ -30,10 +30,10 @@ fn main() {
         let vm = vm::Vm::default();
         match vm.execute_script(&script_data, Some(script_path.clone())) {
             Ok(_) => {
-                log::info!("Script executed successfully.");
+                log::info!("Script executed successfully");
             }
-            Err(e) => {
-                log::error!("Error executing script: {}", e);
+            Err(_) => {
+                log::error!("Error executing script");
                 std::process::exit(1);
             }
         }
@@ -64,10 +64,10 @@ fn main() {
         let vm = vm::Vm::default();
         match vm.execute_script(&script, None) {
             Ok(_) => {
-                log::info!("Script executed successfully.");
+                log::info!("Script executed successfully");
             }
-            Err(e) => {
-                log::error!("Error executing script: {}", e);
+            Err(_) => {
+                log::error!("Error executing script");
                 std::process::exit(1);
             }
         }

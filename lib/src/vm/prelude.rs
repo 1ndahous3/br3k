@@ -6,6 +6,6 @@ pub use rustpython_vm::{
     PyRef, PyObjectRef, PyResult,
     class::PyClassImpl,
     types::Constructor,
-    builtins::{PyModule, PyBytes, PyStr, PyTypeRef, PyStrRef},
+    builtins::{PyModule, PyBytes, PyStr, PyTypeRef, PyStrRef, PyBaseExceptionRef},
     function::OptionalArg
 };

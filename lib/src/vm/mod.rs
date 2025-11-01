@@ -133,27 +133,27 @@ impl Vm {
         register_enum!(vm, module, fs::FsSectionMode);
     }
 
-    pub fn execute_script(&self, script: &str, script_path: Option<String>) -> Result<(), String> {
-        self.interpreter
-            .enter(|vm| {
-                let scope = vm.new_scope_with_builtins();
-                scope
-                    .globals
-                    .set_item("__name__", vm.ctx.new_str("__main__").into(), vm)
-                    .map_err(|e| format!("Failed to set __name__: {e:?}"))?;
+    pub fn execute_script(&self, script: &str, script_path: Option<String>) -> Result<(), ()> {
+        self.interpreter.enter(|vm| {
 
-                vm.run_code_string(scope, script, script_path.unwrap_or(String::from("<script>")))
-                    .map(drop)
-                    .map_err(|e| {
-                        let err_str = vm
-                            .call_method(e.as_object(), "__str__", ())
-                            .ok()
-                            .and_then(|s| s.downcast::<rustpython_vm::builtins::PyStr>().ok())
-                            .map(|s| s.as_str().to_string())
-                            .unwrap_or_else(|| "<unprintable>".into());
-                        format!("Python error: {err_str}")
-                    })
-            })
-            .map_err(|e| format!("Interpreter error: {e}"))
+            let scope = vm.new_scope_with_builtins();
+
+            let br3k_mod = vm.import("br3k", 0).unwrap();
+            let print_fn = vm.get_attribute_opt(br3k_mod.clone(), "print").unwrap().unwrap();
+            let excepthook_fn = vm.get_attribute_opt(br3k_mod.clone(), "excepthook").unwrap().unwrap();
+
+            vm.sys_module.set_attr("excepthook", excepthook_fn, vm).unwrap();
+            scope.globals.set_item("print", print_fn, vm).unwrap();
+            scope.globals.set_item("__name__", vm.ctx.new_str("__main__").into(), vm).unwrap();
+
+            let res = vm.run_code_string(scope, script, script_path.unwrap_or(String::from("<script>")));
+            match res {
+                Ok(_) => Ok(()),
+                Err(exc) => {
+                    vm.print_exception(exc);
+                    Err(())
+                }
+            }
+        })
     }
 }

@@ -38,6 +38,92 @@ pub mod br3k {
     use vm::py_module::Handle;
     use vm::py_proc::Process;
 
+    // own builtin functions
+
+    use rustpython_vm::function::{ArgIntoBool, PosArgs};
+    use rustpython_vm::py_io::Write;
+
+    #[derive(Debug, Default, FromArgs)]
+    pub struct PrintOptions {
+        #[pyarg(named, default)]
+        sep: Option<PyStrRef>,
+        #[pyarg(named, default)]
+        end: Option<PyStrRef>,
+        #[pyarg(named, default = ArgIntoBool::FALSE)]
+        flush: ArgIntoBool,
+        #[pyarg(named, default)]
+        file: Option<PyObjectRef>,
+    }
+
+    #[pyfunction]
+    fn print(objects: PosArgs, options: PrintOptions, vm: &VirtualMachine) -> PyResult<()> {
+
+        let sep = options
+            .sep
+            .and_then(|s| Some(s.to_string()))
+            .unwrap_or(" ".to_string());
+
+        let _ = options.end;
+        let _ = options.flush;
+        let _ = options.file;
+
+        let mut print_str = String::new();
+
+        let mut first = true;
+        for object in objects {
+            if first {
+                first = false;
+            } else {
+                print_str.push_str(sep.as_str());
+            }
+
+            print_str.push_str(object.str(vm)?.as_str());
+        }
+
+        slog_info!("{print_str}");
+        Ok(())
+    }
+
+    #[derive(Default)]
+    struct ExceptWriter;
+
+    impl Write for ExceptWriter {
+
+        type Error = PyBaseExceptionRef;
+        fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> Result<(), Self::Error> {
+            log::error!("{}", args.to_string().trim_end());
+            Ok(())
+        }
+    }
+
+    #[pyfunction]
+    fn excepthook(
+        exc_type: PyObjectRef,
+        exc_val: PyObjectRef,
+        exc_tb: PyObjectRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+
+        let mut ewr: ExceptWriter = Default::default();
+
+        match vm.normalize_exception(exc_type.clone(), exc_val.clone(), exc_tb) {
+            Ok(exc) => {
+                vm.write_exception(&mut ewr, &exc)
+            },
+            Err(_) => {
+                let type_name = exc_val.class().name();
+                let msg = format!(
+                    "TypeError: print_exception(): Exception expected for value, {type_name} found\n"
+                );
+
+                log::error!("{msg}");
+                Ok(())
+            }
+        }
+    }
+
+    //
+
     #[derive(FromArgs)]
     pub struct InitSysApiArgs {
         #[pyarg(any, default=false)]

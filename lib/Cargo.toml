@@ -3,9 +3,16 @@ name = "br3k"
 edition = "2024"
 
 [dependencies]
-rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", branch = "main", features = ["freeze-stdlib"] }
-rustpython-pylib = { git = "https://github.com/RustPython/RustPython.git", branch = "main", features = ["freeze-stdlib"] }
-rustpython-stdlib = { git = "https://github.com/RustPython/RustPython.git", branch = "main" }
+rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", branch = "main", default-features = false, features = [
+    "compiler",
+    "freeze-stdlib"
+] }
+rustpython-pylib = { git = "https://github.com/RustPython/RustPython.git", branch = "main", default-features = false, features = [
+    "freeze-stdlib"
+] }
+rustpython-stdlib = { git = "https://github.com/RustPython/RustPython.git", branch = "main", default-features = false, features = [
+    "compiler"
+] }
 log = "0.4"
 strum = "0.27"
 strum_macros = "0.27"

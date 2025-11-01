@@ -43,8 +43,8 @@ extern "system" fn main() {
                         match vm.execute_script(&script, None) {
                             Ok(_) =>
                                 log::info!("Script executed successfully"),
-                            Err(e) =>
-                                log::error!("Error executing script: {e}")
+                            Err(_) =>
+                                log::error!("Error executing script")
                         }
                     }
                 }
