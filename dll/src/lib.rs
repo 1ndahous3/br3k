@@ -48,6 +48,9 @@ extern "system" fn main() {
                         }
                     }
                 }
+
+                PAYLOAD_WORKER_DEAD.set(()).unwrap();
+                return;
             },
             Err(status) => {
 
@@ -105,7 +108,7 @@ extern "system" fn DllMain(
 
             if PANIC_BACKTRACE {
                 main();
-                PAYLOAD_WORKER_DEAD.set(()).unwrap();
+                let _ = PAYLOAD_WORKER_DEAD.set(());
             }
             else {
                 // https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices
