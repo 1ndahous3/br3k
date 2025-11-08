@@ -1,7 +1,16 @@
-#![allow(dead_code)]
-
 pub mod lhiuct;
 pub mod rop;
+pub mod ntdll;
+
+use crate::prelude::*;
+use crate::pe_module;
+
+#[macro_export]
+macro_rules! cast_pfn {
+    ($address:expr, $t:ty) => {
+        mem::transmute::<*const (), $t>($address as _)
+    };
+}
 
 static SYSTEM_DLLS: [&str; 5] = [
     "ntdll.dll",

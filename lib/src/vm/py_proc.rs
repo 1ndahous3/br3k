@@ -1,10 +1,13 @@
 use crate::prelude::*;
 use crate::vm::prelude::*;
+
 use crate::vm;
 use crate::sysapi;
+use crate::str;
+use crate::slog_info;
 
 use vm::api_strategy;
-use vm::py_module::Handle;
+use vm::py_resource::Handle;
 use vm::py_thread::Thread;
 
 use windef::{ntrtl, ntpsapi, ntpebteb};
@@ -84,8 +87,7 @@ impl Constructor for CPUserProcessParameters {
     fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         let params = sysapi::create_process_parameters(args.filepath.as_str()).map_err(|e| {
             vm.new_system_error(format!(
-                "Unable to create process parameters: {}",
-                sysapi::ntstatus_decode(e)
+                "Unable to create process parameters: {}", sysapi::ntstatus_decode(e)
             ))
         })?;
 
@@ -148,8 +150,7 @@ impl Constructor for Process {
             let name_str = v.as_str();
             pid = sysapi::find_process(name_str).map_err(|e| {
                 vm.new_value_error(format!(
-                    "Unable to find process '{name_str}': {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to find process '{name_str}': {}", sysapi::ntstatus_decode(e)
                 ))
             })?
         } else if let Some(v) = args.image_path.present() {
@@ -228,8 +229,6 @@ pub struct CreateMemoryArgs {
     size: usize,
 }
 
-
-
 #[derive(FromArgs)]
 pub struct WritePebProcParmsArgs {
     #[pyarg(any)]
@@ -270,12 +269,19 @@ impl Process {
             .open(*self.pid.borrow(), PROCESS_ALL_ACCESS)
             .map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to open process: {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to open process: {}", sysapi::ntstatus_decode(e)
+                ))
+            })?;
+
+        let basic_info = sysapi::get_process_basic_info(*handle)
+            .map_err(|e| {
+                vm.new_system_error(format!(
+                    "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
                 ))
             })?;
 
         self.process_handle.replace(handle);
+        self.pid.replace(basic_info.UniqueProcessId as _);
 
         Ok(())
     }
@@ -291,16 +297,14 @@ impl Process {
         let (process_handle, thread_handle) = sysapi::create_user_process(&image_path, args.suspended)
             .map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to create process: {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to create process: {}", sysapi::ntstatus_decode(e)
                 ))
             })?;
 
         let basic_info = sysapi::get_process_basic_info(*process_handle)
             .map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to read process basic info: {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
                 ))
             })?;
 
@@ -328,14 +332,22 @@ impl Process {
             .as_mut()
             .ok_or_else(|| vm.new_value_error("Process section handle is not set".to_string()))?;
 
-        let process_handle = sysapi::create_process(*section_handle).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to create process: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        let process_handle = sysapi::create_process(*section_handle)
+            .map_err(|e| {
+                vm.new_system_error(format!(
+                    "Unable to create process: {}", sysapi::ntstatus_decode(e)
+                ))
+            })?;
+
+        let basic_info = sysapi::get_process_basic_info(*process_handle)
+            .map_err(|e| {
+                vm.new_system_error(format!(
+                    "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
+                ))
+            })?;
 
         self.process_handle.replace(process_handle);
+        self.pid.replace(basic_info.UniqueProcessId as _);
 
         Ok(())
     }
@@ -383,8 +395,7 @@ impl Process {
 
         memory.create_memory(args.size).map_err(|e| {
             vm.new_system_error(format!(
-                "Unable to create memory: {}",
-                sysapi::ntstatus_decode(e)
+                "Unable to create memory: {}", sysapi::ntstatus_decode(e)
             ))
         })?;
 
@@ -404,8 +415,7 @@ impl Process {
             .write_memory(offset, args.data.as_ptr() as _, args.data.len())
             .map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to write memory: {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to write memory: {}", sysapi::ntstatus_decode(e)
                 ))
             })?;
 
@@ -430,8 +440,7 @@ impl Process {
         match sysapi::get_process_wow64_info(*self.process_handle.borrow().get()) {
             Ok(is_x64) => Ok(is_x64),
             Err(status) => Err(vm.new_system_error(format!(
-                "Unable to get Wow64 info: {}",
-                sysapi::ntstatus_decode(status)
+                "Unable to get Wow64 info: {}", sysapi::ntstatus_decode(status)
             ))),
         }
     }
@@ -443,8 +452,7 @@ impl Process {
         let basic_info =
             sysapi::get_process_basic_info(*self.process_handle.borrow().get()).map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to get process basic info: {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to get process basic info: {}", sysapi::ntstatus_decode(e)
                 ))
             })?;
 
@@ -459,8 +467,7 @@ impl Process {
             let basic_info = sysapi::get_process_basic_info(process_handle)
                 .map_err(|e| {
                     vm.new_system_error(format!(
-                        "Unable to read process basic info: {}",
-                        sysapi::ntstatus_decode(e)
+                        "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
                     ))
                 })?;
 
@@ -472,8 +479,7 @@ impl Process {
             sysapi::read_virtual_memory(peb_data, basic_info.PebBaseAddress as _, process_handle)
                 .map_err(|e| {
                     vm.new_system_error(format!(
-                        "Unable to read process PEB: {}",
-                        sysapi::ntstatus_decode(e)
+                        "Unable to read process PEB: {}", sysapi::ntstatus_decode(e)
                     ))
                 })?;
 
@@ -511,8 +517,7 @@ impl Process {
                 )
                 .map_err(|e| {
                     vm.new_system_error(format!(
-                        "Unable to write process parameters: {}",
-                        sysapi::ntstatus_decode(e)
+                        "Unable to write process parameters: {}", sysapi::ntstatus_decode(e)
                     ))
                 })?;
 
@@ -527,8 +532,7 @@ impl Process {
                     )
                     .map_err(|e| {
                         vm.new_system_error(format!(
-                            "Unable to write process parameters: {}",
-                            sysapi::ntstatus_decode(e)
+                            "Unable to write process parameters: {}", sysapi::ntstatus_decode(e)
                         ))
                     })?;
             }
@@ -592,8 +596,12 @@ impl Process {
         memory.write_memory(0, new_mem_image.as_ptr() as _, new_mem_image.len())
             .map_err(|e| {
                 vm.new_system_error(format!(
-                    "Unable to write memory: {}",
-                    sysapi::ntstatus_decode(e)
+                    "Unable to write memory: {}", sysapi::ntstatus_decode(e)
+                ))
+            })?;
+
+        Ok(())
+    }
                 ))
             })?;
 

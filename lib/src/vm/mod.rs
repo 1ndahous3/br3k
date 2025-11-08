@@ -1,6 +1,7 @@
 pub mod py_module;
 
 mod prelude;
+mod py_resource;
 mod py_fs;
 mod py_pe;
 mod py_proc;
@@ -81,7 +82,6 @@ macro_rules! register_enum {
 use prelude::*;
 use crate::fs;
 
-use py_module::Handle;
 use py_module::br3k;
 
 pub struct Vm {
@@ -97,7 +97,8 @@ impl Default for Vm {
             let br3k_module = br3k::make_module(vm);
 
             let module_classes = [
-                ("Handle", Handle::make_class(&vm.ctx)),
+                ("Handle", py_resource::Handle::make_class(&vm.ctx)),
+                ("BufferView", py_resource::BufferView::make_class(&vm.ctx)),
                 ("Process", py_proc::Process::make_class(&vm.ctx)),
                 ("Thread", py_thread::Thread::make_class(&vm.ctx)),
                 ("Ipc", py_ipc::Ipc::make_class(&vm.ctx)),

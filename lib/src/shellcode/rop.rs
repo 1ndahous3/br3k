@@ -1,9 +1,15 @@
+#![allow(dead_code, non_camel_case_types)]
+
 use crate::prelude::*;
 use crate::pe_module;
 
 use super::SYSTEM_DLLS;
 
 use std::ffi::CString;
+
+pub type PFN_StdCallFunc1Args = unsafe extern "system" fn(PVOID);
+pub type PFN_StdCallFunc2Args = unsafe extern "system" fn(PVOID, PVOID);
+pub type PFN_StdCallFunc3Args = unsafe extern "system" fn(PVOID, PVOID, PVOID);
 
 pub fn gadget_inf_loop() -> Option<&'static[u8]> {
     pe_module::find_code_in_module(

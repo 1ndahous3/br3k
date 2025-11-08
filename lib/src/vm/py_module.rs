@@ -1,15 +1,5 @@
-use crate::sysapi;
 use crate::vm::prelude::*;
 
-
-#[pyclass(module = false, name = "Handle")]
-#[derive(Debug, PyPayload)]
-pub struct Handle {
-    pub handle: sysapi::UniqueHandle,
-}
-
-#[pyclass]
-impl Handle {}
 
 extern "C"
 fn test_func(
@@ -389,4 +379,3 @@ pub mod br3k {
         Ok(())
     }
 }
-

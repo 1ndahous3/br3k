@@ -6,7 +6,7 @@ use windows_sys::Win32::System::Threading::THREAD_ALL_ACCESS;
 
 use crate::vm;
 use vm::py_proc::Process;
-use vm::py_module::Handle;
+use vm::py_resource::Handle;
 use vm::api_strategy;
 use api_strategy::{ThreadOpenStrategy, ThreadOpenArgs};
 
@@ -21,7 +21,7 @@ pub struct ThreadNewArgs {
 }
 
 #[derive(FromArgs)]
-pub struct SetThreadEpArgs {
+pub struct SetEpArgs {
     #[pyarg(any)]
     new_thread: bool,
     #[pyarg(any)]
@@ -29,11 +29,23 @@ pub struct SetThreadEpArgs {
 }
 
 #[derive(FromArgs)]
-pub struct CreateThreadArgs {
+pub struct CreateArgs {
     #[pyarg(any)]
     ep: u64,
     #[pyarg(any, optional)]
     arg: OptionalArg<u64>,
+}
+
+#[derive(FromArgs)]
+pub struct CreateUserApcArgs {
+    #[pyarg(any)]
+    ep: u64,
+    #[pyarg(any, optional)]
+    arg1: OptionalArg<u64>,
+    #[pyarg(any, optional)]
+    arg2: OptionalArg<u64>,
+    #[pyarg(any, optional)]
+    arg3: OptionalArg<u64>,
 }
 
 #[pyclass(module = false, name = "Thread")]
@@ -62,7 +74,7 @@ impl Constructor for Thread {
 impl Thread {
 
     #[pymethod]
-    fn set_ep(&self, args: SetThreadEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn set_ep(&self, args: SetEpArgs, vm: &VirtualMachine) -> PyResult<()> {
 
         let mut handle = self.handle.borrow_mut();
         let handle = handle
@@ -93,7 +105,7 @@ impl Thread {
     }
 
     #[pymethod]
-    fn create(&self, args: CreateThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn create(&self, args: CreateArgs, vm: &VirtualMachine) -> PyResult<()> {
 
         let process_handle = self.process.process_handle.borrow();
         if process_handle.is_null() {
@@ -243,19 +255,33 @@ impl Thread {
     }
 
     #[pymethod]
-    fn queue_user_apc(&self, args: CreateThreadArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn queue_user_apc(&self, args: CreateUserApcArgs, vm: &VirtualMachine) -> PyResult<()> {
 
         let mut handle = self.handle.borrow_mut();
         let handle = handle
             .as_mut()
             .ok_or_else(|| vm.new_value_error("Thread handle is not initialized".to_string()))?;
 
+        let mut apc_arg1: PVOID = ptr::null_mut();
+        let mut apc_arg2: PVOID = ptr::null_mut();
+        let mut apc_arg3: PVOID = ptr::null_mut();
+
+        if let Some(&arg1) = args.arg1.as_option() {
+            apc_arg1 = arg1 as _;
+        }
+        if let Some(&arg2) = args.arg2.as_option() {
+            apc_arg2 = arg2 as _;
+        }
+        if let Some(&arg3) = args.arg3.as_option() {
+            apc_arg3 = arg3 as _;
+        }
+
         match sysapi::queue_apc_thread(
             *handle.handle.get(),
             args.ep as _,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
+            apc_arg1,
+            apc_arg2,
+            apc_arg3,
         ) {
             Ok(()) => Ok(()),
             Err(status) => Err(vm.new_system_error(format!(
