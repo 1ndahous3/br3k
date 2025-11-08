@@ -3,7 +3,7 @@
 pub use std::*;
 
 pub use mem::offset_of;
-pub use ptr::addr_of;
+pub use ptr::{addr_of, addr_of_mut};
 
 pub use std::sync::OnceLock;
 pub use std::cell::{Cell, RefCell};

@@ -1224,7 +1224,7 @@ pub fn create_event() -> Result<UniqueHandle> {
     }
 }
 
-pub fn create_named_pipe(name: &str) -> Result<UniqueHandle> {
+pub fn create_named_pipe(name: &str, sd: PVOID) -> Result<UniqueHandle> {
     unsafe {
         let nt_name = format!("\\Device\\NamedPipe\\{name}");
         let nt_name = U16CString::from_str(nt_name).unwrap();
@@ -1236,6 +1236,7 @@ pub fn create_named_pipe(name: &str) -> Result<UniqueHandle> {
         let object_attributes = winbase::OBJECT_ATTRIBUTES {
             Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
             ObjectName: addr_of!(nt_name) as _,
+            SecurityDescriptor: sd,
             ..Default::default()
         };
 
