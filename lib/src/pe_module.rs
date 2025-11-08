@@ -29,6 +29,19 @@ pub fn get_module_text_section(module_data: PVOID) -> &'static[u8] {
     }
 }
 
+pub fn get_module_data_section(module_data: PVOID) -> &'static[u8] {
+    unsafe {
+        let pe = PtrPE::from_memory(module_data as _).unwrap();
+
+        let section = pe.get_section_by_name(".data").unwrap();
+
+        let section_ptr = module_data.add(section.virtual_address.0 as usize) as *const u8;
+        let section_size = section.size_of_raw_data as usize;
+
+        slice::from_raw_parts(section_ptr, section_size)
+    }
+}
+
 pub fn find_code_in_module_data(module_data: PVOID, code: &[u8]) -> Option<&'static[u8]> {
     let section_data = get_module_text_section(module_data);
     section_data

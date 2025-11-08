@@ -118,6 +118,8 @@ pub struct Process {
 #[derive(FromArgs)]
 pub struct ProcessNewArgs {
     #[pyarg(named, optional)]
+    current: OptionalArg<bool>,
+    #[pyarg(named, optional)]
     name: OptionalArg<PyStrRef>,
     #[pyarg(named, optional)]
     pid: OptionalArg<PyStrRef>,
@@ -141,7 +143,15 @@ impl Constructor for Process {
         let mut image_path: Option<String> = None;
         let mut section_handle: Option<HANDLE> = None;
 
-        if let Some(v) = args.pid.present() {
+        if let Some(v) = args.current.present() && v {
+            unsafe {
+                let teb = sysapi::teb();
+
+                pid = (*teb).ClientId.UniqueProcess as _;
+                image_path = str::to_u16cstring(&(*(*(*teb).ProcessEnvironmentBlock).ProcessParameters).ImagePathName)
+                    .to_string().ok()
+            }
+        } else if let Some(v) = args.pid.present() {
             let pid_str = v.as_str();
             pid = pid_str
                 .parse::<u32>()
@@ -602,8 +612,39 @@ impl Process {
 
         Ok(())
     }
+
+    #[pymethod]
+    fn log_handles(&self, vm: &VirtualMachine) -> PyResult<()> {
+
+        let pid = *self.pid.borrow();
+
+        let processes = sysapi::get_processes_pid_name()
+            .map_err(|e| {
+                vm.new_system_error(format!(
+                    "Unable to get processes info: {}", sysapi::ntstatus_decode(e)
                 ))
             })?;
+
+        let handles = sysapi::get_process_handles(pid);
+
+        for handle in handles.unwrap() {
+            slog_info!("HANDLE: 0x{:X}", handle as usize);
+
+            if let Ok((handle_name, handle_type)) = sysapi::get_handle_info(handle) {
+                slog_info!("Name: {handle_name}");
+                slog_info!("Type: {handle_type}");
+
+                if let Ok(info) = sysapi::get_process_basic_info(handle) {
+                    let handle_pid = info.UniqueProcessId as u32;
+
+                    slog_info!("PID: {}", handle_pid);
+                    if let Some(path) = processes.get(&handle_pid) {
+                        slog_info!("Path: {path}");
+                    }
+                }
+            }
+            slog_info!("");
+        }
 
         Ok(())
     }

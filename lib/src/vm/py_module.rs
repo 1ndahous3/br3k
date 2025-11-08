@@ -20,17 +20,18 @@ pub mod br3k {
     use crate::sysapi;
     use crate::fs;
 
+    use crate::cast_pfn;
     use crate::pe_module;
     use crate::shellcode;
     use crate::slog_info;
 
     use sysapi_ctx::SysApiCtx as api_ctx;
-    use vm::py_module::Handle;
+    use vm::py_resource::{Handle, BufferView};
     use vm::py_proc::Process;
 
     // own builtin functions
 
-    use rustpython_vm::function::{ArgIntoBool, PosArgs};
+    use rustpython_vm::function::{ArgIntoBool, FuncArgs, KwArgs, PosArgs};
     use rustpython_vm::py_io::Write;
 
     #[derive(Debug, Default, FromArgs)]
@@ -371,6 +372,48 @@ pub mod br3k {
 
 
         Ok(address as _)
+    }
+
+    #[derive(FromArgs)]
+    pub struct ExecuteRopLocalArgs {
+        #[pyarg(any)]
+        ep: u64,
+        #[pyarg(any)]
+        arg: Option<u64>
+    }
+
+    #[pyfunction]
+    fn execute_rop_local(args: ExecuteRopLocalArgs) {
+        unsafe {
+            let func = cast_pfn!(args.ep, shellcode::rop::PFN_StdCallFunc1Args);
+
+            if let Some(arg) = args.arg {
+                func(arg as _);
+            } else {
+                func(ptr::null_mut());
+            }
+        }
+    }
+
+    #[pyfunction]
+    fn rw_cave() -> BufferView {
+        let cave = shellcode::rw_cave().unwrap();
+
+        BufferView {
+            ptr: cave.as_ptr() as _,
+            size: cave.len() as _
+        }
+    }
+
+    #[allow(non_snake_case)]
+    #[pyfunction]
+    fn gadget_KiUserCallForwarder(vm: &VirtualMachine) -> PyResult<u64> {
+        match shellcode::ntdll::gadget_KiUserCallForwarder() {
+            Some(gadget) => Ok(gadget.as_ptr() as _),
+            None => Err(vm.new_system_error(
+                "Failed to get proc address of KiUserCallForwarder (kernel32.dll)"
+            ))
+        }
     }
 
     #[pyfunction]
