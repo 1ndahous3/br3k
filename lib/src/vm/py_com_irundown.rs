@@ -258,7 +258,7 @@ impl ComIRundown {
     }
 
     #[pymethod]
-    fn execute(&self, args: ExecuteArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn execute(&self, args: ExecuteArgs, vm: &VirtualMachine) -> PyResult<bool> {
         unsafe {
             let mut memory = self.process.memory.borrow_mut();
             let memory = memory
@@ -376,16 +376,15 @@ impl ComIRundown {
 
                 let hr = HRESULT((*(*irundown).lpVtbl).DoCallback.unwrap()(irundown, &mut params));
                 if hr.is_err() {
+                    log::warn!("IRundown::DoCallback() call error: hr = 0x{:X}", hr.0);
                     continue;
                 }
 
-                return Ok(())
+                return Ok(true)
             }
 
-            Err(vm.new_system_error(format!(
-                "No valid IPID entry found for IRundown in the process {}",
-                *self.process.pid.borrow()
-            )))
+            log::warn!("No successful IRundown::DoCallback() calls");
+            Ok(false)
         }
     }
 }

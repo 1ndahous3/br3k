@@ -1768,8 +1768,7 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> Result<UniqueHan
         }
 
         log::error!(
-            "unable to find alertable thread, process (HANDLE = 0x{:x})",
-            *thread_handle as usize
+            "unable to find alertable thread, process (HANDLE = 0x{:x})", process_handle as usize
         );
 
         Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND))

@@ -417,6 +417,18 @@ pub mod br3k {
     }
 
     #[pyfunction]
+    fn adjust_debug_privilege(vm: &VirtualMachine) -> PyResult<()> {
+
+        sysapi::adjust_privilege(windef::ntseapi::SE_DEBUG_PRIVILEGE).map_err(|e| {
+            vm.new_system_error(format!(
+                "Unable to get debug privilege: {}", sysapi::ntstatus_decode(e)
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    #[pyfunction]
     fn script_success() -> PyResult<()> {
         slog_info!("[+] Success");
         Ok(())
