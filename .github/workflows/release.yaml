@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -44,10 +46,10 @@ jobs:
           New-Item -Force -ItemType Directory $DllOut | Out-Null
 
           Copy-Item "$TargetDir\br3k-cli.exe" "$CliOut\br3k-cli.exe"
-          Copy-Item "$TargetDir\br3k-cli.pdb" "$CliOut\br3k-cli.pdb" -ErrorAction SilentlyContinue
+          Copy-Item "$TargetDir\br3k_cli.pdb" "$CliOut\br3k_cli.pdb" -ErrorAction SilentlyContinue
 
-          Copy-Item "$TargetDir\br3k-dll.dll" "$DllOut\br3k-dll.dll"
-          Copy-Item "$TargetDir\br3k-dll.pdb" "$DllOut\br3k-dll.pdb" -ErrorAction SilentlyContinue
+          Copy-Item "$TargetDir\br3k_dll.dll" "$DllOut\br3k_dll.dll"
+          Copy-Item "$TargetDir\br3k_dll.pdb" "$DllOut\br3k_dll.pdb" -ErrorAction SilentlyContinue
 
           $CliZip = "br3k-cli-$Arch.zip"
           $DllZip = "br3k-dll-$Arch.zip"
@@ -69,6 +71,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4

@@ -1,6 +1,6 @@
 use chrono::prelude::*;
 
-const MAJOR_VERSION: u32 = 1;
+const MAJOR_VERSION: u32 = 0;
 const PATCH_VERSION: u32 = 0;
 const SEQ_YEAR: i32 = 2025;
 
