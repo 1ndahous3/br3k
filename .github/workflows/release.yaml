@@ -1,0 +1,83 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, i686-pc-windows-msvc]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build br3k-cli (Release)
+        run: cargo build --release -p br3k-cli --target ${{ matrix.target }}
+
+      - name: Build br3k-dll (Release)
+        run: cargo build --release -p br3k-dll --target ${{ matrix.target }}
+
+      - name: Package artifacts
+        shell: pwsh
+        run: |
+          $Target = "${{ matrix.target }}"
+          $Arch = if ($Target -eq "x86_64-pc-windows-msvc") { "x86_64" } else { "i686" }
+
+          $TargetDir = "target\$Target\release"
+
+          # Output dirs
+          $CliOut = "dist\cli-$Arch"
+          $DllOut = "dist\dll-$Arch"
+
+          New-Item -Force -ItemType Directory $CliOut | Out-Null
+          New-Item -Force -ItemType Directory $DllOut | Out-Null
+
+          Copy-Item "$TargetDir\br3k-cli.exe" "$CliOut\br3k-cli.exe"
+          Copy-Item "$TargetDir\br3k-cli.pdb" "$CliOut\br3k-cli.pdb" -ErrorAction SilentlyContinue
+
+          Copy-Item "$TargetDir\br3k-dll.dll" "$DllOut\br3k-dll.dll"
+          Copy-Item "$TargetDir\br3k-dll.pdb" "$DllOut\br3k-dll.pdb" -ErrorAction SilentlyContinue
+
+          $CliZip = "br3k-cli-$Arch.zip"
+          $DllZip = "br3k-dll-$Arch.zip"
+
+          if (Test-Path $CliZip) { Remove-Item $CliZip -Force }
+          if (Test-Path $DllZip) { Remove-Item $DllZip -Force }
+
+          Compress-Archive -Path "$CliOut\*" -DestinationPath $CliZip
+          Compress-Archive -Path "$DllOut\*" -DestinationPath $DllZip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            br3k-cli-*.zip
+            br3k-dll-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release and upload files
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
