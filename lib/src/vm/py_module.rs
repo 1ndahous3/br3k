@@ -345,7 +345,7 @@ pub mod br3k {
     #[pyfunction]
     fn shellcode_execute(args: ShellcodeExecute) -> PyResult<()> {
         unsafe {
-            let func: extern "C" fn() = mem::transmute(args.ep);
+            let func = cast_pfn!(args.ep, shellcode::rop::PFN_StdCallFunc0Args);
             func();
         }
 

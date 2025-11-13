@@ -7,6 +7,7 @@ use super::SYSTEM_DLLS;
 
 use std::ffi::CString;
 
+pub type PFN_StdCallFunc0Args = unsafe extern "system" fn();
 pub type PFN_StdCallFunc1Args = unsafe extern "system" fn(PVOID);
 pub type PFN_StdCallFunc2Args = unsafe extern "system" fn(PVOID, PVOID);
 pub type PFN_StdCallFunc3Args = unsafe extern "system" fn(PVOID, PVOID, PVOID);

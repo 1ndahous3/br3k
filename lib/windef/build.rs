@@ -5,13 +5,18 @@ use std::path::PathBuf;
 use rayon::prelude::*;
 
 fn main() {
-    let defines = [
+
+    let mut defines = vec![
         ("_WIN32", None),
-        ("_WIN64", None),
         ("PHNT_INLINE_FREE_FORWARDERS", None),
         ("PHNT_VERSION", Some("PHNT_WINDOWS_11_24H2")),
         ("_MSC_VER", Some("1900")),
     ];
+
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    if target_arch == "x86_64" {
+        defines.push(("_WIN64", None))
+    }
 
     let all_modules = [
         ("ntpebteb", "ntpebteb.h"),

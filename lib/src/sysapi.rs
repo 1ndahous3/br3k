@@ -95,7 +95,7 @@ pub fn null_handle() -> UniqueHandle {
 }
 
 pub fn peb() -> ntpebteb::PPEB {
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(target_arch = "x86_64")]
     {
         unsafe {
             let peb: u64;
@@ -103,7 +103,7 @@ pub fn peb() -> ntpebteb::PPEB {
             peb as _
         }
     }
-    #[cfg(target_pointer_width = "32")]
+    #[cfg(target_arch = "x86")]
     {
         unsafe {
             let peb: u32;
@@ -114,7 +114,7 @@ pub fn peb() -> ntpebteb::PPEB {
 }
 
 pub fn teb() -> ntexapi::PTEB {
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(target_arch = "x86_64")]
     {
         unsafe {
             let teb: u64;
@@ -122,10 +122,10 @@ pub fn teb() -> ntexapi::PTEB {
             teb as _
         }
     }
-    #[cfg(target_pointer_width = "32")]
+    #[cfg(target_arch = "x86")]
     {
         unsafe {
-            let peb: u32;
+            let teb: u32;
             arch::asm!("mov {}, fs:[0x18]", out(reg) teb);
             teb as _
         }

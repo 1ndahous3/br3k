@@ -522,6 +522,7 @@ impl ThreadOpenStrategy {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
     thread_handle: HANDLE,
     exec_address: PVOID,
@@ -530,9 +531,9 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
         let mut context = sysapi::get_thread_context(thread_handle)?;
 
         if IS_NEW_THREAD {
-            context.Rcx = exec_address as u64;
+            context.Rcx = exec_address as _;
         } else {
-            context.Rip = exec_address as u64;
+            context.Rip = exec_address as _;
         }
 
         sysapi::set_thread_context(thread_handle, &context)?;
@@ -540,13 +541,36 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
         let mut context = sysapi::get_thread_wow64_context(thread_handle)?;
 
         if IS_NEW_THREAD {
-            context.Eax = exec_address as u32;
+            context.Eax = exec_address as _;
         } else {
-            context.Eip = exec_address as u32;
+            context.Eip = exec_address as _;
         }
 
         sysapi::set_thread_wow64_context(thread_handle, &context)?;
     }
+
+    Ok(())
+}
+
+#[cfg(target_arch = "x86")]
+fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
+    thread_handle: HANDLE,
+    exec_address: PVOID,
+) -> Result<(), NTSTATUS> {
+
+    if IS_64 {
+        return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED));
+    }
+
+    let mut context = sysapi::get_thread_context(thread_handle)?;
+
+    if IS_NEW_THREAD {
+        context.Eax = exec_address as _;
+    } else {
+        context.Eip = exec_address as _;
+    }
+
+    sysapi::set_thread_context(thread_handle, &context)?;
 
     Ok(())
 }
