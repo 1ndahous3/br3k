@@ -21,7 +21,7 @@ pub struct Pe {
 impl Constructor for Pe {
     type Args = PeNewArgs;
 
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
 
         let pe = if args.is_file {
             if args.size.is_missing() {
@@ -40,11 +40,9 @@ impl Constructor for Pe {
             }
         };
 
-        Self {
+        Ok(Self {
             pe
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 

@@ -46,16 +46,14 @@ impl FileMapping {
 impl Constructor for FileMapping {
     type Args = String;
 
-    fn py_new(cls: PyTypeRef, path: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+    fn py_new(_cls: &Py<PyType>, path: String, vm: &VirtualMachine) -> PyResult<Self> {
         match fs::map_file(&path) {
-            Ok((handle, section_handle, data)) => Self {
+            Ok((handle, section_handle, data)) => Ok(Self {
                 handle,
                 section_handle,
                 data: data.as_ptr() as usize,
                 size: data.len(),
-            }
-            .into_ref_with_type(vm, cls)
-            .map(Into::into),
+            }),
             Err(e) => Err(vm.new_system_error(format!(
                 "Unable to map file: {}",
                 sysapi::ntstatus_decode(e)

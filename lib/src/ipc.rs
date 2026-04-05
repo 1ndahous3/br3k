@@ -45,7 +45,7 @@ pub fn create_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
             LocalFree(sd_ptr);
         });
 
-        let pipe_handle = sysapi::create_named_pipe(pipe_name.as_str(), sd_ptr)?;
+        let pipe_handle = sysapi::create_named_pipe(&pipe_name, sd_ptr)?;
 
         Ok(pipe_handle)
     }
@@ -54,7 +54,7 @@ pub fn create_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
 pub fn open_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
 
     let pipe_name = format!("{PIPE_NAME_PROC_PREFIX}{pid}");
-    let pipe_handle = sysapi::open_named_pipe(pipe_name.as_str())?;
+    let pipe_handle = sysapi::open_named_pipe(&pipe_name)?;
 
     Ok(pipe_handle)
 }

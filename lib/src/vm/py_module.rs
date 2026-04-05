@@ -65,10 +65,10 @@ pub mod br3k {
             if first {
                 first = false;
             } else {
-                print_str.push_str(sep.as_str());
+                print_str.push_str(&sep);
             }
 
-            print_str.push_str(object.str(vm)?.as_str());
+            print_str.push_str(&object.str(vm)?.to_string());
         }
 
         slog_info!("{print_str}");
@@ -111,6 +111,73 @@ pub mod br3k {
                 Ok(())
             }
         }
+    }
+
+    use rustpython_vm::extend_module;
+    use crate::vm::{
+        py_resource,
+        py_proc,
+        py_thread,
+        py_fs,
+        py_tx,
+        py_pe,
+        py_pdb,
+        py_ipc,
+        py_com_irundown
+    };
+
+    use crate::vm::api_strategy;
+
+    macro_rules! register_enum {
+        ($vm:expr, $module:expr, $enum_type:path) => {{
+            let enum_name = std::any::type_name::<$enum_type>()
+                .rsplit("::")
+                .next()
+                .unwrap();
+
+            let type_obj = $vm.ctx.new_class(
+                Some(enum_name),
+                enum_name,
+                $vm.ctx.types.object_type.to_owned(),
+                Default::default(),
+            );
+
+            for item in <$enum_type as strum::VariantArray>::VARIANTS {
+                let name: &'static str = item.into();
+                let attr_name = $vm.ctx.intern_str(name);
+                let value = $vm.ctx.new_int(item.clone() as u32);
+                type_obj.set_attr(attr_name, value.into());
+            }
+
+            $module.set_attr(enum_name, type_obj, $vm).unwrap();
+        }};
+    }
+
+    fn module_exec(vm: &VirtualMachine, module: &Py<PyModule>) -> PyResult<()> {
+
+        extend_module!(vm, module, {
+            "Handle" => py_resource::Handle::make_static_type(),
+            "BufferView" => py_resource::BufferView::make_static_type(),
+            "Process" => py_proc::Process::make_static_type(),
+            "Thread" => py_thread::Thread::make_static_type(),
+            "Ipc" => py_ipc::Ipc::make_static_type(),
+            "FileMapping" => py_fs::FileMapping::make_static_type(),
+            "Pe" => py_pe::Pe::make_static_type(),
+            "Transaction" => py_tx::Transaction::make_static_type(),
+            "Pdb" => py_pdb::Pdb::make_static_type(),
+            "PEB" => py_proc::CPeb::make_static_type(),
+            "PRTL_USER_PROCESS_PARAMETERS" => py_proc::CPUserProcessParameters::make_static_type(),
+            "PROCESS_BASIC_INFORMATION" => py_proc::CProcessBasicInformation::make_static_type(),
+            "ComIRundown" => py_com_irundown::ComIRundown::make_static_type(),
+        });
+
+        register_enum!(vm, module, api_strategy::ProcessVmStrategy);
+        register_enum!(vm, module, api_strategy::ProcessOpenStrategy);
+        register_enum!(vm, module, api_strategy::ThreadOpenStrategy);
+        register_enum!(vm, module, fs::FsFileMode);
+        register_enum!(vm, module, fs::FsSectionMode);
+
+        Ok(())
     }
 
     //
@@ -174,7 +241,7 @@ pub mod br3k {
             .ok_or_else(|| vm.new_value_error("Invalid FsFileMode".to_string()))?;
 
         let handle = sysapi::create_file(
-            args.filepath.as_str(),
+            &args.filepath.to_string(),
             file_mode.access_rights(),
             file_mode.share_mode(),
             0,
@@ -199,7 +266,7 @@ pub mod br3k {
 
     #[pyfunction]
     fn fs_open_file(args: FsOpenFileArgs, vm: &VirtualMachine) -> PyResult<Handle> {
-        let handle = sysapi::open_file(args.filepath.as_str()).map_err(|e| {
+        let handle = sysapi::open_file(&args.filepath.to_string()).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to open file: {}",
                 sysapi::ntstatus_decode(e)
@@ -276,7 +343,7 @@ pub mod br3k {
     #[pyfunction]
     fn pdb_download(args: PdbDownloadArgs, vm: &VirtualMachine) -> PyResult<PyStr> {
 
-        let pdb_filepath = crate::pdb::download_pdb(&args.pe.pe, args.folder_path.as_str())
+        let pdb_filepath = crate::pdb::download_pdb(&args.pe.pe, &args.folder_path.to_string())
             .map_err(|e| vm.new_system_error(format!("Failed to download PDB: {e}")))?;
 
         Ok(pdb_filepath.into())
@@ -362,14 +429,14 @@ pub mod br3k {
 
     #[pyfunction]
     fn get_proc_address(args: GetProcAddressArgs, vm: &VirtualMachine) -> PyResult<usize> {
-        let address = api_ctx::get_proc_address(&args.module.as_str(), &args.proc.as_str())
-            .map_err(|_| vm.new_system_error(
-                format!(
-                    "Failed to get proc address of {} ({})",
-                    args.proc.as_str(),
-                    args.module.as_str()
-                )))?;
 
+        let module = args.module.to_string();
+        let proc = args.proc.to_string();
+
+        let address = api_ctx::get_proc_address(&module, &proc)
+            .map_err(|_| vm.new_system_error(
+                format!("Failed to get proc address of {} ({})", proc, module)
+            ))?;
 
         Ok(address as _)
     }

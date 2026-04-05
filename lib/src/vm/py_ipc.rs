@@ -33,14 +33,11 @@ pub struct Ipc {
 impl Constructor for Ipc {
     type Args = IpcNewArgs;
 
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-
-        Self {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
+        Ok(Self {
             process: args.process,
             pipe_handle: sysapi::null_handle().into(),
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 

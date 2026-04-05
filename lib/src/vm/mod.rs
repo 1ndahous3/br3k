@@ -53,35 +53,7 @@ macro_rules! slog_trace {
 
 //
 
-#[macro_export]
-macro_rules! register_enum {
-    ($vm:expr, $module:expr, $enum_type:path) => {{
-        let enum_name = std::any::type_name::<$enum_type>()
-            .rsplit("::")
-            .next()
-            .unwrap();
-
-        let type_obj = $vm.ctx.new_class(
-            Some(enum_name),
-            enum_name,
-            $vm.ctx.types.object_type.to_owned(),
-            Default::default(),
-        );
-
-        for item in <$enum_type as strum::VariantArray>::VARIANTS {
-            let name: &'static str = item.into();
-            let attr_name = $vm.ctx.intern_str(name);
-            let value = $vm.ctx.new_int(item.clone() as u32);
-            type_obj.set_attr(attr_name, value.into());
-        }
-
-        $module.set_attr(enum_name, type_obj, $vm).unwrap();
-    }};
-}
-
 use prelude::*;
-use crate::fs;
-
 use py_module::br3k;
 
 pub struct Vm {
@@ -90,50 +62,22 @@ pub struct Vm {
 
 impl Default for Vm {
     fn default() -> Self {
-        let interpreter = Interpreter::with_init(Default::default(), |vm| {
-            vm.add_frozen(rustpython_pylib::FROZEN_STDLIB);
-            vm.add_native_modules(rustpython_stdlib::get_module_inits());
 
-            let br3k_module = br3k::make_module(vm);
+        let builder = Interpreter::builder(Default::default());
+        let stdlib_defs = rustpython_stdlib::stdlib_module_defs(&builder.ctx);
+        let br3k_def = br3k::module_def(&builder.ctx);
 
-            let module_classes = [
-                ("Handle", py_resource::Handle::make_class(&vm.ctx)),
-                ("BufferView", py_resource::BufferView::make_class(&vm.ctx)),
-                ("Process", py_proc::Process::make_class(&vm.ctx)),
-                ("Thread", py_thread::Thread::make_class(&vm.ctx)),
-                ("Ipc", py_ipc::Ipc::make_class(&vm.ctx)),
-                ("FileMapping", py_fs::FileMapping::make_class(&vm.ctx)),
-                ("Pe", py_pe::Pe::make_class(&vm.ctx)),
-                ("Transaction", py_tx::Transaction::make_class(&vm.ctx)),
-                ("Pdb", py_pdb::Pdb::make_class(&vm.ctx)),
-                ("PEB", py_proc::CPeb::make_class(&vm.ctx)),
-                ("PRTL_USER_PROCESS_PARAMETERS", py_proc::CPUserProcessParameters::make_class(&vm.ctx)),
-                ("PROCESS_BASIC_INFORMATION", py_proc::CProcessBasicInformation::make_class(&vm.ctx)),
-                ("ComIRundown", py_com_irundown::ComIRundown::make_class(&vm.ctx)),
-            ];
-
-            for (name, class) in module_classes {
-                br3k_module.set_attr(name, class, vm).unwrap();
-            }
-
-            Self::register_enums(vm, &br3k_module);
-
-            vm.add_native_module("br3k".to_string(), Box::new(move |_vm| br3k_module.clone()))
-        });
+        let interpreter = builder
+            .add_native_modules(&stdlib_defs)
+            .add_frozen_modules(rustpython_pylib::FROZEN_STDLIB)
+            .add_native_module(br3k_def)
+            .build();
 
         Self { interpreter }
     }
 }
 
 impl Vm {
-    fn register_enums(vm: &VirtualMachine, module: &PyRef<PyModule>) {
-        register_enum!(vm, module, api_strategy::ProcessVmStrategy);
-        register_enum!(vm, module, api_strategy::ProcessOpenStrategy);
-        register_enum!(vm, module, api_strategy::ThreadOpenStrategy);
-        register_enum!(vm, module, fs::FsFileMode);
-        register_enum!(vm, module, fs::FsSectionMode);
-    }
-
     pub fn execute_script(&self, script: &str, script_path: Option<String>) -> Result<(), ()> {
         self.interpreter.enter(|vm| {
 
@@ -147,7 +91,7 @@ impl Vm {
             scope.globals.set_item("print", print_fn, vm).unwrap();
             scope.globals.set_item("__name__", vm.ctx.new_str("__main__").into(), vm).unwrap();
 
-            let res = vm.run_code_string(scope, script, script_path.unwrap_or(String::from("<script>")));
+            let res = vm.run_string(scope, script, script_path.unwrap_or(String::from("<script>")));
             match res {
                 Ok(_) => Ok(()),
                 Err(exc) => {

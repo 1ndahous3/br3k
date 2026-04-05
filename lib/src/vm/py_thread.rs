@@ -59,14 +59,12 @@ pub struct Thread {
 impl Constructor for Thread {
     type Args = ThreadNewArgs;
 
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        Self {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
+        Ok(Self {
             process: args.process,
             tid: args.tid.present().into(),
             handle: args.thread_handle.present().into(),
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 

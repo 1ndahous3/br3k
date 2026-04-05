@@ -60,9 +60,8 @@ pub struct ComIRundownNewArgs {
 impl Constructor for ComIRundown {
     type Args = ComIRundownNewArgs;
 
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-
-        Self {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
+        Ok(Self {
             process: args.process,
             ole32_address: args.ole32_address,
             ole32_secret_rva: args.ole32_secret_rva,
@@ -72,9 +71,7 @@ impl Constructor for ComIRundown {
             ipid_entries: RefCell::new(Vec::new()),
             ole32_secret: Default::default(),
             global_ctx_addr: ptr::null_mut(),
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 

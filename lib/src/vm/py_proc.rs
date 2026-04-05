@@ -84,18 +84,18 @@ impl CPUserProcessParameters {}
 impl Constructor for CPUserProcessParameters {
     type Args = CPUserProcessParametersNewArgs;
 
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        let params = sysapi::create_process_parameters(args.filepath.as_str()).map_err(|e| {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
+        let params = sysapi::create_process_parameters(
+            &args.filepath.to_string()
+        ).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to create process parameters: {}", sysapi::ntstatus_decode(e)
             ))
         })?;
 
-        Self {
+        Ok(Self {
             params: params.into(),
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 
@@ -138,7 +138,8 @@ pub struct ProcessNewArgs {
 impl Constructor for Process {
     type Args = ProcessNewArgs;
 
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
+
         let mut pid = 0;
         let mut image_path: Option<String> = None;
         let mut section_handle: Option<HANDLE> = None;
@@ -152,19 +153,19 @@ impl Constructor for Process {
                     .to_string().ok()
             }
         } else if let Some(v) = args.pid.present() {
-            let pid_str = v.as_str();
+            let pid_str = v.to_string();
             pid = pid_str
                 .parse::<u32>()
                 .map_err(|_| vm.new_value_error(format!("Invalid PID format: '{pid_str}'")))?
         } else if let Some(v) = args.name.present() {
-            let name_str = v.as_str();
-            pid = sysapi::find_process(name_str).map_err(|e| {
+            let name_str = v.to_string();
+            pid = sysapi::find_process(&name_str).map_err(|e| {
                 vm.new_value_error(format!(
                     "Unable to find process '{name_str}': {}", sysapi::ntstatus_decode(e)
                 ))
             })?
         } else if let Some(v) = args.image_path.present() {
-            image_path = v.as_str().to_string().into()
+            image_path = v.to_string().into()
         } else if let Some(v) = args.section_handle.present() {
             let s = *v.handle.get();
             section_handle = Some(s)
@@ -201,7 +202,7 @@ impl Constructor for Process {
             })
             .transpose()?;
 
-        Self {
+        Ok(Self {
             pid: pid.into(),
             image_path: image_path.into(),
             section_handle: section_handle.into(),
@@ -211,9 +212,7 @@ impl Constructor for Process {
             process_handle: sysapi::null_handle().into(),
             thread: None.into(),
             memory: None.into(),
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 

@@ -120,12 +120,12 @@ impl ProcessMemory {
 
         let kernel_pe = PtrPE::new_memory(src_data.as_ptr(), src_data.len());
 
-        let pdb_path = pdb::download_pdb(&kernel_pe, fs::get_temp_folder().as_str())
+        let pdb_path = pdb::download_pdb(&kernel_pe, &fs::get_temp_folder())
             .map_err(|e| {
                 log::error!("Failed to download PDB: {e}");
             })?;
 
-        let mut pdb = pdb::Pdb::init(pdb_path.as_str())
+        let mut pdb = pdb::Pdb::init(&pdb_path)
             .map_err(|e| {
                 log::error!("Failed to initialize PDB: {e}");
             })?;

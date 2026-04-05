@@ -17,13 +17,11 @@ pub struct TransactionNewArgs {
 
 impl Constructor for Transaction {
     type Args = TransactionNewArgs;
-    fn py_new(cls: PyTypeRef, args: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-        Self {
+    fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
+        Ok(Self {
             name: args.name.to_string().into(),
             handle: sysapi::null_handle().into(),
-        }
-        .into_ref_with_type(vm, cls)
-        .map(Into::into)
+        })
     }
 }
 
@@ -33,7 +31,7 @@ impl Transaction {
     fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
         let name = self.name.borrow();
 
-        let handle = sysapi::create_transaction(name.as_str()).map_err(|e| {
+        let handle = sysapi::create_transaction(&name).map_err(|e| {
             vm.new_system_error(format!(
                 "Unable to create transaction: {}",
                 sysapi::ntstatus_decode(e)

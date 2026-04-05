@@ -22,15 +22,13 @@ pub struct BufferView {
 impl Constructor for BufferView {
     type Args = PyObjectRef;
 
-    fn py_new(cls: PyTypeRef, obj_ref: Self::Args, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+    fn py_new(_cls: &Py<PyType>, obj_ref: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
 
         if let Ok(b) = &obj_ref.downcast::<PyBytes>() {
-            return Self {
+            return Ok(Self {
                 ptr: b.as_ptr() as _,
                 size: b.len() as _,
-            }
-            .into_ref_with_type(vm, cls)
-            .map(Into::into)
+            })
         }
 
         Err(vm.new_type_error("Cannot convert an object to a buffer view".to_string()))
