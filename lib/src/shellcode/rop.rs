@@ -1,18 +1,19 @@
 #![allow(dead_code, non_camel_case_types)]
 
 use crate::prelude::*;
+
 use crate::pe_module;
 
 use super::SYSTEM_DLLS;
 
-use std::ffi::CString;
+use std::slice;
 
 pub type PFN_StdCallFunc0Args = unsafe extern "system" fn();
 pub type PFN_StdCallFunc1Args = unsafe extern "system" fn(PVOID);
 pub type PFN_StdCallFunc2Args = unsafe extern "system" fn(PVOID, PVOID);
 pub type PFN_StdCallFunc3Args = unsafe extern "system" fn(PVOID, PVOID, PVOID);
 
-pub fn gadget_inf_loop() -> Option<&'static[u8]> {
+pub fn gadget_inf_loop() -> Option<&'static [u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -21,16 +22,11 @@ pub fn gadget_inf_loop() -> Option<&'static[u8]> {
     )
 }
 
-pub fn gadget_ret() -> Option<&'static[u8]> {
-    pe_module::find_code_in_module(
-        "ntdll.dll",
-        &[
-            0xC3
-        ]
-    )
+pub fn gadget_ret() -> Option<&'static [u8]> {
+    pe_module::find_code_in_module("ntdll.dll", &[0xC3])
 }
 
-pub fn gadget_pop_value_and_ret() -> Option<&'static[u8]> {
+pub fn gadget_pop_value_and_ret() -> Option<&'static [u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -40,7 +36,7 @@ pub fn gadget_pop_value_and_ret() -> Option<&'static[u8]> {
     )
 }
 
-pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> {
+pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static [u8]> {
     unsafe {
         static POP8: [u8; 3] = [
             0x58, // pop rax
@@ -79,14 +75,12 @@ pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> {
             let mut ret = find_ret(code_section);
 
             while ret.is_some() {
-
                 let it = ret.unwrap();
                 let mut it_back = it;
 
                 let mut pop_count: usize = 0;
 
                 'find_pop: while pop_count < count {
-
                     it_back = it_back.sub(2); // first check 2-bytes instructions
                     for pop in POP16 {
                         if (it_back as *const u16).read_unaligned() == pop {
@@ -110,10 +104,7 @@ pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> {
                         let instr = 0xC48348 | ((pops_left * 8u32) << 24); // 48 83 C4 XX
 
                         if (it_back as *const u32).read_unaligned() == instr {
-                            return Some(slice::from_raw_parts(
-                                it_back,
-                                it.offset_from(it_back) as usize)
-                            );
+                            return Some(slice::from_raw_parts(it_back, it.offset_from(it_back) as usize));
                         }
                     }
 
@@ -121,10 +112,7 @@ pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static[u8]> {
                 }
 
                 if pop_count == count {
-                    return Some(slice::from_raw_parts(
-                        it_back,
-                        it.offset_from(it_back) as usize)
-                    );
+                    return Some(slice::from_raw_parts(it_back, it.offset_from(it_back) as usize));
                 }
 
                 let offset = it.offset_from(code_section.as_ptr()) as usize;

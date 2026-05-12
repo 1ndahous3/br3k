@@ -24,8 +24,13 @@ fn main() {
 
     if let Some(script_path) = matches.get_one::<String>("script") {
         log::info!("Mode: script file ({})", script_path);
-        let script_data = std::fs::read_to_string(script_path)
-            .expect("Unable to open script file");
+        let script_data = match std::fs::read_to_string(script_path) {
+            Ok(script_data) => script_data,
+            Err(e) => {
+                log::error!("Unable to open script file: {e}");
+                std::process::exit(1);
+            }
+        };
 
         let vm = vm::Vm::default();
         match vm.execute_script(&script_data, Some(script_path.clone())) {
@@ -37,29 +42,41 @@ fn main() {
                 std::process::exit(1);
             }
         }
-    }
-    else {
+    } else {
         let pid: u32 = unsafe { (*sysapi::teb()).ClientId.UniqueProcess } as _;
         log::info!("Mode: IPC client ({pid})");
 
-        sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
+        if let Err(e) = sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
             ntdll_copy: false,
             ntdll_alt_api: false,
-        });
+        }) {
+            log::error!("Unable to initialize system API context: {e}");
+            std::process::exit(1);
+        }
 
-        let pipe_handle = ipc::open_pipe(pid as _)
-            .map_err(|status| {
-                log::error!("Unable to open pipe: {}", sysapi::ntstatus_decode(status));
+        let pipe_handle = match ipc::open_pipe(pid as _) {
+            Ok(pipe_handle) => pipe_handle,
+            Err(error) => {
+                log::error!("Unable to open pipe: {error}");
                 std::process::exit(1);
-            }).unwrap();
+            }
+        };
 
-        let script_data = ipc::receive_data(*pipe_handle.get())
-            .map_err(|status| {
-                log::error!("Unable to read script from pipe: {}", sysapi::ntstatus_decode(status));
+        let script_data = match ipc::receive_data(*pipe_handle.get()) {
+            Ok(script_data) => script_data,
+            Err(error) => {
+                log::error!("Unable to read script from pipe: {error}");
                 std::process::exit(1);
-            }).unwrap();
+            }
+        };
 
-        let script = String::from_utf8(script_data).unwrap();
+        let script = match String::from_utf8(script_data) {
+            Ok(script) => script,
+            Err(e) => {
+                log::error!("IPC script is not valid UTF-8: {e}");
+                std::process::exit(1);
+            }
+        };
 
         let vm = vm::Vm::default();
         match vm.execute_script(&script, None) {

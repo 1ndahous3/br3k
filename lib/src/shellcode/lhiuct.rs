@@ -28,12 +28,11 @@
 
 #![allow(dead_code)]
 
-use crate::prelude::*;
 use crate::pe_module;
 
 use super::rop;
 
-pub fn gadget_pop_values_and_jmp() -> Option<&'static[u8]> {
+pub fn gadget_pop_values_and_jmp() -> Option<&'static [u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -49,7 +48,7 @@ pub fn gadget_pop_values_and_jmp() -> Option<&'static[u8]> {
     )
 }
 
-pub fn gadget_setup_reg_values_and_ret() -> Option<&'static[u8]> {
+pub fn gadget_setup_reg_values_and_ret() -> Option<&'static [u8]> {
     pe_module::find_code_in_module(
         "ntdll.dll",
         &[
@@ -64,8 +63,7 @@ pub fn gadget_setup_reg_values_and_ret() -> Option<&'static[u8]> {
     )
 }
 
-pub fn pop_values_and_ret8(count: usize) -> Option<&'static[u8]> {
-
+pub fn pop_values_and_ret8(count: usize) -> Option<&'static [u8]> {
     assert!(count <= 8, "Count must be less than or equal to 8");
 
     let mut code = Vec::with_capacity(8 + 1); // 8 pops + ret
@@ -99,7 +97,7 @@ pub fn pop_values_and_ret8(count: usize) -> Option<&'static[u8]> {
     pe_module::find_code_in_module("ntdll.dll", &code)
 }
 
-pub fn gadget_clean_stack(count: usize, extra_imm64: &mut usize) -> Option<&'static[u8]> {
+pub fn gadget_clean_stack(count: usize, extra_imm64: &mut usize) -> Option<&'static [u8]> {
     for i in 0..10 {
         if let Some(gadget) = rop::gadget_pop_values_and_ret(count + i) {
             *extra_imm64 += i;
@@ -211,7 +209,7 @@ pub fn shellcode_for_gadget(
         let mut push_imm64 = |value: u64| {
             shellcode.extend_from_slice(&[0x48, 0xB8]); // mov rax, imm64
             shellcode.extend_from_slice(value.to_le_bytes().as_slice());
-            shellcode.extend_from_slice(&[0x50]);       // push rax
+            shellcode.extend_from_slice(&[0x50]); // push rax
         };
 
         // if return address does not specified, we will use address from stack

@@ -1,21 +1,25 @@
 use crate::prelude::*;
 use crate::vm::prelude::*;
 
-use crate::vm;
-use crate::sysapi;
-use crate::str;
 use crate::slog_info;
+use crate::str;
+use crate::sysapi;
+use crate::vm;
+
+use std::cell::RefCell;
+use std::fmt;
+use std::slice;
 
 use vm::api_strategy;
 use vm::py_resource::Handle;
 use vm::py_thread::Thread;
 
-use windef::{ntrtl, ntpsapi, ntpebteb};
+use windef::{ntpebteb, ntpsapi, ntrtl};
 
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS;
 
-use exe::{PE, Buffer, VecPE, RelocationDirectory, types, headers};
+use exe::{Buffer, PE, RelocationDirectory, VecPE, headers, types};
 use windef::ntpebteb::PEB;
 
 #[pyclass(module = false, name = "PROCESS_BASIC_INFORMATION")]
@@ -50,11 +54,7 @@ pub struct CPeb {
 
 impl fmt::Debug for CPeb {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "CPeb {{ ImageBaseAddress: {:?} }}",
-            self.data.ImageBaseAddress
-        )
+        write!(f, "CPeb {{ ImageBaseAddress: {:?} }}", self.data.ImageBaseAddress)
     }
 }
 
@@ -85,17 +85,10 @@ impl Constructor for CPUserProcessParameters {
     type Args = CPUserProcessParametersNewArgs;
 
     fn py_new(_cls: &Py<PyType>, args: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
-        let params = sysapi::create_process_parameters(
-            &args.filepath.to_string()
-        ).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to create process parameters: {}", sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        let params = sysapi::create_process_parameters(&args.filepath.to_string())
+            .map_err(map_to_py_system_error(vm, "Unable to create process parameters"))?;
 
-        Ok(Self {
-            params: params.into(),
-        })
+        Ok(Self { params: params.into() })
     }
 }
 
@@ -139,7 +132,6 @@ impl Constructor for Process {
     type Args = ProcessNewArgs;
 
     fn py_new(_cls: &Py<PyType>, args: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
-
         let mut pid = 0;
         let mut image_path: Option<String> = None;
         let mut section_handle: Option<HANDLE> = None;
@@ -149,57 +141,46 @@ impl Constructor for Process {
                 let teb = sysapi::teb();
 
                 pid = (*teb).ClientId.UniqueProcess as _;
-                image_path = str::to_u16cstring(&(*(*(*teb).ProcessEnvironmentBlock).ProcessParameters).ImagePathName)
-                    .to_string().ok()
+                image_path = str::to_u16cstring(&(*(*(*teb).ProcessEnvironmentBlock).ProcessParameters).ImagePathName).to_string().ok();
             }
         } else if let Some(v) = args.pid.present() {
             let pid_str = v.to_string();
-            pid = pid_str
-                .parse::<u32>()
+            pid = pid_str.parse::<u32>()
                 .map_err(|_| vm.new_value_error(format!("Invalid PID format: '{pid_str}'")))?
         } else if let Some(v) = args.name.present() {
             let name_str = v.to_string();
-            pid = sysapi::find_process(&name_str).map_err(|e| {
-                vm.new_value_error(format!(
-                    "Unable to find process '{name_str}': {}", sysapi::ntstatus_decode(e)
-                ))
-            })?
+            pid = sysapi::find_process(&name_str)
+                .map_err(|e| to_py_value_error(vm, &format!("Unable to find process '{name_str}'"), e))?
         } else if let Some(v) = args.image_path.present() {
             image_path = v.to_string().into()
         } else if let Some(v) = args.section_handle.present() {
             let s = *v.handle.get();
             section_handle = Some(s)
         } else {
-            return Err(vm.new_value_error(
-                "'name', 'pid', 'image_path' or 'section_handle' must be specified".to_string(),
-            ));
+            return Err(vm.new_value_error("'name', 'pid', 'image_path' or 'section_handle' must be specified".to_string()));
         };
+
+        let invalid_strategy = |name: &str| vm.new_value_error(format!("Invalid {name}"));
 
         let process_vm_strategy = args
             .process_vm_strategy
             .into_option()
-            .map(|v| {
-                api_strategy::ProcessVmStrategy::from_repr(v)
-                    .ok_or_else(|| vm.new_value_error("Invalid ProcessVmStrategy".to_string()))
-            })
+            .map(|v| api_strategy::ProcessVmStrategy::from_repr(v)
+                .ok_or_else(|| invalid_strategy("ProcessVmStrategy")))
             .transpose()?;
 
         let process_open_strategy = args
             .process_open_strategy
             .into_option()
-            .map(|v| {
-                api_strategy::ProcessOpenStrategy::from_repr(v)
-                    .ok_or_else(|| vm.new_value_error("Invalid ProcessOpenStrategy".to_string()))
-            })
+            .map(|v| api_strategy::ProcessOpenStrategy::from_repr(v)
+                .ok_or_else(|| invalid_strategy("ProcessOpenStrategy")))
             .transpose()?;
 
         let thread_open_strategy = args
             .thread_open_strategy
             .into_option()
-            .map(|v| {
-                api_strategy::ThreadOpenStrategy::from_repr(v)
-                    .ok_or_else(|| vm.new_value_error("Invalid ThreadOpenStrategy".to_string()))
-            })
+            .map(|v| api_strategy::ThreadOpenStrategy::from_repr(v)
+                .ok_or_else(|| invalid_strategy("ThreadOpenStrategy")))
             .transpose()?;
 
         Ok(Self {
@@ -221,7 +202,7 @@ impl Constructor for Process {
 #[derive(FromArgs)]
 pub struct CreateUserArgs {
     #[pyarg(any)]
-    suspended: bool
+    suspended: bool,
 }
 
 #[derive(FromArgs)]
@@ -256,13 +237,12 @@ pub struct WriteMemImageArgs {
 
 #[pyclass(with(Constructor))]
 impl Process {
-
     #[pygetset]
     fn main_thread(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-
-        let thread = self.thread.borrow_mut()
-            .as_mut()
-            .ok_or_else(|| vm.new_value_error("Process main thread is not opened".to_string()))?.clone();
+        let mut thread = self.thread.borrow_mut();
+        let not_opened = || vm.new_value_error("Process main thread is not opened".to_string());
+        let thread = thread.as_mut()
+            .ok_or_else(not_opened)?.clone();
 
         Ok(thread.into())
     }
@@ -270,24 +250,17 @@ impl Process {
     #[pymethod]
     fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
         let mut process_open_strategy = self.process_open_strategy.borrow_mut();
-        let process_open_strategy = process_open_strategy
-            .as_mut()
-            .ok_or_else(|| vm.new_value_error("Process open method is not set".to_string()))?;
+        let missing_strategy = || vm.new_value_error("Process open method is not set".to_string());
+        let process_open_strategy = process_open_strategy.as_mut()
+            .ok_or_else(missing_strategy)?;
 
         let handle = process_open_strategy
             .open(*self.pid.borrow(), PROCESS_ALL_ACCESS)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to open process: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(map_to_py_system_error(vm, "Unable to open process"))?;
 
+        let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
         let basic_info = sysapi::get_process_basic_info(*handle)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(read_basic_info_error)?;
 
         self.process_handle.replace(handle);
         self.pid.replace(basic_info.UniqueProcessId as _);
@@ -297,38 +270,24 @@ impl Process {
 
     #[pymethod]
     fn create_user(zelf: PyRef<Self>, args: CreateUserArgs, vm: &VirtualMachine) -> PyResult<()> {
-
         let mut image_path = zelf.image_path.borrow_mut();
-        let image_path = image_path
-            .as_mut()
+        let image_path = image_path.as_mut()
             .ok_or_else(|| vm.new_value_error("Process image path is not set".to_string()))?;
 
+        let create_process_error = map_to_py_system_error(vm, "Unable to create process");
         let (process_handle, thread_handle) = sysapi::create_user_process(&image_path, args.suspended)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to create process: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(create_process_error)?;
 
+        let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
         let basic_info = sysapi::get_process_basic_info(*process_handle)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(read_basic_info_error)?;
 
         zelf.process_handle.replace(process_handle);
         zelf.pid.replace(basic_info.UniqueProcessId as _);
 
-        let py_handle = Handle {
-            handle: thread_handle
-        }.into_ref(&vm.ctx);
+        let py_handle = Handle { handle: thread_handle }.into_ref(&vm.ctx);
 
-        let py_thread = Thread {
-            process: zelf.clone(),
-            tid: None.into(),
-            handle: Some(py_handle.clone()).into()
-        }.into_ref(&vm.ctx);
+        let py_thread = Thread { process: zelf.clone(), tid: None.into(), handle: Some(py_handle.clone()).into() }.into_ref(&vm.ctx);
 
         zelf.thread.replace(py_thread.into());
         Ok(())
@@ -337,23 +296,15 @@ impl Process {
     #[pymethod]
     fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
         let mut section_handle = self.section_handle.borrow_mut();
-        let section_handle = section_handle
-            .as_mut()
+        let section_handle = section_handle.as_mut()
             .ok_or_else(|| vm.new_value_error("Process section handle is not set".to_string()))?;
 
         let process_handle = sysapi::create_process(*section_handle)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to create process: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(map_to_py_system_error(vm, "Unable to create process"))?;
 
+        let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
         let basic_info = sysapi::get_process_basic_info(*process_handle)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(read_basic_info_error)?;
 
         self.process_handle.replace(process_handle);
         self.pid.replace(basic_info.UniqueProcessId as _);
@@ -364,49 +315,37 @@ impl Process {
     #[pymethod]
     fn init_memory(&self, vm: &VirtualMachine) -> PyResult<()> {
         let mut process_vm_strategy = self.process_vm_strategy.borrow_mut();
-        let process_vm_strategy = process_vm_strategy
-            .as_mut()
-            .ok_or_else(|| vm.new_value_error("Process VM strategy is not set".to_string()))?;
+        let missing_strategy = || vm.new_value_error("Process VM strategy is not set".to_string());
+        let process_vm_strategy = process_vm_strategy.as_mut()
+            .ok_or_else(missing_strategy)?;
 
         let process_handle = *self.process_handle.borrow().get();
 
         let memory = match process_vm_strategy {
-            api_strategy::ProcessVmStrategy::AllocateInAddr => {
-                api_strategy::ProcessMemory::init_allocate_in_addr(process_handle)
-            }
-            api_strategy::ProcessVmStrategy::CreateSectionMap => {
-                api_strategy::ProcessMemory::init_create_section_map(process_handle)
-            }
+            api_strategy::ProcessVmStrategy::AllocateInAddr => api_strategy::ProcessMemory::init_allocate_in_addr(process_handle),
+            api_strategy::ProcessVmStrategy::CreateSectionMap => api_strategy::ProcessMemory::init_create_section_map(process_handle),
             api_strategy::ProcessVmStrategy::CreateSectionMapLocalMap => {
                 api_strategy::ProcessMemory::init_create_section_map_local_map(process_handle)
             }
-            api_strategy::ProcessVmStrategy::LiveDumpParse => {
-                api_strategy::ProcessMemory::init_live_dump_parse(*self.pid.borrow())
-            }
+            api_strategy::ProcessVmStrategy::LiveDumpParse => api_strategy::ProcessMemory::init_live_dump_parse(*self.pid.borrow()),
         };
 
-        if memory.is_err() {
-            return Err(vm.new_value_error(format!(
-                "Failed to initialize process vm strategy: {process_vm_strategy:?}"
-            )));
-        }
+        let strategy_error = |e| to_py_system_error(vm, &format!("Failed to initialize process vm strategy {process_vm_strategy:?}"), e);
+        let memory = memory
+            .map_err(strategy_error)?;
 
-        self.memory.replace(Some(memory.unwrap()));
+        self.memory.replace(Some(memory));
         Ok(())
     }
 
     #[pymethod]
     fn create_memory(&self, args: CreateMemoryArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut memory = self.memory.borrow_mut();
-        let memory = memory
-            .as_mut()
+        let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
-        memory.create_memory(args.size).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to create memory: {}", sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        memory.create_memory(args.size)
+            .map_err(map_process_memory_error_to_py_exception(vm, "Unable to create memory"))?;
 
         Ok(())
     }
@@ -414,19 +353,18 @@ impl Process {
     #[pymethod]
     fn write_memory(&self, args: WriteMemoryArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut memory = self.memory.borrow_mut();
-        let memory = memory
-            .as_mut()
+        let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
         let offset = args.offset.unwrap_or(0);
 
         memory
-            .write_memory(offset, args.data.as_ptr() as _, args.data.len())
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to write memory: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .write_memory(
+                offset,
+                args.data.as_ptr() as _,
+                args.data.len()
+            )
+            .map_err(map_process_memory_error_to_py_exception(vm, "Unable to write memory"))?;
 
         Ok(())
     }
@@ -434,8 +372,7 @@ impl Process {
     #[pymethod]
     fn get_memory_remote_address(&self, vm: &VirtualMachine) -> PyResult<u64> {
         let mut memory = self.memory.borrow_mut();
-        let memory = memory
-            .as_mut()
+        let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
         let remote_base_addr = memory.get_remote_base_addr() as u64;
@@ -448,9 +385,7 @@ impl Process {
     pub fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
         match sysapi::get_process_wow64_info(*self.process_handle.borrow().get()) {
             Ok(is_x64) => Ok(is_x64),
-            Err(status) => Err(vm.new_system_error(format!(
-                "Unable to get Wow64 info: {}", sysapi::ntstatus_decode(status)
-            ))),
+            Err(error) => Err(to_py_system_error(vm, "Unable to get Wow64 info", error)),
         }
     }
 
@@ -458,12 +393,8 @@ impl Process {
 
     #[pymethod]
     fn get_basic_info(&self, vm: &VirtualMachine) -> PyResult<CProcessBasicInformation> {
-        let basic_info =
-            sysapi::get_process_basic_info(*self.process_handle.borrow().get()).map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to get process basic info: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+        let basic_info = sysapi::get_process_basic_info(*self.process_handle.borrow().get())
+            .map_err(map_to_py_system_error(vm, "Unable to get process basic info"))?;
 
         Ok(CProcessBasicInformation { data: basic_info })
     }
@@ -473,42 +404,27 @@ impl Process {
         unsafe {
             let process_handle = *self.process_handle.borrow().get();
 
+            let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
             let basic_info = sysapi::get_process_basic_info(process_handle)
-                .map_err(|e| {
-                    vm.new_system_error(format!(
-                        "Unable to read process basic info: {}", sysapi::ntstatus_decode(e)
-                    ))
-                })?;
+                .map_err(read_basic_info_error)?;
 
             let mut peb = Box::new(PEB::default());
 
-            let peb_data =
-                slice::from_raw_parts_mut(peb.as_mut() as *mut PEB as *mut u8, size_of::<PEB>());
+            let peb_data = slice::from_raw_parts_mut(peb.as_mut() as *mut PEB as *mut u8, size_of::<PEB>());
 
             sysapi::read_virtual_memory(peb_data, basic_info.PebBaseAddress as _, process_handle)
-                .map_err(|e| {
-                    vm.new_system_error(format!(
-                        "Unable to read process PEB: {}", sysapi::ntstatus_decode(e)
-                    ))
-                })?;
+                .map_err(map_to_py_system_error(vm, "Unable to read process PEB"))?;
 
-            Ok(CPeb {
-                data: mem::transmute_copy(&*peb),
-            })
+            Ok(CPeb { data: mem::transmute_copy(&*peb) })
         }
     }
 
     #[pymethod]
-    fn write_peb_proc_params(
-        &self,
-        args: WritePebProcParmsArgs,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
+    fn write_peb_proc_params(&self, args: WritePebProcParmsArgs, vm: &VirtualMachine) -> PyResult<()> {
         unsafe {
             let mut memory = self.memory.borrow_mut();
-            let memory = memory.as_mut().ok_or_else(|| {
-                vm.new_value_error("Memory context is not initialized".to_string())
-            })?;
+            let memory = memory.as_mut()
+                .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
             let proc_params = args.proc_params.params.borrow_mut();
             let proc_params = proc_params.get();
@@ -524,13 +440,9 @@ impl Process {
                     peb_memory,
                     offset_of!(ntpebteb::PEB, ProcessParameters),
                 )
-                .map_err(|e| {
-                    vm.new_system_error(format!(
-                        "Unable to write process parameters: {}", sysapi::ntstatus_decode(e)
-                    ))
-                })?;
+                .map_err(map_process_memory_error_to_py_exception(vm, "Unable to write process parameters"))?;
 
-            if (*(*proc_params)).Environment.is_null() {
+            if !(*(*proc_params)).Environment.is_null() && (*(*proc_params)).EnvironmentSize > 0 {
                 let mut env_memory = memory.clone();
                 env_memory
                     .create_write_memory_fixup_addr(
@@ -539,11 +451,7 @@ impl Process {
                         proc_params_memory,
                         offset_of!(ntrtl::RTL_USER_PROCESS_PARAMETERS, Environment),
                     )
-                    .map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Unable to write process parameters: {}", sysapi::ntstatus_decode(e)
-                        ))
-                    })?;
+                    .map_err(map_process_memory_error_to_py_exception(vm, "Unable to write process parameters"))?;
             }
 
             Ok(())
@@ -552,81 +460,71 @@ impl Process {
 
     #[pymethod]
     fn write_mem_image(&self, args: WriteMemImageArgs, vm: &VirtualMachine) -> PyResult<()> {
-
         let mut memory = self.memory.borrow_mut();
-        let memory = memory.as_mut().ok_or_else(|| {
-            vm.new_value_error("Memory context is not initialized".to_string())
-        })?;
+        let memory = memory.as_mut()
+            .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
         let base_address = memory.get_remote_base_addr() as usize;
 
         let mem_image = VecPE::from_memory_data(args.mem_image.as_bytes());
         let mut new_mem_image = mem_image.clone();
 
-        let e_lfanew = mem_image.e_lfanew().unwrap();
-        let nt_header = mem_image.get_valid_nt_headers().unwrap();
+        let e_lfanew = mem_image.e_lfanew()
+            .map_err(map_to_py_system_error(vm, "Unable to read PE header offset"))?;
+
+        let nt_header = mem_image.get_valid_nt_headers()
+            .map_err(map_to_py_system_error(vm, "Unable to read PE NT headers"))?;
+
         match nt_header {
             types::NTHeaders::NTHeaders32(_) => {
-                let image_base_offset = e_lfanew.0 as usize +
-                    offset_of!(headers::ImageNTHeaders32, optional_header) +
-                    offset_of!(headers::ImageOptionalHeader32, image_base);
+                let image_base_offset = e_lfanew.0 as usize
+                    + offset_of!(headers::ImageNTHeaders32, optional_header)
+                    + offset_of!(headers::ImageOptionalHeader32, image_base);
 
                 let base_address = base_address as u64;
-                new_mem_image.write(image_base_offset, base_address.to_le_bytes())
-                    .map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Unable to write image base address: {e}"
-                        ))
-                    })?;
-            },
+                new_mem_image
+                    .write(image_base_offset, base_address.to_le_bytes())
+                    .map_err(map_to_py_system_error(vm, "Unable to write image base address"))?;
+            }
             types::NTHeaders::NTHeaders64(_) => {
-                let image_base_offset = e_lfanew.0 as usize +
-                    offset_of!(headers::ImageNTHeaders64, optional_header) +
-                    offset_of!(headers::ImageOptionalHeader64, image_base);
+                let image_base_offset = e_lfanew.0 as usize
+                    + offset_of!(headers::ImageNTHeaders64, optional_header)
+                    + offset_of!(headers::ImageOptionalHeader64, image_base);
 
                 let base_address = base_address as u64;
-                new_mem_image.write(image_base_offset, base_address.to_le_bytes())
-                    .map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Unable to write image base address: {e}"
-                        ))
-                    })?;
+                new_mem_image
+                    .write(image_base_offset, base_address.to_le_bytes())
+                    .map_err(map_to_py_system_error(vm, "Unable to write image base address"))?;
             }
         };
 
-        let reloc_dir = RelocationDirectory::parse(&mem_image).unwrap();
+        let parse_relocation_error = map_to_py_system_error(vm, "Unable to parse relocation directory");
+        let reloc_dir = RelocationDirectory::parse(&mem_image)
+            .map_err(parse_relocation_error)?;
         reloc_dir.relocate(&mut new_mem_image, base_address as _)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to relocate memory image: {e}"
-                ))
-            })?;
+            .map_err(map_to_py_system_error(vm, "Unable to relocate memory image"))?;
 
-        memory.write_memory(0, new_mem_image.as_ptr() as _, new_mem_image.len())
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to write memory: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+        memory
+            .write_memory(
+                0,
+                new_mem_image.as_ptr() as _,
+                new_mem_image.len()
+            ).map_err(map_process_memory_error_to_py_exception(vm, "Unable to write memory"))?;
 
         Ok(())
     }
 
     #[pymethod]
     fn log_handles(&self, vm: &VirtualMachine) -> PyResult<()> {
-
         let pid = *self.pid.borrow();
 
         let processes = sysapi::get_processes_pid_name()
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to get processes info: {}", sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(map_to_py_system_error(vm, "Unable to get processes info"))?;
 
-        let handles = sysapi::get_process_handles(pid);
+        let handles = sysapi::get_process_handles(pid)
+            .map_err(map_to_py_system_error(vm, "Unable to get process handles"))?;
 
-        for handle in handles.unwrap() {
+        for handle in handles {
             slog_info!("HANDLE: 0x{:X}", handle as usize);
 
             if let Ok((handle_name, handle_type)) = sysapi::get_handle_info(handle) {

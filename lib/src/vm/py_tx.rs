@@ -1,6 +1,9 @@
-use crate::vm::prelude::*;
 use crate::prelude::*;
+use crate::vm::prelude::*;
+
 use crate::sysapi;
+
+use std::cell::RefCell;
 
 #[pyclass(module = false, name = "Transaction")]
 #[derive(Debug, PyPayload)]
@@ -20,7 +23,7 @@ impl Constructor for Transaction {
     fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
         Ok(Self {
             name: args.name.to_string().into(),
-            handle: sysapi::null_handle().into(),
+            handle: sysapi::null_handle().into()
         })
     }
 }
@@ -31,12 +34,8 @@ impl Transaction {
     fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
         let name = self.name.borrow();
 
-        let handle = sysapi::create_transaction(&name).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to create transaction: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        let handle = sysapi::create_transaction(&name)
+            .map_err(map_to_py_system_error(vm, "Unable to create transaction"))?;
 
         self.handle.replace(handle);
 
@@ -47,12 +46,8 @@ impl Transaction {
     fn rollback(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.handle.borrow();
 
-        sysapi::rollback_transaction(**handle).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to rollback transaction: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        sysapi::rollback_transaction(**handle)
+            .map_err(map_to_py_system_error(vm, "Unable to rollback transaction"))?;
 
         Ok(())
     }
@@ -61,24 +56,16 @@ impl Transaction {
     fn set(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.handle.borrow();
 
-        sysapi::set_transaction(**handle).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to set transaction: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        sysapi::set_transaction(**handle)
+            .map_err(map_to_py_system_error(vm, "Unable to set transaction"))?;
 
         Ok(())
     }
 
     #[pymethod]
     fn unset(&self, vm: &VirtualMachine) -> PyResult<()> {
-        sysapi::set_transaction(ptr::null_mut()).map_err(|e| {
-            vm.new_system_error(format!(
-                "Unable to unset transaction: {}",
-                sysapi::ntstatus_decode(e)
-            ))
-        })?;
+        sysapi::set_transaction(ptr::null_mut())
+            .map_err(map_to_py_system_error(vm, "Unable to unset transaction"))?;
 
         Ok(())
     }

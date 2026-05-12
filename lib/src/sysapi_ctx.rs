@@ -1,16 +1,33 @@
 use crate::prelude::*;
 use crate::sysapi;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::result::Result;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use windows_sys::Win32::Foundation::{HMODULE, NTSTATUS};
-use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, LoadLibraryA, GetProcAddress};
+use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress, LoadLibraryA};
 
 use windef::*;
 
 static SYSAPI: AtomicPtr<SysApiCtx> = AtomicPtr::new(ptr::null_mut());
 
+#[derive(Debug, thiserror::Error)]
+pub enum SysApiCtxError {
+    #[error("SysApiCtx is not initialized")]
+    NotInitialized,
+    #[error("module is not loaded: {0}")]
+    ModuleNotLoaded(String),
+    #[error("procedure not found: {proc_name} ({module_name})")]
+    ProcedureNotFound { module_name: String, proc_name: String },
+    #[error("module name contains an interior NUL: {0}")]
+    InvalidModuleName(String),
+    #[error("procedure name contains an interior NUL: {0}")]
+    InvalidProcedureName(String),
+    #[error("failed to load a copy of {path}: {status}")]
+    LoadLibraryCopy { path: &'static str, status: String },
+}
 
 #[allow(unused, non_snake_case)]
 pub struct NtDllApi {
@@ -80,7 +97,7 @@ pub struct InitOptions {
 impl NtDllApi {
     fn get_proc_address<T>(module: HMODULE, proc_name: &str) -> Option<T> {
         unsafe {
-            let proc = CString::new(proc_name).unwrap();
+            let proc = CString::new(proc_name).ok()?;
             let address = GetProcAddress(module, proc.as_ptr() as _);
             if let Some(address) = address {
                 Some(mem::transmute_copy(&address))
@@ -91,19 +108,22 @@ impl NtDllApi {
         }
     }
 
-    pub fn new(opts: &InitOptions) -> Self {
+    pub fn new(opts: &InitOptions) -> Result<Self, SysApiCtxError> {
         unsafe {
             let module = if opts.ntdll_copy {
-                sysapi::load_library_copy("c:\\windows\\system32\\ntdll.dll").unwrap().0
+                const NTDLL_PATH: &str = "c:\\windows\\system32\\ntdll.dll";
+                sysapi::load_library_copy(NTDLL_PATH)
+                    .map_err(|error| SysApiCtxError::LoadLibraryCopy { path: NTDLL_PATH, status: error.to_string() })?
+                    .0
             } else {
                 GetModuleHandleA(c"ntdll.dll".as_ptr() as _)
             };
 
             if module.is_null() {
-                panic!("Failed to get handle for ntdll.dll");
+                return Err(SysApiCtxError::ModuleNotLoaded("ntdll.dll".to_string()));
             }
 
-            Self {
+            Ok(Self {
                 module: Some(module),
 
                 PssNtCaptureSnapshot: Self::get_proc_address(module, "PssNtCaptureSnapshot"),
@@ -153,42 +173,18 @@ impl NtDllApi {
                 RtlDestroyEnvironment: Self::get_proc_address(module, "RtlDestroyEnvironment"),
                 RtlSetCurrentTransaction: Self::get_proc_address(module, "RtlSetCurrentTransaction"),
                 // Alternative API
-                NtCreateProcess: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtCreateProcess")
-                } else {
-                    None
-                },
-                NtCreateThread: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtCreateThread")
-                } else {
-                    None
-                },
-                NtCreateSectionEx: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtCreateSectionEx")
-                } else {
-                    None
-                },
-                NtMapViewOfSectionEx: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtMapViewOfSectionEx")
-                } else {
-                    None
-                },
-                NtUnmapViewOfSectionEx: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtUnmapViewOfSectionEx")
-                } else {
-                    None
-                },
+                NtCreateProcess: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtCreateProcess") } else { None },
+                NtCreateThread: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtCreateThread") } else { None },
+                NtCreateSectionEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtCreateSectionEx") } else { None },
+                NtMapViewOfSectionEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtMapViewOfSectionEx") } else { None },
+                NtUnmapViewOfSectionEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtUnmapViewOfSectionEx") } else { None },
                 NtAllocateVirtualMemoryEx: if opts.ntdll_alt_api {
                     Self::get_proc_address(module, "NtAllocateVirtualMemoryEx")
                 } else {
                     None
                 },
-                NtReadVirtualMemoryEx: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtReadVirtualMemoryEx")
-                } else {
-                    None
-                },
-            }
+                NtReadVirtualMemoryEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtReadVirtualMemoryEx") } else { None },
+            })
         }
     }
 }
@@ -201,7 +197,7 @@ pub struct Win32uApi {
 impl Win32uApi {
     fn get_proc_address<T>(module: HMODULE, proc_name: &str) -> Option<T> {
         unsafe {
-            let proc = CString::new(proc_name).unwrap();
+            let proc = CString::new(proc_name).ok()?;
             let address = GetProcAddress(module, proc.as_ptr() as _);
             if let Some(address) = address {
                 Some(mem::transmute_copy(&address))
@@ -212,18 +208,15 @@ impl Win32uApi {
         }
     }
 
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, SysApiCtxError> {
         let module = unsafe { LoadLibraryA(c"win32u.dll".as_ptr() as _) };
         if module.is_null() {
-            panic!("Failed to get handle for win32u.dll");
+            return Err(SysApiCtxError::ModuleNotLoaded("win32u.dll".to_string()));
         }
 
-        Self {
-            NtUserGetWindowProcessHandle: Self::get_proc_address(
-                module,
-                "NtUserGetWindowProcessHandle",
-            ),
-        }
+        Ok(Self {
+            NtUserGetWindowProcessHandle: Self::get_proc_address(module, "NtUserGetWindowProcessHandle")
+        })
     }
 }
 
@@ -236,18 +229,14 @@ pub struct SysApiCtx {
 }
 
 impl SysApiCtx {
-    pub fn init(opts: InitOptions) {
-
-        let opts_native = InitOptions {
-            ntdll_copy: false,
-            ..opts
-        };
+    pub fn init(opts: InitOptions) -> Result<(), SysApiCtxError> {
+        let opts_native = InitOptions { ntdll_copy: false, ..opts };
 
         let ctx_native = SysApiCtx {
             ntstatus_decoder: ntstatus::create_ntstatus_decoder(),
             proc_addresses: RefCell::new(HashMap::new()),
-            ntdll: NtDllApi::new(&opts_native),
-            win32u: Win32uApi::new(),
+            ntdll: NtDllApi::new(&opts_native)?,
+            win32u: Win32uApi::new()?,
         };
 
         SYSAPI.store(Box::into_raw(Box::new(ctx_native)), Ordering::Relaxed);
@@ -257,76 +246,73 @@ impl SysApiCtx {
             let ctx = SysApiCtx {
                 ntstatus_decoder: ntstatus::create_ntstatus_decoder(),
                 proc_addresses: RefCell::new(HashMap::new()),
-                ntdll: NtDllApi::new(&opts),
-                win32u: Win32uApi::new(),
+                ntdll: NtDllApi::new(&opts)?,
+                win32u: Win32uApi::new()?,
             };
 
             SYSAPI.store(Box::into_raw(Box::new(ctx)), Ordering::Relaxed);
         }
+
+        Ok(())
+    }
+
+    fn try_ctx() -> Result<&'static SysApiCtx, SysApiCtxError> {
+        unsafe {
+            let api = SYSAPI.load(Ordering::Relaxed);
+            if api.is_null() {
+                return Err(SysApiCtxError::NotInitialized);
+            }
+
+            Ok(&*api)
+        }
     }
 
     pub fn ntdll() -> &'static NtDllApi {
-        unsafe {
-            let api = SYSAPI.load(Ordering::Relaxed);
-            if api.is_null() {
-                panic!("SysApiCtx is not initialized");
-            }
-
-            &(*api).ntdll
-        }
+        &Self::try_ctx()
+            .expect("SysApiCtx is not initialized").ntdll
     }
 
     pub fn win32u() -> &'static Win32uApi {
-        unsafe {
-            let api = SYSAPI.load(Ordering::Relaxed);
-            if api.is_null() {
-                panic!("SysApiCtx is not initialized");
-            }
-
-            &(*api).win32u
-        }
+        &Self::try_ctx()
+            .expect("SysApiCtx is not initialized").win32u
     }
 
     pub fn ntstatus_decoder() -> &'static HashMap<NTSTATUS, &'static str> {
-        unsafe {
-            let api = SYSAPI.load(Ordering::Relaxed);
-            if api.is_null() {
-                panic!("SysApiCtx is not initialized");
-            }
-
-            &(*api).ntstatus_decoder
-        }
+        &Self::try_ctx()
+            .expect("SysApiCtx is not initialized").ntstatus_decoder
     }
 
-    pub fn get_proc_address(
-        module_name: &str,
-        proc_name: &str,
-    ) -> Result<PVOID, ()> {
+    pub fn get_proc_address(module_name: &str, proc_name: &str) -> Result<PVOID, SysApiCtxError> {
         unsafe {
-            let proc_addresses = &mut (*SYSAPI.load(Ordering::Relaxed))
-                .proc_addresses
-                .borrow_mut();
+            let api = Self::try_ctx()?;
+            let mut proc_addresses = api.proc_addresses.borrow_mut();
+            let cache_key = format!("{module_name}!{proc_name}");
 
-            let address = proc_addresses.get(proc_name);
+            let address = proc_addresses.get(&cache_key);
             if let Some(address) = address {
                 return Ok(*address);
             }
 
-            let module = CString::new(module_name).unwrap();
-            let proc = CString::new(proc_name).unwrap();
+            let module = CString::new(module_name)
+                .map_err(|_| SysApiCtxError::InvalidModuleName(module_name.to_string()))?;
 
-            match GetProcAddress(
-                GetModuleHandleA(module.as_ptr() as _),
-                proc.as_ptr() as _,
-            ) {
+            let proc = CString::new(proc_name)
+                .map_err(|_| SysApiCtxError::InvalidProcedureName(proc_name.to_string()))?;
+
+            let module_handle = GetModuleHandleA(module.as_ptr() as _);
+            if module_handle.is_null() {
+                return Err(SysApiCtxError::ModuleNotLoaded(module_name.to_string()));
+            }
+
+            match GetProcAddress(module_handle, proc.as_ptr() as _) {
                 Some(addr) => {
                     let address_raw = mem::transmute::<_, PVOID>(addr);
-                    proc_addresses.insert(proc_name.to_string(), address_raw);
+                    proc_addresses.insert(cache_key, address_raw);
                     Ok(address_raw)
                 }
                 None => {
                     log::error!("Unable to get address of \"{proc_name}\" from {module_name}");
-                    Err(())
+                    Err(SysApiCtxError::ProcedureNotFound { module_name: module_name.to_string(), proc_name: proc_name.to_string() })
                 }
             }
         }

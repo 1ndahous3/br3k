@@ -1,12 +1,14 @@
+use crate::vm::prelude::*;
+
+use std::cell::RefCell;
+use std::thread;
 use std::time::Duration;
 
 use windef::ntstatus;
 
-use crate::prelude::*;
-use crate::vm::prelude::*;
-use crate::vm;
-use crate::sysapi;
 use crate::ipc;
+use crate::sysapi;
+use crate::vm;
 use crate::{slog_info, slog_warn};
 
 use vm::py_proc::Process;
@@ -36,7 +38,7 @@ impl Constructor for Ipc {
     fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
         Ok(Self {
             process: args.process,
-            pipe_handle: sysapi::null_handle().into(),
+            pipe_handle: sysapi::null_handle().into()
         })
     }
 }
@@ -45,17 +47,11 @@ impl Constructor for Ipc {
 impl Ipc {
     #[pymethod]
     pub fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
-
         let pid = *self.process.pid.borrow();
         slog_info!("Creating pipe for process, PID = {pid}");
 
         let pipe_handle = ipc::create_pipe(pid)
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to create pipe: {}",
-                    sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(map_to_py_system_error(vm, "Unable to create pipe"))?;
 
         self.pipe_handle.replace(pipe_handle);
         Ok(())
@@ -63,26 +59,21 @@ impl Ipc {
 
     #[pymethod]
     pub fn send_data(&self, args: SendDataArgs, vm: &VirtualMachine) -> PyResult<()> {
-
         let pipe_handle = self.pipe_handle.borrow();
 
         for _ in 0..10 {
             return match ipc::send_data(*pipe_handle.get(), args.data.as_slice()) {
                 Ok(_) => Ok(()),
                 Err(e) => {
-
-                    if e.0 == ntstatus::STATUS_PIPE_LISTENING {
+                    if e.status.0 == ntstatus::STATUS_PIPE_LISTENING {
                         slog_warn!("Client is not connected to the pipe, waiting...");
                         thread::sleep(Duration::from_secs(1));
                         continue;
                     }
 
-                    Err(vm.new_system_error(format!(
-                        "Unable to write data to the pipe: {}",
-                        sysapi::ntstatus_decode(e)
-                    )))
+                    Err(to_py_system_error(vm, "Unable to write data to the pipe", e))
                 }
-            }
+            };
         }
 
         Err(vm.new_system_error("Unable to write data to the pipe: the client is not connected."))
@@ -90,14 +81,8 @@ impl Ipc {
 
     #[pymethod]
     pub fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
-
         let pipe_handle = ipc::open_pipe(*self.process.pid.borrow())
-            .map_err(|e| {
-                vm.new_system_error(format!(
-                    "Unable to open pipe: {}",
-                    sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            .map_err(map_to_py_system_error(vm, "Unable to open pipe"))?;
 
         self.pipe_handle.replace(pipe_handle);
         Ok(())

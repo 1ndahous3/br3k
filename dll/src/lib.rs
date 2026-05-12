@@ -24,66 +24,66 @@ const PANIC_BACKTRACE: bool = false;
 
 static PAYLOAD_WORKER_FINISHED: OnceLock<()> = OnceLock::new();
 
-extern "system" fn main() {
+fn finish_payload() {
+    let _ = PAYLOAD_WORKER_FINISHED.set(());
+}
 
+extern "system" fn main() {
     let pid: u32 = unsafe { (*sysapi::teb()).ClientId.UniqueProcess } as _;
 
     for _ in 0..10 {
         match ipc::open_pipe(pid) {
             Ok(pipe_handle) => {
-
                 match ipc::receive_data(*pipe_handle.get()) {
-                    Err(status) =>
-                        log::error!("Unable to read script from pipe: {}", sysapi::ntstatus_decode(status)),
+                    Err(error) => log::error!("Unable to read script from pipe: {error}"),
                     Ok(script_data) => {
-                        let script = String::from_utf8(script_data).unwrap();
+                        let script = match String::from_utf8(script_data) {
+                            Ok(script) => script,
+                            Err(e) => {
+                                log::error!("IPC script is not valid UTF-8: {e}");
+                                finish_payload();
+                                return;
+                            }
+                        };
 
                         let vm = vm::Vm::default();
                         match vm.execute_script(&script, None) {
-                            Ok(_) =>
-                                log::info!("Script executed successfully"),
-                            Err(_) =>
-                                log::error!("Error executing script")
+                            Ok(_) => log::info!("Script executed successfully"),
+                            Err(_) => log::error!("Error executing script"),
                         }
                     }
                 }
 
-                PAYLOAD_WORKER_FINISHED.set(()).unwrap();
+                finish_payload();
                 return;
-            },
-            Err(status) => {
-
-                if status.0 == ntstatus::STATUS_OBJECT_NAME_NOT_FOUND {
+            }
+            Err(error) => {
+                if error.status.0 == ntstatus::STATUS_OBJECT_NAME_NOT_FOUND {
                     log::warn!("Server did not create the pipe, waiting...");
                     thread::sleep(Duration::from_secs(1));
                     continue;
                 }
 
-                log::error!("Unable to open the pipe: {}", sysapi::ntstatus_decode(status));
-                PAYLOAD_WORKER_FINISHED.set(()).unwrap();
+                log::error!("Unable to open the pipe: {error}");
+                finish_payload();
                 return;
             }
         }
     }
 
     log::error!("Unable to open the pipe: server did not create the pipe");
-    PAYLOAD_WORKER_FINISHED.set(()).unwrap();
+    finish_payload();
 }
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case, unused_variables)]
-extern "system" fn DllMain(
-    dll_module: HINSTANCE,
-    call_reason: u32,
-    _: *mut ())
-    -> bool
-{
+extern "system" fn DllMain(dll_module: HINSTANCE, call_reason: u32, _: *mut ()) -> bool {
     match call_reason {
         DLL_PROCESS_ATTACH => {
-
-            unsafe { std::env::set_var("RUST_BACKTRACE", "1"); }
+            unsafe {
+                std::env::set_var("RUST_BACKTRACE", "1");
+            }
             panic::update_hook(move |prev, info| {
-
                 log::error!("Panic: {info}");
                 if PANIC_BACKTRACE {
                     let backtrace = backtrace::Backtrace::capture();
@@ -91,38 +91,40 @@ extern "system" fn DllMain(
                 }
 
                 prev(info);
-                PAYLOAD_WORKER_FINISHED.set(()).unwrap();
+                finish_payload();
             });
 
             // it's too hard to see what's going on in context of remote process without logs
             if logging::init(false, true).is_err() {
-                PAYLOAD_WORKER_FINISHED.set(()).unwrap();
+                finish_payload();
                 return false;
             }
 
             logging::log_header();
 
-            sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
+            if let Err(e) = sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
                 ntdll_copy: false,
                 ntdll_alt_api: false,
-            });
+            }) {
+                log::error!("Unable to initialize system API context: {e}");
+                finish_payload();
+                return false;
+            }
 
             if PANIC_BACKTRACE {
                 main();
                 let _ = PAYLOAD_WORKER_FINISHED.set(());
-            }
-            else {
+            } else {
                 // https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices
                 match sysapi::create_thread(windef::winbase::NT_CURRENT_PROCESS, main as _, None) {
-                    Err(status) => {
-                        log::error!("Unable to create payload thread: {}", sysapi::ntstatus_decode(status));
-                        PAYLOAD_WORKER_FINISHED.set(()).unwrap();
-                    },
-                    Ok(_) =>
-                        log::info!("Payload thread created")
+                    Err(error) => {
+                        log::error!("Unable to create payload thread: {error}");
+                        finish_payload();
+                    }
+                    Ok(_) => log::info!("Payload thread created"),
                 }
             }
-        },
+        }
         DLL_PROCESS_DETACH => {
             if PAYLOAD_WORKER_FINISHED.get().is_none() {
                 log::warn!("Unloading DLL while payload is active, holding...");
@@ -130,8 +132,8 @@ extern "system" fn DllMain(
             }
 
             log::info!("Shutting down...");
-        },
-        _ => ()
+        }
+        _ => (),
     }
 
     true

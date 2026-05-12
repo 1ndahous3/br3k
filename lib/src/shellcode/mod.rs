@@ -1,9 +1,10 @@
 pub mod lhiuct;
-pub mod rop;
 pub mod ntdll;
+pub mod rop;
 
-use crate::prelude::*;
 use crate::pe_module;
+
+use std::slice;
 
 #[macro_export]
 macro_rules! cast_pfn {
@@ -17,7 +18,7 @@ static SYSTEM_DLLS: [&str; 5] = [
     "kernelbase.dll",
     "kernel32.dll",
     "user32.dll",
-    "ucrtbase.dll"
+    "ucrtbase.dll",
 ];
 
 pub fn is_aligned(value: usize, bits: u32) -> bool {
@@ -31,7 +32,7 @@ pub fn messageboxw() -> Vec<u8> {
     data
 }
 
-pub fn rw_cave() -> Option<&'static[u8]> {
+pub fn rw_cave() -> Option<&'static [u8]> {
     let handle = pe_module::get_module_handle(c"ntdll.dll")?;
 
     let data_section = pe_module::get_module_data_section(handle);

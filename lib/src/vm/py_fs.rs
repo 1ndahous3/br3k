@@ -1,7 +1,9 @@
 use crate::vm::prelude::*;
-use crate::prelude::*;
-use crate::sysapi;
+
 use crate::fs;
+use crate::sysapi;
+
+use std::slice;
 
 #[pyclass(module = false, name = "FileMapping")]
 #[derive(Debug, PyPayload)]
@@ -52,12 +54,9 @@ impl Constructor for FileMapping {
                 handle,
                 section_handle,
                 data: data.as_ptr() as usize,
-                size: data.len(),
+                size: data.len()
             }),
-            Err(e) => Err(vm.new_system_error(format!(
-                "Unable to map file: {}",
-                sysapi::ntstatus_decode(e)
-            ))),
+            Err(e) => Err(to_py_system_error(vm, "Unable to map file", e)),
         }
     }
 }

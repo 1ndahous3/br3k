@@ -1,4 +1,3 @@
-use crate::prelude::*;
 use crate::vm::prelude::*;
 
 use crate::sysapi;
@@ -23,23 +22,20 @@ impl Constructor for BufferView {
     type Args = PyObjectRef;
 
     fn py_new(_cls: &Py<PyType>, obj_ref: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
-
         if let Ok(b) = &obj_ref.downcast::<PyBytes>() {
             return Ok(Self {
                 ptr: b.as_ptr() as _,
-                size: b.len() as _,
-            })
+                size: b.len() as _
+            });
         }
 
         Err(vm.new_type_error("Cannot convert an object to a buffer view".to_string()))
     }
 }
 
-
 // because Python does not have a class for non-owning flat buffers (PyMemoryView is too abstract)
 #[pyclass(with(Constructor))]
 impl BufferView {
-
     #[pygetset]
     fn ptr(&self) -> u64 {
         self.ptr
@@ -55,7 +51,7 @@ impl From<PyRef<PyBytes>> for BufferView {
     fn from(bytes: PyRef<PyBytes>) -> Self {
         Self {
             ptr: bytes.as_ptr() as _,
-            size: bytes.as_bytes().len() as _,
+            size: bytes.as_bytes().len() as _
         }
     }
 }

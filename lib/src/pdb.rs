@@ -1,12 +1,13 @@
 use crate::prelude::*;
 
-use io::Write;
 use scroll::Pread;
+use std::fs;
+use std::io::{self, Write};
+use std::result::Result;
 
-use pdb::{FallibleIterator, PDB, SymbolData, TypeData};
+use exe::{Buffer, PE, PtrPE, headers};
 use minidump::format::{CV_INFO_PDB70, CvSignature};
-use exe::{PtrPE, PE, Buffer, headers};
-
+use pdb::{FallibleIterator, PDB, SymbolData, TypeData};
 
 #[derive(thiserror::Error, Debug)]
 pub enum PdbError {
@@ -22,15 +23,13 @@ pub enum PdbError {
     InvalidData(String),
 }
 
-pub type Result<T> = result::Result<T, PdbError>;
-
 #[derive(Debug)]
 pub struct Pdb<'s> {
-    pdb: PDB<'s, fs::File>
+    pdb: PDB<'s, fs::File>,
 }
 
 impl<'a> Pdb<'a> {
-    pub fn init(pdb_filepath: &str) -> Result<Self> {
+    pub fn init(pdb_filepath: &str) -> Result<Self, PdbError> {
         let file = fs::File::open(pdb_filepath)?;
 
         let pdb = match PDB::open(file) {
@@ -38,13 +37,10 @@ impl<'a> Pdb<'a> {
             Err(e) => return Err(PdbError::Pdb(e)),
         };
 
-        Ok(Self {
-            pdb
-        })
+        Ok(Self { pdb })
     }
 
-    pub fn get_symbol_rva(&mut self, symbol_name: &str) -> Result<usize> {
-
+    pub fn get_symbol_rva(&mut self, symbol_name: &str) -> Result<usize, PdbError> {
         let address_map = self.pdb.address_map()?;
 
         if let Ok(symbol_table) = self.pdb.global_symbols() {
@@ -74,16 +70,12 @@ impl<'a> Pdb<'a> {
                     let mut symbols = module_info.symbols()?;
                     while let Some(symbol) = symbols.next()? {
                         match symbol.parse() {
-                            Ok(SymbolData::Procedure(data))
-                                if data.name.to_string().as_ref() == symbol_name =>
-                            {
+                            Ok(SymbolData::Procedure(data)) if data.name.to_string().as_ref() == symbol_name => {
                                 if let Some(rva) = data.offset.to_rva(&address_map) {
                                     return Ok(rva.0 as usize);
                                 }
                             }
-                            Ok(SymbolData::Data(data))
-                                if data.name.to_string().as_ref() == symbol_name =>
-                            {
+                            Ok(SymbolData::Data(data)) if data.name.to_string().as_ref() == symbol_name => {
                                 if let Some(rva) = data.offset.to_rva(&address_map) {
                                     return Ok(rva.0 as usize);
                                 }
@@ -98,8 +90,7 @@ impl<'a> Pdb<'a> {
         Err(PdbError::SymbolNotFound(symbol_name.to_string()))
     }
 
-    pub fn get_field_offset(&mut self, class_name: &str, field_name: &str) -> Result<usize> {
-
+    pub fn get_field_offset(&mut self, class_name: &str, field_name: &str) -> Result<usize, PdbError> {
         let type_information = self.pdb.type_information()?;
         let mut type_iter = type_information.iter();
 
@@ -110,9 +101,7 @@ impl<'a> Pdb<'a> {
             type_finder.update(&type_iter);
             match typ.parse().ok() {
                 Some(TypeData::Class(class_data)) => {
-                    if class_data.name.to_string().as_ref() == class_name
-                        && !class_data.properties.forward_reference()
-                    {
+                    if class_data.name.to_string().as_ref() == class_name && !class_data.properties.forward_reference() {
                         class_fields_index = class_data.fields;
                         break;
                     }
@@ -121,10 +110,13 @@ impl<'a> Pdb<'a> {
             }
         }
 
-        let fields_index = class_fields_index.ok_or_else(|| PdbError::FieldNotFound {
+        let field_not_found = || PdbError::FieldNotFound {
             class: class_name.to_string(),
             field: field_name.to_string(),
-        })?;
+        };
+
+        let fields_index = class_fields_index
+            .ok_or_else(field_not_found)?;
 
         let field_list_type = type_finder.find(fields_index)?;
         match field_list_type.parse()? {
@@ -147,7 +139,7 @@ impl<'a> Pdb<'a> {
     }
 }
 
-pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> std::result::Result<String, exe::Error> {
+pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> Result<String, exe::Error> {
     unsafe {
         static SYMBOL_SERVER: &str = "https://msdl.microsoft.com/download/symbols/";
 
@@ -172,7 +164,8 @@ pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> std::result::Result<String
             let cv_info_offset = pe.rva_to_offset(debug_dir.address_of_raw_data)?;
 
             let cv_info: CV_INFO_PDB70 = pe.get_buffer().as_slice().pread_with(cv_info_offset.0 as usize, scroll::LE).unwrap();
-            if cv_info.cv_signature != CvSignature::Pdb70 as u32  {
+
+            if cv_info.cv_signature != CvSignature::Pdb70 as u32 {
                 debug_directory_offset_current += size_of::<headers::ImageDebugDirectory>();
                 continue;
             }
@@ -203,7 +196,8 @@ pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> std::result::Result<String
             file.write_all(&response.bytes().map_err(|e| {
                 log::error!("unable to read response body: {e}");
                 exe::Error::IoError(std::io::ErrorKind::Other.into())
-            })?).map_err(|e| {
+            })?)
+            .map_err(|e| {
                 log::error!("unable to write to PDB file: {e}");
                 exe::Error::IoError(std::io::ErrorKind::Other.into())
             })?;

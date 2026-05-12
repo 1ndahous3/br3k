@@ -1,15 +1,9 @@
-use crate::prelude::*;
 use crate::pdb::Pdb;
 
 use std::collections::VecDeque;
+use std::result::Result;
 
-use kdmp_parser::{
-    KernelDumpParser,
-    Gva, Gpa,
-    KdmpParserError
-};
-
-pub type Result<R> = result::Result<R, KdmpParserError>;
+use kdmp_parser::{Gpa, Gva, KdmpParserError, KernelDumpParser};
 
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
@@ -71,55 +65,38 @@ pub struct KernelDump {
 }
 
 impl KernelDump {
+    pub fn new(dump_filepath: &str, pdb: &mut Pdb) -> Result<Self, KdmpParserError> {
+        let mut field_offset = |class_name: &str, field_name: &str, label: &str| -> usize {
+            match pdb.get_field_offset(class_name, field_name) {
+                Ok(offset) => offset,
+                Err(_) => panic!("Failed to get {label} offset"),
+            }
+        };
 
-    pub fn new(dump_filepath: &str, pdb: &mut Pdb) -> Result<Self> {
         let kernel_offsets = KernelOffsets {
             // _MMVAD_SHORT
-            MMVAD_STARTING_VPN: pdb
-                .get_field_offset("_MMVAD_SHORT", "StartingVpn")
-                .expect("Failed to get _MMVAD_SHORT::StartingVpn offset"),
-            MMVAD_ENDING_VPN: pdb
-                .get_field_offset("_MMVAD_SHORT", "EndingVpn")
-                .expect("Failed to get _MMVAD_SHORT::EndingVpn offset"),
-            MMVAD_U_VAD_FLAGS: pdb
-                .get_field_offset("_MMVAD_SHORT", "u")
-                .expect("Failed to get _MMVAD_SHORT::u.VadFlags offset"),
+            MMVAD_STARTING_VPN: field_offset("_MMVAD_SHORT", "StartingVpn", "_MMVAD_SHORT::StartingVpn"),
+            MMVAD_ENDING_VPN: field_offset("_MMVAD_SHORT", "EndingVpn", "_MMVAD_SHORT::EndingVpn"),
+            MMVAD_U_VAD_FLAGS: field_offset("_MMVAD_SHORT", "u", "_MMVAD_SHORT::u.VadFlags"),
             // _MMVAD_SHORT::VadNode
-            MMVAD_LEFT_CHILD: pdb
-                .get_field_offset("_RTL_BALANCED_NODE", "Left")
-                .expect("Failed to get _RTL_BALANCED_NODE::Left offset"),
-            MMVAD_RIGHT_CHILD: pdb
-                .get_field_offset("_RTL_BALANCED_NODE", "Right")
-                .expect("Failed to get _RTL_BALANCED_NODE::Right offset"),
+            MMVAD_LEFT_CHILD: field_offset("_RTL_BALANCED_NODE", "Left", "_RTL_BALANCED_NODE::Left"),
+            MMVAD_RIGHT_CHILD: field_offset("_RTL_BALANCED_NODE", "Right", "_RTL_BALANCED_NODE::Right"),
             // _EPROCESS
-            EPROCESS_ACTIVE_PROCESS_LINKS: pdb
-                .get_field_offset("_EPROCESS", "ActiveProcessLinks")
-                .expect("Failed to get _EPROCESS::ActiveProcessLinks offset"),
-            EPROCESS_UNIQUE_PROCESS_ID: pdb
-                .get_field_offset("_EPROCESS", "UniqueProcessId")
-                .expect("Failed to get _EPROCESS::UniqueProcessId offset"),
-            EPROCESS_IMAGE_FILE_NAME: pdb
-                .get_field_offset("_EPROCESS", "ImageFileName")
-                .expect("Failed to get _EPROCESS::ImageFileName offset"),
-            EPROCESS_VAD_ROOT: pdb
-                .get_field_offset("_EPROCESS", "VadRoot")
-                .expect("Failed to get _EPROCESS::VadRoot offset"),
+            EPROCESS_ACTIVE_PROCESS_LINKS: field_offset("_EPROCESS", "ActiveProcessLinks", "_EPROCESS::ActiveProcessLinks"),
+            EPROCESS_UNIQUE_PROCESS_ID: field_offset("_EPROCESS", "UniqueProcessId", "_EPROCESS::UniqueProcessId"),
+            EPROCESS_IMAGE_FILE_NAME: field_offset("_EPROCESS", "ImageFileName", "_EPROCESS::ImageFileName"),
+            EPROCESS_VAD_ROOT: field_offset("_EPROCESS", "VadRoot", "_EPROCESS::VadRoot"),
             // _KPROCESS
-            KPROCESS_DTB: pdb
-                .get_field_offset("_KPROCESS", "DirectoryTableBase")
-                .expect("Failed to get _KPROCESS::DirectoryTableBase offset"),
+            KPROCESS_DTB: field_offset("_KPROCESS", "DirectoryTableBase", "_KPROCESS::DirectoryTableBase"),
         };
 
         let parser = KernelDumpParser::new(dump_filepath)?;
 
-        Ok(Self {
-            kernel_offsets,
-            parser,
-        })
+        Ok(Self { kernel_offsets, parser })
     }
 
     #[allow(dead_code)]
-    pub fn get_process_image_maps(&self, va_vad_root: u64) -> Result<Vec<VadImage>> {
+    pub fn get_process_image_maps(&self, va_vad_root: u64) -> Result<Vec<VadImage>, KdmpParserError> {
         let mut vads = VecDeque::new();
         if va_vad_root != 0 {
             vads.push_back(va_vad_root);
@@ -128,10 +105,8 @@ impl KernelDump {
         let mut vad_images = Vec::new();
 
         while let Some(va_vad_current) = vads.pop_front() {
-            let vad_flags: u32 = match self
-                .parser
-                .virt_read_struct((self.kernel_offsets.MMVAD_U_VAD_FLAGS as u64).into())
-            {
+            let vad_flags_addr = self.kernel_offsets.MMVAD_U_VAD_FLAGS as u64;
+            let vad_flags: u32 = match self.parser.virt_read_struct(vad_flags_addr.into()) {
                 Ok(flags) => flags,
                 Err(_) => continue,
             };
@@ -141,35 +116,24 @@ impl KernelDump {
                 continue;
             }
 
-            let starting_vpn: u32 = match self.parser.virt_read_struct(
-                (va_vad_current + self.kernel_offsets.MMVAD_STARTING_VPN as u64).into(),
-            ) {
+            let starting_vpn_addr = va_vad_current + self.kernel_offsets.MMVAD_STARTING_VPN as u64;
+            let starting_vpn: u32 = match self.parser.virt_read_struct(starting_vpn_addr.into()) {
                 Ok(value) => value,
                 Err(_) => continue,
             };
 
-            let ending_vpn: u32 = match self.parser.virt_read_struct(
-                (va_vad_current + self.kernel_offsets.MMVAD_ENDING_VPN as u64).into(),
-            ) {
+            let ending_vpn_addr = va_vad_current + self.kernel_offsets.MMVAD_ENDING_VPN as u64;
+            let ending_vpn: u32 = match self.parser.virt_read_struct(ending_vpn_addr.into()) {
                 Ok(value) => value,
                 Err(_) => continue,
             };
 
-            vad_images.push({
-                VadImage {
-                    va_start: (starting_vpn as u64) << 12,
-                    va_end: ((ending_vpn as u64) + 1) << 12,
-                }
-            });
+            let va_start = (starting_vpn as u64) << 12;
+            let va_end = ((ending_vpn as u64) + 1) << 12;
+            vad_images.push(VadImage { va_start, va_end });
 
-            for child_offset in [
-                self.kernel_offsets.MMVAD_LEFT_CHILD,
-                self.kernel_offsets.MMVAD_RIGHT_CHILD,
-            ] {
-                let va_vad_leaf: u64 = match self
-                    .parser
-                    .virt_read_struct((va_vad_current + child_offset as u64).into())
-                {
+            for child_offset in [self.kernel_offsets.MMVAD_LEFT_CHILD, self.kernel_offsets.MMVAD_RIGHT_CHILD] {
+                let va_vad_leaf: u64 = match self.parser.virt_read_struct((va_vad_current + child_offset as u64).into()) {
                     Ok(leaf) => leaf,
                     Err(_) => continue,
                 };
@@ -183,44 +147,36 @@ impl KernelDump {
         Ok(vad_images)
     }
 
-    pub fn get_processes(&self) -> Result<Vec<Process>> {
+    pub fn get_processes(&self) -> Result<Vec<Process>, KdmpParserError> {
         let mut processes = Vec::new();
 
         let header = self.parser.headers();
-        let ps_active_process_head: LIST_ENTRY = self
-            .parser
-            .virt_read_struct(header.ps_active_process_head.into())?;
+        let ps_active_process_head: LIST_ENTRY = self.parser.virt_read_struct(header.ps_active_process_head.into())?;
 
         let mut va_current_process = ps_active_process_head.Flink;
         while va_current_process != header.ps_active_process_head {
             let mut process = Process::default();
 
-            let va_eprocess =
-                va_current_process - self.kernel_offsets.EPROCESS_ACTIVE_PROCESS_LINKS as u64;
+            let va_eprocess = va_current_process - self.kernel_offsets.EPROCESS_ACTIVE_PROCESS_LINKS as u64;
+            let dtb_addr = va_eprocess + self.kernel_offsets.KPROCESS_DTB as u64;
+            let pid_addr = va_eprocess + self.kernel_offsets.EPROCESS_UNIQUE_PROCESS_ID as u64;
+            let image_file_name_addr = va_eprocess + self.kernel_offsets.EPROCESS_IMAGE_FILE_NAME as u64;
+            let vad_root_addr = va_eprocess + self.kernel_offsets.EPROCESS_VAD_ROOT as u64;
 
-            process.dtb = self
-                .parser
-                .virt_read_struct((va_eprocess + self.kernel_offsets.KPROCESS_DTB as u64).into())?;
-            process.pid = self.parser.virt_read_struct(
-                (va_eprocess + self.kernel_offsets.EPROCESS_UNIQUE_PROCESS_ID as u64).into(),
-            )?;
-            process.image_file_name = self.parser.virt_read_struct(
-                (va_eprocess + self.kernel_offsets.EPROCESS_IMAGE_FILE_NAME as u64).into(),
-            )?;
-            process.vad_root = self.parser.virt_read_struct(
-                (va_eprocess + self.kernel_offsets.EPROCESS_VAD_ROOT as u64).into(),
-            )?;
+            process.dtb = self.parser.virt_read_struct(dtb_addr.into())?;
+            process.pid = self.parser.virt_read_struct(pid_addr.into())?;
+            process.image_file_name = self.parser.virt_read_struct(image_file_name_addr.into())?;
+            process.vad_root = self.parser.virt_read_struct(vad_root_addr.into())?;
 
             processes.push(process);
 
-            let next_process: LIST_ENTRY =
-                match self.parser.virt_read_struct(va_current_process.into()) {
-                    Ok(entry) => entry,
-                    Err(_) => {
-                        log::error!("Failed to read process entry at VA: {va_current_process:#x}");
-                        return Ok(processes);
-                    }
-                };
+            let next_process: LIST_ENTRY = match self.parser.virt_read_struct(va_current_process.into()) {
+                Ok(entry) => entry,
+                Err(_) => {
+                    log::error!("Failed to read process entry at VA: {va_current_process:#x}");
+                    return Ok(processes);
+                }
+            };
 
             va_current_process = next_process.Flink as u64;
         }
@@ -228,7 +184,7 @@ impl KernelDump {
         Ok(processes)
     }
 
-    pub fn read_memory(&self, buf: &mut [u8], process: &Process, basic_addres: usize) -> Result<()> { 
+    pub fn read_memory(&self, buf: &mut [u8], process: &Process, basic_addres: usize) -> Result<(), KdmpParserError> {
         self.parser.virt_read_with_dtb(Gva::from(basic_addres as u64), buf, Gpa::from(process.dtb))?;
         Ok(())
     }

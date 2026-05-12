@@ -1,15 +1,11 @@
 use chrono::prelude::*;
 
-use std::sync::{Mutex, OnceLock};
 use std::fs::{File, OpenOptions};
-use std::path::PathBuf;
 use std::io::{self, Write};
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
-use log::{
-    Log,
-    Level, LevelFilter,
-    Metadata, Record
-};
+use log::{Level, LevelFilter, Log, Metadata, Record};
 
 use crate::BR3K_VERSION;
 
@@ -58,14 +54,10 @@ impl Log for Br3kLogger {
 }
 
 pub fn init(log_console: bool, log_file: bool) -> io::Result<()> {
-
-    let mut logger = Br3kLogger {
-        file: None,
-        log_console
-    };
+    let mut logger = Br3kLogger { file: None, log_console };
 
     if log_file {
-        let exe_path = std::env::current_exe().expect("exe path");
+        let exe_path = std::env::current_exe()?;
         let process_name = exe_path.file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("process");
@@ -83,11 +75,19 @@ pub fn init(log_console: bool, log_file: bool) -> io::Result<()> {
         println!("Logging to file: {}", log_path.display());
     }
 
-    LOGGER.set(logger).ok();
+    if LOGGER.set(logger).is_err() {
+        log::set_max_level(LevelFilter::Info);
+        return Ok(());
+    }
 
-    log::set_logger(LOGGER.get().expect("logger set")).unwrap();
+    let logger = LOGGER.get()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "logger was not initialized"))?;
+
+    log::set_logger(logger)
+        .map_err(|_| io::Error::new(io::ErrorKind::AlreadyExists, "logger already initialized"))?;
+
     log::set_max_level(LevelFilter::Info);
-    
+
     Ok(())
 }
 

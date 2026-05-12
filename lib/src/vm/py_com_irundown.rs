@@ -1,10 +1,13 @@
 use crate::prelude::*;
 use crate::vm::prelude::*;
+
 use crate::vm;
 use crate::sysapi;
 
-
+use std::slice;
 use std::ops::Add;
+use std::cell::RefCell;
+
 use base64::prelude::*;
 
 use windef::{winbase, rpcwin, ntpebteb};
@@ -25,6 +28,8 @@ static IID_IRundown: GUID = GUID {
     data3: 0x0000,
     data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
 };
+
+const OLE32_SECRET_CONTEXT_ERR: &str = "Failed to read process CProcessSecret::s_guidOle32Secret";
 
 #[pyclass(module = false, name = "ComIRundown")]
 #[derive(Debug, PyPayload)]
@@ -92,7 +97,7 @@ pub struct IpidEntry {
     oid: OID,
 }
 
-fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> result::Result<*mut IRundown, HRESULT> {
+fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> Result<*mut IRundown, HRESULT> {
     unsafe {
         let hr = HRESULT(CoInitialize(ptr::null_mut()));
         if hr.is_err() {
@@ -115,22 +120,14 @@ fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> result::Result<*mut 
         u_standard.saResAddr.wNumEntries = 0;
         u_standard.saResAddr.wSecurityOffset = 0;
 
-        let objref_bytes = slice::from_raw_parts(
-            addr_of!(obj_ref) as *const u8,
-            size_of::<OBJREF>()
-        );
+        let objref_bytes = slice::from_raw_parts(addr_of!(obj_ref) as *const u8, size_of::<OBJREF>());
 
         let name = U16CString::from_str(format!("OBJREF:{}:", BASE64_STANDARD.encode(objref_bytes))).unwrap();
 
         // TODO: RAII release
         let obj: *mut IRundown = ptr::null_mut();
 
-        let hr = HRESULT(CoGetObject(
-            name.into_raw(),
-            ptr::null_mut(),
-            &obj_ref.iid,
-            addr_of!(obj) as _
-        ));
+        let hr = HRESULT(CoGetObject(name.into_raw(), ptr::null_mut(), &obj_ref.iid, addr_of!(obj) as _));
 
         if hr.is_err() {
             return Err(hr);
@@ -142,43 +139,35 @@ fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> result::Result<*mut 
 
 #[pyclass(with(Constructor))]
 impl ComIRundown {
-
     #[pymethod]
     fn read_ipid_entries(&self, vm: &VirtualMachine) -> PyResult<()> {
         unsafe {
             let mut memory = self.process.memory.borrow_mut();
-            let memory = memory
-                .as_mut()
+            let memory = memory.as_mut()
                 .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
             let palloc = rpcwin::CPageAllocator::default();
 
             memory.set_remote_base_addr(ptr::null_mut());
-            memory.read_memory(
-                self.ole32_address.add(self.ole32_palloc_rva),
-                addr_of!(palloc) as _,
-                size_of::<rpcwin::CPageAllocator>()
-            ).map_err(|e| {
-                vm.new_system_error(format!(
-                    "Failed to read ole32!palloc: {}",
-                    sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            memory
+                .read_memory(
+                    self.ole32_address.add(self.ole32_palloc_rva),
+                    addr_of!(palloc) as _,
+                    size_of::<rpcwin::CPageAllocator>()
+                )
+                .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read ole32!palloc"))?;
 
             let pages_cnt = palloc._pgalloc._cPages;
             let pages_size = pages_cnt * size_of::<ULONG_PTR>();
 
             let pages: Vec<ULONG_PTR> = vec![0; pages_cnt];
-            memory.read_memory(
-                palloc._pgalloc._pPageListStart as _,
-                pages.as_ptr() as _,
-                pages_size
-            ).map_err(|e| {
-                vm.new_system_error(format!(
-                    "Failed to read ole32!palloc pages: {}",
-                    sysapi::ntstatus_decode(e)
-                ))
-            })?;
+            memory
+                .read_memory(
+                    palloc._pgalloc._pPageListStart as _,
+                    pages.as_ptr() as _,
+                    pages_size
+                )
+                .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read ole32!palloc pages"))?;
 
             let ipid_cnt = palloc._pgalloc._cEntriesPerPage as usize;
             let ipid_size = ipid_cnt * size_of::<rpcwin::IPIDEntry>();
@@ -189,16 +178,13 @@ impl ComIRundown {
             let mut ipid_entries = Vec::<IpidEntry>::default();
 
             for i in 0..pages_cnt {
-                memory.read_memory(
-                    pages[i] as _,
-                    ipid_entries_raw.as_ptr() as _,
-                    ipid_size
-                ).map_err(|e| {
-                    vm.new_system_error(format!(
-                        "Failed to read ole32!palloc IPID entries: {}",
-                        sysapi::ntstatus_decode(e)
-                    ))
-                })?;
+                memory
+                    .read_memory(
+                        pages[i] as _,
+                        ipid_entries_raw.as_ptr() as _,
+                        ipid_size
+                    )
+                    .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read ole32!palloc IPID entries"))?;
 
                 for j in 0..ipid_cnt {
                     let entry = &ipid_entries_raw[j];
@@ -223,16 +209,13 @@ impl ComIRundown {
                     }
 
                     let oxid_oid: OxidOid = mem::zeroed();
-                    memory.read_memory(
-                        entry.pOXIDEntry.add(self.moxid_offset) as _,
-                        addr_of!(oxid_oid) as _,
-                        size_of::<OxidOid>()
-                    ).map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Failed to read ole32!palloc IPID entries: {}",
-                            sysapi::ntstatus_decode(e)
-                        ))
-                    })?;
+                    memory
+                        .read_memory(
+                            entry.pOXIDEntry.add(self.moxid_offset) as _,
+                            addr_of!(oxid_oid) as _,
+                            size_of::<OxidOid>()
+                        )
+                        .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read ole32!palloc IPID entries"))?;
 
                     if oxid_oid.oxid == 0 || oxid_oid.oid == 0 {
                         continue;
@@ -258,76 +241,59 @@ impl ComIRundown {
     fn execute(&self, args: ExecuteArgs, vm: &VirtualMachine) -> PyResult<bool> {
         unsafe {
             let mut memory = self.process.memory.borrow_mut();
-            let memory = memory
-                .as_mut()
+            let memory = memory.as_mut()
                 .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
             for ipid_entry in self.ipid_entries.borrow().iter() {
                 let ipid_values: rpcwin::IPID_VALUES = mem::transmute(ipid_entry.ipid);
                 let valid_tid = ipid_values.tid != 0 && ipid_values.tid != u16::MAX;
 
-                let irundown = connect_to_irundown(
-                    ipid_entry.oid,
-                    ipid_entry.oxid,
-                    mem::transmute::<GUID, windows_sys::core::GUID>(ipid_entry.ipid)
-                ).unwrap();
+                let ipid = mem::transmute::<GUID, windows_sys::core::GUID>(ipid_entry.ipid);
+                let irundown = connect_to_irundown(ipid_entry.oid, ipid_entry.oxid, ipid)
+                    .map_err(|hr| vm.new_system_error(format!("Failed to connect to IRundown: HRESULT 0x{:X}", hr.0)))?;
 
                 let mut server_ctx_addr: PVOID = ptr::null_mut();
 
                 if valid_tid {
                     let thread = sysapi::open_thread(*self.process.pid.borrow(), ipid_values.tid as _, THREAD_QUERY_INFORMATION)
-                        .map_err(|e| vm.new_system_error(format!(
-                            "Failed to open thread {}: {}",
-                            ipid_values.tid, sysapi::ntstatus_decode(e)
-                        )))?;
+                        .map_err(|e| to_py_system_error(vm, &format!("Failed to open thread {}", ipid_values.tid), e))?;
 
                     let basic_info = sysapi::get_thread_basic_info(*thread)
-                        .map_err(|e| vm.new_system_error(format!(
-                            "Failed to get thread {} basic info: {}",
-                            ipid_values.tid, sysapi::ntstatus_decode(e)
-                        )))?;
+                        .map_err(|e| to_py_system_error(vm, &format!("Failed to get thread {} basic info", ipid_values.tid), e))?;
 
                     let ole_addr: PVOID = Default::default();
+                    let reserved_for_ole = (basic_info.TebBaseAddress as PVOID).add(offset_of!(ntpebteb::TEB, ReservedForOle));
 
-                    memory.read_memory(
-                        (basic_info.TebBaseAddress as PVOID).add(offset_of!(ntpebteb::TEB, ReservedForOle)) as _,
-                        addr_of!(ole_addr) as _,
-                        size_of::<PVOID>()
-                    ).map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Failed to read thread Teb::ReservedForOle: {}",
-                            sysapi::ntstatus_decode(e)
-                        ))
-                    })?;
+                    memory
+                        .read_memory(
+                            reserved_for_ole as _,
+                            addr_of!(ole_addr) as _,
+                            size_of::<PVOID>()
+                        )
+                        .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read thread Teb::ReservedForOle"))?;
 
                     let ole_tls_data: rpcwin::SOleTlsData = Default::default();
 
-                    memory.read_memory(
-                        ole_addr as _,
-                        addr_of!(ole_tls_data) as _,
-                        size_of::<rpcwin::SOleTlsData>()
-                    ).map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Failed to read thread SOleTlsData: {}",
-                            sysapi::ntstatus_decode(e)
-                        ))
-                    })?;
+                    memory
+                        .read_memory(
+                            ole_addr as _,
+                            addr_of!(ole_tls_data) as _,
+                            size_of::<rpcwin::SOleTlsData>()
+                        )
+                        .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read thread SOleTlsData"))?;
 
                     server_ctx_addr = ole_tls_data.pCurrentContext;
                 }
 
                 if server_ctx_addr.is_null() {
                     if self.global_ctx_addr.is_null() {
-                        memory.read_memory(
-                            self.ole32_address.add(self.ole32_emptyctx_rva) as _,
-                            addr_of!(self.global_ctx_addr) as _,
-                            size_of::<PVOID>()
-                        ).map_err(|e| {
-                            vm.new_system_error(format!(
-                                "Failed to read process g_pMTAEmptyCtx: {}",
-                                sysapi::ntstatus_decode(e)
-                            ))
-                        })?;
+                        memory
+                            .read_memory(
+                                self.ole32_address.add(self.ole32_emptyctx_rva) as _,
+                                addr_of!(self.global_ctx_addr) as _,
+                                size_of::<PVOID>(),
+                            )
+                            .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read process g_pMTAEmptyCtx"))?;
                     }
 
                     server_ctx_addr = self.global_ctx_addr;
@@ -341,31 +307,25 @@ impl ComIRundown {
                 };
 
                 if self.ole32_secret == GUID::default() {
-                    memory.read_memory(
-                        self.ole32_address.add(self.ole32_secret_rva) as _,
-                        addr_of!(self.ole32_secret) as _,
-                        size_of::<GUID>()
-                    ).map_err(|e| {
-                        vm.new_system_error(format!(
-                            "Failed to read process CProcessSecret::s_guidOle32Secret: {}",
-                            sysapi::ntstatus_decode(e)
-                        ))
-                    })?;
+                    memory
+                        .read_memory(
+                            self.ole32_address.add(self.ole32_secret_rva) as _,
+                            addr_of!(self.ole32_secret) as _,
+                            size_of::<GUID>(),
+                        )
+                        .map_err(map_process_memory_error_to_py_exception(vm, OLE32_SECRET_CONTEXT_ERR))?;
 
                     // invoking IRundown::DoCallback() with invalid secret to init...
                     if self.ole32_secret == GUID::default() {
                         (*(*irundown).lpVtbl).DoCallback.unwrap()(irundown, &mut params);
 
-                        memory.read_memory(
-                            self.ole32_address.add(self.ole32_secret_rva) as _,
-                            addr_of!(self.ole32_secret) as _,
-                            size_of::<GUID>()
-                        ).map_err(|e| {
-                            vm.new_system_error(format!(
-                                "Failed to read process CProcessSecret::s_guidOle32Secret: {}",
-                                sysapi::ntstatus_decode(e)
-                            ))
-                        })?;
+                        memory
+                            .read_memory(
+                                self.ole32_address.add(self.ole32_secret_rva) as _,
+                                addr_of!(self.ole32_secret) as _,
+                                size_of::<GUID>(),
+                            )
+                            .map_err(map_process_memory_error_to_py_exception(vm, OLE32_SECRET_CONTEXT_ERR))?;
                     }
                 }
 
@@ -377,7 +337,7 @@ impl ComIRundown {
                     continue;
                 }
 
-                return Ok(true)
+                return Ok(true);
             }
 
             log::warn!("No successful IRundown::DoCallback() calls");

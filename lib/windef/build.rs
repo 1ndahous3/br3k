@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use rayon::prelude::*;
 
 fn main() {
-
     let mut defines = vec![
         ("_WIN32", None),
         ("PHNT_INLINE_FREE_FORWARDERS", None),
@@ -80,12 +79,11 @@ fn main() {
     // println!("cargo:rerun-if-changed={}", ntstatus_module.display());
 
     modules.par_iter().for_each(|module| {
-        let header_path =
-            if module.0.starts_with("rpc") || module.0 == "ntwin" {
-                PathBuf::from(module.1)
-            } else {
-                PathBuf::from(format!("{}/{}", phnt_path.display(), module.1))
-            };
+        let header_path = if module.0.starts_with("rpc") || module.0 == "ntwin" {
+            PathBuf::from(module.1)
+        } else {
+            PathBuf::from(format!("{}/{}", phnt_path.display(), module.1))
+        };
 
         let out_file = out_dir.join(format!("{}.rs", module.0));
 
@@ -100,9 +98,7 @@ fn main() {
             .blocklist_type("PPS_APC_ROUTINE") //
             .blocklist_type("PIO_APC_ROUTINE") //
             .blocklist_type("PUSER_THREAD_START_ROUTINE") //
-            .default_enum_style(bindgen::EnumVariation::Rust {
-                non_exhaustive: false,
-            })
+            .default_enum_style(bindgen::EnumVariation::Rust { non_exhaustive: false })
             .derive_default(true)
             .derive_copy(true)
             .derive_debug(true)
@@ -124,8 +120,7 @@ fn main() {
             .generate()
             .expect(&format!("Unable to generate bindings for {}", module.1));
 
-        bindings
-            .write_to_file(&out_file)
+        bindings.write_to_file(&out_file)
             .expect("Couldn't write bindings!");
 
         generate_cross_use(&out_file, &modules, module.0);
@@ -138,7 +133,9 @@ fn main() {
 }
 
 fn generate_cross_use(file_path: &PathBuf, modules: &[(&str, &str)], module: &str) {
-    let content = fs::read_to_string(file_path).expect("Failed to read generated file");
+    let content = fs::read_to_string(file_path)
+        .expect("Failed to read generated file");
+
     let mut header = String::new();
 
     header.push_str("#![allow(non_camel_case_types)]\n");
@@ -197,9 +194,7 @@ fn generate_pfn_types(file_path: &PathBuf) {
     let content = fs::read_to_string(file_path)
         .expect("Failed to read generated file");
 
-    let fn_regex = Regex::new(
-        r#"pub fn (Nt|Rtl|Pss)([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*((?:[^)]*\n?)*?)\s*\)\s*->\s*([^;{]+);"#
-    ).unwrap();
+    let fn_regex = Regex::new(r#"pub fn (Nt|Rtl|Pss)([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*((?:[^)]*\n?)*?)\s*\)\s*->\s*([^;{]+);"#).unwrap();
 
     let mut pfn_types = Vec::new();
 
@@ -213,9 +208,7 @@ fn generate_pfn_types(file_path: &PathBuf) {
             continue;
         }
 
-        let pfn_type = format!(
-            "pub type PFN_{fn_name_prefix}{fn_name_suffix} = unsafe extern \"C\" fn({params}) -> {return_type};"
-        );
+        let pfn_type = format!("pub type PFN_{fn_name_prefix}{fn_name_suffix} = unsafe extern \"C\" fn({params}) -> {return_type};");
         pfn_types.push(pfn_type);
     }
 

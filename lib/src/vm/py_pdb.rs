@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use crate::vm::prelude::*;
+
+use std::cell::RefCell;
 
 #[pyclass(module = false, name = "Pdb")]
 #[derive(Debug, PyPayload)]
@@ -17,13 +18,10 @@ impl Constructor for Pdb {
     type Args = PdbNewArgs;
 
     fn py_new(_cls: &Py<PyType>, args: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
-
         let pdb = crate::pdb::Pdb::init(&args.filepath.to_string())
-            .map_err(|e| vm.new_value_error(format!("Failed to initialize PDB: {e}")))?;
+            .map_err(map_to_py_value_error(vm, "Failed to initialize PDB"))?;
 
-        Ok(Self {
-            pdb: pdb.into()
-        })
+        Ok(Self { pdb: pdb.into() })
     }
 }
 
@@ -43,30 +41,24 @@ pub struct GetFieldOffsetArgs {
 
 #[pyclass(with(Constructor))]
 impl Pdb {
-
     #[pymethod]
     fn get_symbol_rva(&self, args: GetSymbolRvaArgs, vm: &VirtualMachine) -> PyResult<usize> {
-
         let mut pdb = self.pdb.borrow_mut();
 
         let rva = pdb.get_symbol_rva(&args.name.to_string())
-            .map_err(|e| vm.new_value_error(format!("Failed to get symbol RVA: {e}")))?;
+            .map_err(map_to_py_value_error(vm, "Failed to get symbol RVA"))?;
 
         Ok(rva)
     }
 
     #[pymethod]
     fn get_field_offset(&self, args: GetFieldOffsetArgs, vm: &VirtualMachine) -> PyResult<usize> {
-
         let mut pdb = self.pdb.borrow_mut();
 
-        let rva = pdb.get_field_offset(
-            &args.struct_name.to_string(),
-            &args.field_name.to_string()
-        )
-            .map_err(|e| vm.new_value_error(format!("Failed to get struct field offset: {e}")))?;
+        let rva = pdb
+            .get_field_offset(&args.struct_name.to_string(), &args.field_name.to_string())
+            .map_err(map_to_py_value_error(vm, "Failed to get struct field offset"))?;
 
         Ok(rva)
     }
-
 }

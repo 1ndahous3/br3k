@@ -3,10 +3,9 @@ use crate::prelude::*;
 use crate::sysapi;
 use sysapi::UniqueHandle;
 
-use windows_sys::Win32::Foundation::LocalFree;
-use windows_sys::Win32::Foundation::HANDLE;
 use windows::Win32::Foundation::NTSTATUS;
-
+use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Foundation::LocalFree;
 use windows_sys::Win32::Security::PSECURITY_DESCRIPTOR;
 use windows_sys::Win32::Security::Authorization::{
     ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -17,7 +16,7 @@ use windef::ntstatus;
 
 static PIPE_NAME_PROC_PREFIX: &str = "br3k_ipc_";
 
-pub fn create_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
+pub fn create_pipe(pid: u32) -> sysapi::NtResult<UniqueHandle> {
     unsafe {
         let pipe_name = format!("{PIPE_NAME_PROC_PREFIX}{pid}");
 
@@ -38,7 +37,7 @@ pub fn create_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
         );
 
         if ok == 0 {
-            return Err(NTSTATUS(ntstatus::STATUS_INVALID_PARAMETER));
+            return Err(NTSTATUS(ntstatus::STATUS_INVALID_PARAMETER).into());
         }
 
         let _guard = scopeguard::guard((), |_| {
@@ -51,16 +50,14 @@ pub fn create_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
     }
 }
 
-pub fn open_pipe(pid: u32) -> Result<UniqueHandle, NTSTATUS> {
-
+pub fn open_pipe(pid: u32) -> sysapi::NtResult<UniqueHandle> {
     let pipe_name = format!("{PIPE_NAME_PROC_PREFIX}{pid}");
     let pipe_handle = sysapi::open_named_pipe(&pipe_name)?;
 
     Ok(pipe_handle)
 }
 
-pub fn send_data(pipe_handle: HANDLE, data: &[u8]) -> Result<(), NTSTATUS> {
-
+pub fn send_data(pipe_handle: HANDLE, data: &[u8]) -> sysapi::NtResult<()> {
     let data_size = data.len() as u32;
 
     sysapi::write_file(pipe_handle, addr_of!(data_size) as _, size_of::<u32>())?;
@@ -69,15 +66,14 @@ pub fn send_data(pipe_handle: HANDLE, data: &[u8]) -> Result<(), NTSTATUS> {
     Ok(())
 }
 
-pub fn receive_data(pipe_handle: HANDLE) -> Result<Vec<u8>, NTSTATUS> {
-
-    let data_size = 0u32;
+pub fn receive_data(pipe_handle: HANDLE) -> sysapi::NtResult<Vec<u8>> {
+    let mut data_size = 0u32;
     let mut data: Vec<u8> = Vec::new();
 
-    sysapi::read_file(pipe_handle, addr_of!(data_size) as _, size_of::<u32>())?;
+    sysapi::read_file(pipe_handle, addr_of_mut!(data_size) as _, size_of::<u32>())?;
 
     data.resize(data_size as _, 0);
-    sysapi::read_file(pipe_handle, data.as_ptr() as _, data.len())?;
+    sysapi::read_file(pipe_handle, data.as_mut_ptr() as _, data.len())?;
 
     Ok(data)
 }

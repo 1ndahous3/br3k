@@ -1,30 +1,60 @@
 use crate::prelude::*;
+
 use crate::fs;
-use crate::pdb;
 use crate::kdump;
+use crate::pdb;
 use crate::sysapi;
 
-use path::PathBuf;
-use sync::Arc;
+use std::fmt;
+use std::path::PathBuf;
+use std::result::Result;
+use std::slice;
+use std::sync::Arc;
+
 use exe::PtrPE;
 
-use windef::{winbase, ntstatus};
 use winbase::{ACCESS_MASK, NT_CURRENT_PROCESS};
+use windef::{ntstatus, winbase};
 
 use windows::Win32::Foundation::NTSTATUS;
 use windows_sys::Win32::Foundation::{FALSE, HANDLE, HWND, TRUE};
-use windows_sys::Win32::System::Memory::{
-    MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE,
-    PAGE_EXECUTE_READWRITE
-};
-use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
+use windows_sys::Win32::System::Memory::{MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_READWRITE};
 use windows_sys::Win32::System::Threading::{
     PROCESS_DUP_HANDLE, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE, THREAD_ALL_ACCESS,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
 
 use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
 
 use sysapi::UniqueHandle;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProcessMemoryInitError {
+    #[error("temporary dump path is not valid UTF-8")]
+    TempPathNotUtf8,
+    #[error(transparent)]
+    NtStatus(#[from] sysapi::NtStatusError),
+    #[error("failed to download PDB: {0}")]
+    DownloadPdb(#[source] exe::Error),
+    #[error("failed to initialize PDB: {0}")]
+    InitPdb(#[source] pdb::PdbError),
+    #[error("failed to parse kernel dump: {0}")]
+    ParseKernelDump(#[source] kdmp_parser::KdmpParserError),
+    #[error("failed to get processes from kernel dump: {0}")]
+    GetProcesses(#[source] kdmp_parser::KdmpParserError),
+    #[error("process with PID {pid} was not found in live kernel dump")]
+    ProcessNotFound { pid: u32 },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProcessMemoryError {
+    #[error(transparent)]
+    NtStatus(#[from] sysapi::NtStatusError),
+    #[error("{operation} is not supported by read-only LiveDumpParse process VM strategy")]
+    ReadOnlyStrategy { operation: &'static str },
+    #[error("failed to read memory from kernel dump: {0}")]
+    KernelDumpRead(#[source] kdmp_parser::KdmpParserError),
+}
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
@@ -58,7 +88,8 @@ pub enum ProcessMemory {
         base_addr_remote: PVOID,
         base_addr_local: PVOID,
     },
-    LiveDumpParse { // RO
+    LiveDumpParse {
+        // RO
         base_addr_remote: PVOID,
         kdump: Arc<kdump::KernelDump>,
         kdump_process: kdump::Process,
@@ -66,22 +97,22 @@ pub enum ProcessMemory {
 }
 
 impl ProcessMemory {
-    pub fn init_allocate_in_addr(handle: HANDLE) -> Result<Self, ()> {
+    pub fn init_allocate_in_addr(handle: HANDLE) -> Result<Self, ProcessMemoryInitError> {
         Ok(ProcessMemory::AllocateInAddr {
             handle,
-            base_addr_remote: ptr::null_mut(),
+            base_addr_remote: ptr::null_mut()
         })
     }
 
-    pub fn init_create_section_map(handle: HANDLE) -> Result<Self, ()> {
+    pub fn init_create_section_map(handle: HANDLE) -> Result<Self, ProcessMemoryInitError> {
         Ok(ProcessMemory::CreateSectionMap {
             handle,
             section: ptr::null_mut(),
-            base_addr_remote: ptr::null_mut(),
+            base_addr_remote: ptr::null_mut()
         })
     }
 
-    pub fn init_create_section_map_local_map(handle: HANDLE) -> Result<Self, ()> {
+    pub fn init_create_section_map_local_map(handle: HANDLE) -> Result<Self, ProcessMemoryInitError> {
         Ok(ProcessMemory::CreateSectionMapLocalMap {
             handle,
             section: ptr::null_mut(),
@@ -90,10 +121,10 @@ impl ProcessMemory {
         })
     }
 
-    pub fn init_live_dump_parse(pid: u32) -> Result<Self, ()> {
-
+    pub fn init_live_dump_parse(pid: u32) -> Result<Self, ProcessMemoryInitError> {
         let dump_filepath = PathBuf::from(fs::get_temp_folder()).join("system.dmp");
-        let dump_filepath = dump_filepath.to_str().unwrap();
+        let dump_filepath = dump_filepath.to_str()
+            .ok_or(ProcessMemoryInitError::TempPathNotUtf8)?;
 
         {
             let file_mode = fs::FsFileMode::Write;
@@ -102,180 +133,124 @@ impl ProcessMemory {
                 file_mode.access_rights(),
                 file_mode.share_mode(),
                 0
-            ).map_err(|e| {
-                log::error!("Failed to create dump file: {}", sysapi::ntstatus_decode(e));
-            });
+            )?;
 
-            sysapi::dump_live_system(*dump_file.unwrap()).map_err(|e| {
-                log::error!("Failed to dump live system: {}", sysapi::ntstatus_decode(e));
-            })?;
+            sysapi::dump_live_system(*dump_file)?;
         }
 
-        let (_, _, src_data) = fs::map_file(
-            "c:\\windows\\system32\\ntoskrnl.exe"
-        )
-            .map_err(|e| {
-                log::error!("Failed to map dump file: {}", sysapi::ntstatus_decode(e));
-            })?;
+        let (_, _, src_data) = fs::map_file("c:\\windows\\system32\\ntoskrnl.exe")?;
 
         let kernel_pe = PtrPE::new_memory(src_data.as_ptr(), src_data.len());
 
         let pdb_path = pdb::download_pdb(&kernel_pe, &fs::get_temp_folder())
-            .map_err(|e| {
-                log::error!("Failed to download PDB: {e}");
-            })?;
+            .map_err(ProcessMemoryInitError::DownloadPdb)?;
 
         let mut pdb = pdb::Pdb::init(&pdb_path)
-            .map_err(|e| {
-                log::error!("Failed to initialize PDB: {e}");
-            })?;
+            .map_err(ProcessMemoryInitError::InitPdb)?;
 
         let kdump = kdump::KernelDump::new(dump_filepath, &mut pdb)
-            .map_err(|e| {
-                log::error!("Failed to parse kernel dump: {e}");
-            })?;
+            .map_err(ProcessMemoryInitError::ParseKernelDump)?;
 
         let processes = kdump.get_processes()
-            .map_err(|e| {
-                log::error!("Failed to get processes from kernel dump: {e}");
-            })?;
+            .map_err(ProcessMemoryInitError::GetProcesses)?;
 
-        let process = processes.iter().find(|p| p.pid == pid);
-        if process.is_none() {
-            log::error!("Failed to find process with pid: {pid}");
-            return Err(());
-        }
+        let process = processes.iter().find(|p| p.pid == pid)
+            .ok_or(ProcessMemoryInitError::ProcessNotFound { pid })?;
 
         Ok(ProcessMemory::LiveDumpParse {
             base_addr_remote: ptr::null_mut(),
             kdump: Arc::new(kdump),
-            kdump_process: process.unwrap().clone(),
+            kdump_process: process.clone()
         })
     }
 
-    pub fn create_memory(&mut self, size: usize) -> Result<(), NTSTATUS> {
+    pub fn create_memory(&mut self, size: usize) -> Result<(), ProcessMemoryError> {
         match self {
-            ProcessMemory::AllocateInAddr {
-                handle,
-                base_addr_remote,
-            } => {
-                *base_addr_remote = sysapi::allocate_virtual_memory(
+            ProcessMemory::AllocateInAddr { handle, base_addr_remote } => {
+                let allocation_type = MEM_COMMIT | MEM_RESERVE;
+                let protect = PAGE_EXECUTE_READWRITE;
+                let remote_base = *base_addr_remote;
+                let base_addr = sysapi::allocate_virtual_memory(
                     size,
-                    PAGE_EXECUTE_READWRITE,
+                    protect,
                     *handle,
-                    *base_addr_remote,
-                    MEM_COMMIT | MEM_RESERVE,
+                    remote_base,
+                    allocation_type
                 )?;
+                *base_addr_remote = base_addr;
 
                 Ok(())
             }
-            ProcessMemory::CreateSectionMap {
-                handle,
-                section,
-                base_addr_remote,
-            } => {
+            ProcessMemory::CreateSectionMap { handle, section, base_addr_remote } => {
                 *section = sysapi::create_section(size)?.release();
                 *base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_EXECUTE_READWRITE,
                     *handle,
-                    *base_addr_remote,
+                    *base_addr_remote
                 )?;
 
                 Ok(())
             }
-            ProcessMemory::CreateSectionMapLocalMap {
-                handle,
-                section,
-                base_addr_remote,
-                base_addr_local,
-            } => {
+            ProcessMemory::CreateSectionMapLocalMap { handle, section, base_addr_remote, base_addr_local } => {
                 *section = sysapi::create_section(size)?.release();
                 *base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_EXECUTE_READWRITE,
                     *handle,
-                    *base_addr_remote,
+                    *base_addr_remote
                 )?;
                 *base_addr_local = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_READWRITE,
                     NT_CURRENT_PROCESS,
-                    ptr::null_mut(),
+                    ptr::null_mut()
                 )?;
 
                 Ok(())
             }
-            ProcessMemory::LiveDumpParse {
-                ..
-            } => panic!("LiveDumpParse is RO VM strategy ")
+            ProcessMemory::LiveDumpParse { .. } => Err(ProcessMemoryError::ReadOnlyStrategy { operation: "create memory" }),
         }
     }
 
-    pub fn read_memory(
-        &self,
-        offset: usize,
-        data: PVOID,
-        size: usize,
-    ) -> Result<(), NTSTATUS> {
+    pub fn read_memory(&self, offset: usize, data: PVOID, size: usize) -> Result<(), ProcessMemoryError> {
         unsafe {
             match self {
-                ProcessMemory::AllocateInAddr {
-                    handle,
-                    base_addr_remote,
-                } => {
+                ProcessMemory::AllocateInAddr { handle, base_addr_remote } => {
                     let buffer = slice::from_raw_parts_mut(data as *mut u8, size);
                     sysapi::read_virtual_memory(
                         buffer,
                         base_addr_remote.wrapping_add(offset),
-                        *handle,
+                        *handle
                     )?;
 
                     Ok(())
                 }
-                ProcessMemory::CreateSectionMap {
-                    handle,
-                    base_addr_remote,
-                    ..
-                } => {
+                ProcessMemory::CreateSectionMap { handle, base_addr_remote, .. } => {
                     let buffer = slice::from_raw_parts_mut(data as *mut u8, size);
                     sysapi::read_virtual_memory(
                         buffer,
                         base_addr_remote.wrapping_add(offset),
-                        *handle,
+                        *handle
                     )?;
 
                     Ok(())
                 }
-                ProcessMemory::CreateSectionMapLocalMap {
-                    base_addr_local,
-                    ..
-                } => {
-                    ptr::copy_nonoverlapping(
-                        base_addr_local.wrapping_add(offset),
-                        data,
-                        size,
-                    );
+                ProcessMemory::CreateSectionMapLocalMap { base_addr_local, .. } => {
+                    ptr::copy_nonoverlapping(base_addr_local.wrapping_add(offset), data, size);
 
                     Ok(())
                 }
-                ProcessMemory::LiveDumpParse {
-                    base_addr_remote,
-                    kdump,
-                    kdump_process,
-                    ..
-                } => {
+                ProcessMemory::LiveDumpParse { base_addr_remote, kdump, kdump_process, .. } => {
                     let dst = slice::from_raw_parts_mut(data as *mut u8, size);
-                    kdump.read_memory(dst, kdump_process, base_addr_remote.add(offset) as _)
-                        .map_err(
-                            |e| {
-                                log::error!("Failed to read memory from kernel dump: {e}");
-                                NTSTATUS(ntstatus::STATUS_INVALID_ADDRESS)
-                            }
-                        )?;
+                    kdump.read_memory(
+                        dst,
+                        kdump_process,
+                        base_addr_remote.add(offset) as _
+                    ).map_err(ProcessMemoryError::KernelDumpRead)?;
 
                     Ok(())
                 }
@@ -283,65 +258,38 @@ impl ProcessMemory {
         }
     }
 
-    pub fn write_memory(
-        &self,
-        offset: usize,
-        data: PVOID,
-        size: usize,
-    ) -> Result<(), NTSTATUS> {
+    pub fn write_memory(&self, offset: usize, data: PVOID, size: usize) -> Result<(), ProcessMemoryError> {
         match self {
-            ProcessMemory::AllocateInAddr {
-                handle,
-                base_addr_remote,
-            } => {
+            ProcessMemory::AllocateInAddr { handle, base_addr_remote } => unsafe {
+                let buffer = slice::from_raw_parts(data as *const u8, size);
+
+                sysapi::write_virtual_memory(
+                    buffer,
+                    base_addr_remote.wrapping_add(offset),
+                    *handle
+                )?;
+
+                Ok(())
+            },
+            ProcessMemory::CreateSectionMap { handle, base_addr_remote, .. } => unsafe {
+                let buffer = slice::from_raw_parts(data as *const u8, size);
+
+                sysapi::write_virtual_memory(
+                    buffer,
+                    base_addr_remote.wrapping_add(offset),
+                    *handle
+                )?;
+
+                Ok(())
+            },
+            ProcessMemory::CreateSectionMapLocalMap { base_addr_local, .. } => {
                 unsafe {
-                    let buffer = slice::from_raw_parts(data as *const u8, size);
-
-                    sysapi::write_virtual_memory(
-                        buffer,
-                        base_addr_remote.wrapping_add(offset),
-                        *handle,
-                    )?;
-
-                    Ok(())
-                }
-            }
-            ProcessMemory::CreateSectionMap {
-                handle,
-                base_addr_remote,
-                ..
-            } => {
-                unsafe {
-                    let buffer = slice::from_raw_parts(data as *const u8, size);
-
-                    sysapi::write_virtual_memory(
-                        buffer,
-                        base_addr_remote.wrapping_add(offset),
-                        *handle,
-                    )?;
-
-                    Ok(())
-                }
-            }
-            ProcessMemory::CreateSectionMapLocalMap {
-                base_addr_local,
-                ..
-            } => {
-                unsafe {
-                    ptr::copy_nonoverlapping(
-                        data,
-                        base_addr_local.wrapping_add(offset),
-                        size,
-                    );
+                    ptr::copy_nonoverlapping(data, base_addr_local.wrapping_add(offset), size);
                 }
 
                 Ok(())
             }
-            ProcessMemory::LiveDumpParse {
-                ..
-            } => {
-                panic!("LiveDumpParse is RO vm strategy");
-            }
+            ProcessMemory::LiveDumpParse { .. } => Err(ProcessMemoryError::ReadOnlyStrategy { operation: "write memory" }),
         }
     }
 
@@ -351,7 +299,7 @@ impl ProcessMemory {
         size: usize,
         fixup_addr_memory: Self,
         fixup_addr_offset: usize,
-    ) -> Result<(), NTSTATUS> {
+    ) -> Result<(), ProcessMemoryError> {
         self.create_memory(size)?;
         self.write_memory(0, data, size)?;
 
@@ -360,7 +308,7 @@ impl ProcessMemory {
         fixup_addr_memory.write_memory(
             fixup_addr_offset,
             addr_of!(remote_base_addr) as _,
-            size_of::<PVOID>(),
+            size_of::<PVOID>()
         )?;
 
         Ok(())
@@ -368,41 +316,25 @@ impl ProcessMemory {
 
     pub fn get_remote_base_addr(&self) -> PVOID {
         match self {
-            ProcessMemory::AllocateInAddr {
-                base_addr_remote, ..
-            } => *base_addr_remote,
-            ProcessMemory::CreateSectionMap {
-                base_addr_remote, ..
-            } => *base_addr_remote,
-            ProcessMemory::CreateSectionMapLocalMap {
-                base_addr_remote, ..
-            } => *base_addr_remote,
-            ProcessMemory::LiveDumpParse {
-                base_addr_remote, ..
-            } => *base_addr_remote,
+            ProcessMemory::AllocateInAddr { base_addr_remote, .. } => *base_addr_remote,
+            ProcessMemory::CreateSectionMap { base_addr_remote, .. } => *base_addr_remote,
+            ProcessMemory::CreateSectionMapLocalMap { base_addr_remote, .. } => *base_addr_remote,
+            ProcessMemory::LiveDumpParse { base_addr_remote, .. } => *base_addr_remote,
         }
     }
 
     pub fn set_remote_base_addr(&mut self, addr: PVOID) {
         match self {
-            ProcessMemory::AllocateInAddr {
-                base_addr_remote, ..
-            } => {
+            ProcessMemory::AllocateInAddr { base_addr_remote, .. } => {
                 *base_addr_remote = addr;
             }
-            ProcessMemory::CreateSectionMap {
-                base_addr_remote, ..
-            } => {
+            ProcessMemory::CreateSectionMap { base_addr_remote, .. } => {
                 *base_addr_remote = addr;
             }
-            ProcessMemory::CreateSectionMapLocalMap {
-                base_addr_remote, ..
-            } => {
+            ProcessMemory::CreateSectionMapLocalMap { base_addr_remote, .. } => {
                 *base_addr_remote = addr;
             }
-            ProcessMemory::LiveDumpParse {
-                base_addr_remote, ..
-            } => {
+            ProcessMemory::LiveDumpParse { base_addr_remote, .. } => {
                 *base_addr_remote = addr;
             }
         }
@@ -444,15 +376,11 @@ extern "system" fn EnumWindowsProc(hWnd: HWND, lParam: isize) -> i32 {
 }
 
 impl ProcessOpenStrategy {
-    pub fn open(&self, pid: u32, access_mask: ACCESS_MASK) -> Result<UniqueHandle, NTSTATUS> {
+    pub fn open(&self, pid: u32, access_mask: ACCESS_MASK) -> sysapi::NtResult<UniqueHandle> {
         match self {
             ProcessOpenStrategy::OpenProcess => sysapi::open_process(pid, access_mask),
             ProcessOpenStrategy::OpenProcessByHwnd => {
-
-                let mut opts = EnumWindowsProcOpts {
-                    pid,
-                    ..Default::default()
-                };
+                let mut opts = EnumWindowsProcOpts { pid, ..Default::default() };
 
                 unsafe {
                     EnumWindows(Some(EnumWindowsProc), &mut opts as *mut _ as _);
@@ -460,7 +388,7 @@ impl ProcessOpenStrategy {
 
                 if opts.hWnd.is_null() {
                     log::error!("Unable to find any windows for the process with PID {pid}");
-                    return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL));
+                    return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL).into());
                 }
 
                 log::debug!("Window found, HWND = 0x{:x}", opts.hWnd as usize);
@@ -468,7 +396,7 @@ impl ProcessOpenStrategy {
                 // sysapi::ProcessOpenByHwnd(opts.hWnd, access_mask); // TODO: research access restrictions
                 sysapi::open_process_by_hwnd(
                     opts.hWnd,
-                    PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_DUP_HANDLE,
+                    PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_DUP_HANDLE
                 )
             }
         }
@@ -491,20 +419,21 @@ pub struct ThreadOpenArgs {
 }
 
 impl ThreadOpenStrategy {
-    pub fn open(&self, args: ThreadOpenArgs, access_mask: ACCESS_MASK) -> Result<UniqueHandle, NTSTATUS> {
+    pub fn open(&self, args: ThreadOpenArgs, access_mask: ACCESS_MASK) -> sysapi::NtResult<UniqueHandle> {
         match self {
-            ThreadOpenStrategy::ThreadOpenByTid =>
-                sysapi::open_thread(args.pid.unwrap(), args.tid.unwrap(), access_mask),
-            ThreadOpenStrategy::ThreadOpenAnyNext =>
-                sysapi::open_next_thread(args.process_handle.unwrap(), ptr::null_mut(), THREAD_ALL_ACCESS),
+            ThreadOpenStrategy::ThreadOpenByTid => match (args.pid, args.tid) {
+                (Some(pid), Some(tid)) => sysapi::open_thread(pid, tid, access_mask),
+                _ => Err(NTSTATUS(ntstatus::STATUS_INVALID_PARAMETER).into()),
+            },
+            ThreadOpenStrategy::ThreadOpenAnyNext => match args.process_handle {
+                Some(process_handle) => sysapi::open_next_thread(process_handle, ptr::null_mut(), THREAD_ALL_ACCESS),
+                None => Err(NTSTATUS(ntstatus::STATUS_INVALID_PARAMETER).into()),
+            },
             ThreadOpenStrategy::ThreadOpenAnyByHwnd => {
-                
-                let pid = args.pid.unwrap();
+                let pid = args.pid
+                    .ok_or(NTSTATUS(ntstatus::STATUS_INVALID_PARAMETER))?;
 
-                let mut opts = EnumWindowsProcOpts {
-                    pid,
-                    ..Default::default()
-                };
+                let mut opts = EnumWindowsProcOpts { pid, ..Default::default() };
 
                 unsafe {
                     EnumWindows(Some(EnumWindowsProc), &mut opts as *mut _ as _);
@@ -512,7 +441,7 @@ impl ThreadOpenStrategy {
 
                 if opts.hWnd.is_null() {
                     log::error!("Unable to find any windows for the process with PID {pid}");
-                    return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL));
+                    return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL).into());
                 }
 
                 log::debug!("Window found, HWND = 0x{:x}", opts.hWnd as usize);
@@ -523,10 +452,7 @@ impl ThreadOpenStrategy {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
-    thread_handle: HANDLE,
-    exec_address: PVOID,
-) -> Result<(), NTSTATUS> {
+fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     if IS_64 {
         let mut context = sysapi::get_thread_context(thread_handle)?;
 
@@ -553,13 +479,9 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
 }
 
 #[cfg(target_arch = "x86")]
-fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
-    thread_handle: HANDLE,
-    exec_address: PVOID,
-) -> Result<(), NTSTATUS> {
-
+fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     if IS_64 {
-        return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED));
+        return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED).into());
     }
 
     let mut context = sysapi::get_thread_context(thread_handle)?;
@@ -575,30 +497,18 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(
     Ok(())
 }
 
-pub fn new_thread_set_ep_x64(
-    thread_handle: HANDLE,
-    exec_address: PVOID,
-) -> Result<(), NTSTATUS> {
+pub fn new_thread_set_ep_x64(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     thread_set_ep::<true, true>(thread_handle, exec_address)
 }
 
-pub fn new_thread_set_ep_x86(
-    thread_handle: HANDLE,
-    exec_address: PVOID,
-) -> Result<(), NTSTATUS> {
+pub fn new_thread_set_ep_x86(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     thread_set_ep::<true, false>(thread_handle, exec_address)
 }
 
-pub fn thread_set_ep_x64(
-    thread_handle: HANDLE,
-    exec_address: PVOID,
-) -> Result<(), NTSTATUS> {
+pub fn thread_set_ep_x64(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     thread_set_ep::<false, true>(thread_handle, exec_address)
 }
 
-pub fn thread_set_ep_x86(
-    thread_handle: HANDLE,
-    exec_address: PVOID,
-) -> Result<(), NTSTATUS> {
+pub fn thread_set_ep_x86(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     thread_set_ep::<false, false>(thread_handle, exec_address)
 }

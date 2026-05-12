@@ -1,9 +1,11 @@
 use crate::prelude::*;
+
 use crate::sysapi;
 
-use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
+use std::fmt;
+use std::slice;
 
-use windows::Win32::Foundation::NTSTATUS;
+use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
 
 use windef::winbase::NT_CURRENT_PROCESS;
 
@@ -15,6 +17,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ACCESS_RIGHTS, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
     FILE_SHARE_MODE, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
+
 use crate::sysapi::UniqueHandle;
 
 #[repr(u32)]
@@ -84,7 +87,7 @@ pub fn get_temp_folder() -> String {
     }
 }
 
-pub fn map_file(path: &str) -> Result<(UniqueHandle, UniqueHandle, &[u8]), NTSTATUS> {
+pub fn map_file(path: &str) -> sysapi::NtResult<(UniqueHandle, UniqueHandle, &[u8])> {
     unsafe {
         let handle = sysapi::open_file(path)?;
         let size = sysapi::get_file_size(*handle)?;
@@ -94,18 +97,17 @@ pub fn map_file(path: &str) -> Result<(UniqueHandle, UniqueHandle, &[u8]), NTSTA
             SECTION_MAP_READ,
             PAGE_READONLY,
             false,
-            None,
+            None
         )?;
+
         let data = sysapi::map_view_of_section(
             *section_handle,
             size,
             PAGE_READONLY,
             NT_CURRENT_PROCESS,
-            ptr::null_mut(),
+            ptr::null_mut()
         )?;
 
-        Ok((handle, section_handle,
-            slice::from_raw_parts(data as *const u8, size)
-        ))
+        Ok((handle, section_handle, slice::from_raw_parts(data as *const u8, size)))
     }
 }
