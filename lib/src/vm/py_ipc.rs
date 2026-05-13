@@ -62,7 +62,7 @@ impl Ipc {
         let pipe_handle = self.pipe_handle.borrow();
 
         for _ in 0..10 {
-            return match ipc::send_data(*pipe_handle.get(), args.data.as_slice()) {
+            return match ipc::send_data(**pipe_handle, args.data.as_slice()) {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     if e.status.0 == ntstatus::STATUS_PIPE_LISTENING {

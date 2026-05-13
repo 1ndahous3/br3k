@@ -6,7 +6,6 @@ mod str;
 pub mod fs;
 mod kdump;
 mod pdb;
-mod unique_resource;
 mod pe_module;
 mod shellcode;
 

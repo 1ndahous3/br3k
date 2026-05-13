@@ -151,7 +151,7 @@ pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> Result<String, exe::Error>
         let mut debug_directory_offset_current = pe.rva_to_offset(debug_directory.virtual_address)?.0 as usize;
 
         loop {
-            let debug_dir: &headers::ImageDebugDirectory = pe.get_ref(debug_directory_offset_current)?;
+            let debug_dir: headers::ImageDebugDirectory = pe.read_val(debug_directory_offset_current)?;
             if debug_dir.size_of_data == 0 {
                 break;
             }

@@ -3,13 +3,14 @@ use crate::str::*;
 use crate::fs;
 
 use crate::sysapi_ctx::SysApiCtx as api_ctx;
-use crate::unique_resource::*;
 
 use std::fmt;
 use std::arch;
 use std::slice;
 use std::path::PathBuf;
 use std::collections::HashMap;
+
+use scopeguard::ScopeGuard;
 
 use windows::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows::Win32::System::Environment::GetCurrentDirectoryW;
@@ -40,7 +41,7 @@ use winbase::{ULONG, NT_CURRENT_PROCESS};
 
 pub type NtResult<T> = Result<T, NtStatusError>;
 
-pub type UniqueHandle = UniqueResource<HANDLE, fn(HANDLE)>;
+pub type UniqueHandle = ScopeGuard<HANDLE, fn(HANDLE)>;
 
 pub fn ntstatus_decode(status: NTSTATUS) -> String {
     format!(
@@ -126,14 +127,14 @@ fn wrap_handle(handle: HANDLE) -> UniqueHandle {
     fn handle_close_deleter(handle: HANDLE) {
         let _ = close_handle(handle);
     }
-    UniqueResource::new(handle, handle_close_deleter)
+    scopeguard::guard(handle, handle_close_deleter)
 }
 
 pub fn null_handle() -> UniqueHandle {
     fn handle_close_deleter(handle: HANDLE) {
         let _ = close_handle(handle);
     }
-    UniqueResource::new(ptr::null_mut(), handle_close_deleter)
+    scopeguard::guard(ptr::null_mut(), handle_close_deleter)
 }
 
 pub fn peb() -> ntpebteb::PPEB {
@@ -174,7 +175,7 @@ pub fn teb() -> ntexapi::PTEB {
     }
 }
 
-pub type UniqueProcessParameters = UniqueResource<
+pub type UniqueProcessParameters = ScopeGuard<
     ntpebteb::PRTL_USER_PROCESS_PARAMETERS,
     fn(ntpebteb::PRTL_USER_PROCESS_PARAMETERS)
 >;
@@ -219,7 +220,7 @@ fn wrap_process_parameters(process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAM
     fn process_parameters_destroy_deleter(process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS) {
         destroy_process_parameters(process_parameters);
     }
-    UniqueResource::new(process_parameters, process_parameters_destroy_deleter)
+    scopeguard::guard(process_parameters, process_parameters_destroy_deleter)
 }
 
 // ProcessHandle, ThreadHandle
@@ -1559,7 +1560,7 @@ where
     let mut thread_handle = open_next_thread(process_handle, ptr::null_mut(), THREAD_ALL_ACCESS)?;
 
     while !thread_handle.is_null() {
-        if !f(*thread_handle.get()) {
+        if !f(*thread_handle) {
             break;
         }
 

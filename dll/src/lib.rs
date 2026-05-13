@@ -34,7 +34,7 @@ extern "system" fn main() {
     for _ in 0..10 {
         match ipc::open_pipe(pid) {
             Ok(pipe_handle) => {
-                match ipc::receive_data(*pipe_handle.get()) {
+                match ipc::receive_data(*pipe_handle) {
                     Err(error) => log::error!("Unable to read script from pipe: {error}"),
                     Ok(script_data) => {
                         let script = match String::from_utf8(script_data) {

@@ -18,12 +18,12 @@ pub struct FileMapping {
 impl FileMapping {
     #[pygetset]
     fn handle(&self) -> usize {
-        *self.handle.get() as usize
+        *self.handle as usize
     }
 
     #[pygetset]
     fn section_handle(&self) -> usize {
-        *self.section_handle.get() as usize
+        *self.section_handle as usize
     }
 
     #[pygetset]

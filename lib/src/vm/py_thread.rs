@@ -81,10 +81,10 @@ impl Thread {
             .ok_or_else(|| vm.new_value_error("Thread handle is not initialized".to_string()))?;
 
         match (args.new_thread, self.process.is_x64(vm)?) {
-            (true, true) => api_strategy::new_thread_set_ep_x64(*handle.handle.get(), args.ep as _),
-            (true, false) => api_strategy::new_thread_set_ep_x86(*handle.handle.get(), args.ep as _),
-            (false, true) => api_strategy::thread_set_ep_x64(*handle.handle.get(), args.ep as _),
-            (false, false) => api_strategy::thread_set_ep_x86(*handle.handle.get(), args.ep as _),
+            (true, true) => api_strategy::new_thread_set_ep_x64(*handle.handle, args.ep as _),
+            (true, false) => api_strategy::new_thread_set_ep_x86(*handle.handle, args.ep as _),
+            (false, true) => api_strategy::thread_set_ep_x64(*handle.handle, args.ep as _),
+            (false, false) => api_strategy::thread_set_ep_x86(*handle.handle, args.ep as _),
         }
         .map_err(map_to_py_system_error(vm, "Unable to set thread entry point"))?;
 
@@ -103,7 +103,7 @@ impl Thread {
             None => None,
         };
 
-        let handle = sysapi::create_thread(*process_handle.get(), args.ep as _, arg)
+        let handle = sysapi::create_thread(**process_handle, args.ep as _, arg)
             .map_err(map_to_py_system_error(vm, "Unable to create thread"))?;
 
         self.handle.replace(Handle { handle }.into_ref(&vm.ctx).into());
@@ -133,7 +133,7 @@ impl Thread {
                     return Err(vm.new_system_error("Process is not opened"));
                 }
 
-                ThreadOpenArgs { process_handle: Some(*process_handle.get()), ..Default::default() }
+                ThreadOpenArgs { process_handle: Some(**process_handle), ..Default::default() }
             }
             ThreadOpenStrategy::ThreadOpenAnyByHwnd => {
                 let pid = *self.process.pid.borrow();
@@ -161,7 +161,7 @@ impl Thread {
             return Err(vm.new_system_error("Process is not opened"));
         }
 
-        let handle = sysapi::process_open_alertable_thread(*process_handle.get())
+        let handle = sysapi::process_open_alertable_thread(**process_handle)
             .map_err(map_to_py_system_error(vm, "Unable to open alertable thread"))?;
 
         self.handle.replace(Handle { handle }.into_ref(&vm.ctx).into());
@@ -175,7 +175,7 @@ impl Thread {
         let handle = handle.as_mut()
             .ok_or_else(|| vm.new_value_error("Thread handle is not initialized".to_string()))?;
 
-        match sysapi::suspend_thread(*handle.handle.get()) {
+        match sysapi::suspend_thread(*handle.handle) {
             Ok(()) => Ok(()),
             Err(error) => Err(to_py_system_error(vm, "Failed to suspend thread", error)),
         }
@@ -187,7 +187,7 @@ impl Thread {
         let handle = handle.as_mut()
             .ok_or_else(|| vm.new_value_error("Thread handle is not initialized".to_string()))?;
 
-        match sysapi::resume_thread(*handle.handle.get()) {
+        match sysapi::resume_thread(*handle.handle) {
             Ok(()) => Ok(()),
             Err(error) => Err(to_py_system_error(vm, "Failed to resume thread", error)),
         }
@@ -213,7 +213,7 @@ impl Thread {
             apc_arg3 = arg3 as _;
         }
 
-        match sysapi::queue_apc_thread(*handle.handle.get(), args.ep as _, apc_arg1, apc_arg2, apc_arg3) {
+        match sysapi::queue_apc_thread(*handle.handle, args.ep as _, apc_arg1, apc_arg2, apc_arg3) {
             Ok(()) => Ok(()),
             Err(error) => Err(to_py_system_error(vm, "Unable to queue user APC", error)),
         }

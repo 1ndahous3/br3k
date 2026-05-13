@@ -62,7 +62,7 @@ fn main() {
             }
         };
 
-        let script_data = match ipc::receive_data(*pipe_handle.get()) {
+        let script_data = match ipc::receive_data(*pipe_handle) {
             Ok(script_data) => script_data,
             Err(error) => {
                 log::error!("Unable to read script from pipe: {error}");

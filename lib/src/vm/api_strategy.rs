@@ -25,6 +25,7 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
 
 use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
+use scopeguard::ScopeGuard;
 
 use sysapi::UniqueHandle;
 
@@ -182,7 +183,7 @@ impl ProcessMemory {
                 Ok(())
             }
             ProcessMemory::CreateSectionMap { handle, section, base_addr_remote } => {
-                *section = sysapi::create_section(size)?.release();
+                *section = ScopeGuard::into_inner(sysapi::create_section(size)?);
                 *base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
@@ -194,7 +195,7 @@ impl ProcessMemory {
                 Ok(())
             }
             ProcessMemory::CreateSectionMapLocalMap { handle, section, base_addr_remote, base_addr_local } => {
-                *section = sysapi::create_section(size)?.release();
+                *section = ScopeGuard::into_inner(sysapi::create_section(size)?);
                 *base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,

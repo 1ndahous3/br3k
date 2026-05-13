@@ -154,7 +154,7 @@ impl Constructor for Process {
         } else if let Some(v) = args.image_path.present() {
             image_path = v.to_string().into()
         } else if let Some(v) = args.section_handle.present() {
-            let s = *v.handle.get();
+            let s = *v.handle;
             section_handle = Some(s)
         } else {
             return Err(vm.new_value_error("'name', 'pid', 'image_path' or 'section_handle' must be specified".to_string()));
@@ -319,7 +319,7 @@ impl Process {
         let process_vm_strategy = process_vm_strategy.as_mut()
             .ok_or_else(missing_strategy)?;
 
-        let process_handle = *self.process_handle.borrow().get();
+        let process_handle = **self.process_handle.borrow();
 
         let memory = match process_vm_strategy {
             api_strategy::ProcessVmStrategy::AllocateInAddr => api_strategy::ProcessMemory::init_allocate_in_addr(process_handle),
@@ -383,7 +383,7 @@ impl Process {
 
     #[pymethod]
     pub fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
-        match sysapi::get_process_wow64_info(*self.process_handle.borrow().get()) {
+        match sysapi::get_process_wow64_info(**self.process_handle.borrow()) {
             Ok(is_x64) => Ok(is_x64),
             Err(error) => Err(to_py_system_error(vm, "Unable to get Wow64 info", error)),
         }
@@ -393,7 +393,7 @@ impl Process {
 
     #[pymethod]
     fn get_basic_info(&self, vm: &VirtualMachine) -> PyResult<CProcessBasicInformation> {
-        let basic_info = sysapi::get_process_basic_info(*self.process_handle.borrow().get())
+        let basic_info = sysapi::get_process_basic_info(**self.process_handle.borrow())
             .map_err(map_to_py_system_error(vm, "Unable to get process basic info"))?;
 
         Ok(CProcessBasicInformation { data: basic_info })
@@ -402,7 +402,7 @@ impl Process {
     #[pymethod]
     fn read_peb(&self, vm: &VirtualMachine) -> PyResult<CPeb> {
         unsafe {
-            let process_handle = *self.process_handle.borrow().get();
+            let process_handle = **self.process_handle.borrow();
 
             let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
             let basic_info = sysapi::get_process_basic_info(process_handle)
@@ -427,7 +427,7 @@ impl Process {
                 .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
             let proc_params = args.proc_params.params.borrow_mut();
-            let proc_params = proc_params.get();
+            let proc_params = **proc_params;
 
             let mut peb_memory = memory.clone();
             peb_memory.set_remote_base_addr(args.peb_address as PVOID);
@@ -435,19 +435,19 @@ impl Process {
             let mut proc_params_memory = memory.clone();
             proc_params_memory
                 .create_write_memory_fixup_addr(
-                    *proc_params as _,
-                    (*(*proc_params)).Length as _,
+                    proc_params as _,
+                    (*proc_params).Length as _,
                     peb_memory,
                     offset_of!(ntpebteb::PEB, ProcessParameters),
                 )
                 .map_err(map_process_memory_error_to_py_exception(vm, "Unable to write process parameters"))?;
 
-            if !(*(*proc_params)).Environment.is_null() && (*(*proc_params)).EnvironmentSize > 0 {
+            if !(*proc_params).Environment.is_null() && (*proc_params).EnvironmentSize > 0 {
                 let mut env_memory = memory.clone();
                 env_memory
                     .create_write_memory_fixup_addr(
-                        (*(*proc_params)).Environment,
-                        (*(*proc_params)).EnvironmentSize,
+                        (*proc_params).Environment,
+                        (*proc_params).EnvironmentSize,
                         proc_params_memory,
                         offset_of!(ntrtl::RTL_USER_PROCESS_PARAMETERS, Environment),
                     )
