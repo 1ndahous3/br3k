@@ -3,7 +3,10 @@ use crate::pdb::Pdb;
 use std::collections::VecDeque;
 use std::result::Result;
 
-use kdmp_parser::{Gpa, Gva, KdmpParserError, KernelDumpParser};
+use kdmp_parser::error::Error as KdmpParserError;
+use kdmp_parser::gxa::{Gpa, Gva};
+use kdmp_parser::parse::KernelDumpParser;
+use kdmp_parser::virt;
 
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
@@ -58,6 +61,8 @@ struct LIST_ENTRY {
     Blink: u64,
 }
 
+unsafe impl kdmp_parser::structs::Pod for LIST_ENTRY {}
+
 #[derive(Debug)]
 pub struct KernelDump {
     pub kernel_offsets: KernelOffsets,
@@ -97,6 +102,7 @@ impl KernelDump {
 
     #[allow(dead_code)]
     pub fn get_process_image_maps(&self, va_vad_root: u64) -> Result<Vec<VadImage>, KdmpParserError> {
+        let reader = virt::Reader::new(&self.parser);
         let mut vads = VecDeque::new();
         if va_vad_root != 0 {
             vads.push_back(va_vad_root);
@@ -106,7 +112,7 @@ impl KernelDump {
 
         while let Some(va_vad_current) = vads.pop_front() {
             let vad_flags_addr = self.kernel_offsets.MMVAD_U_VAD_FLAGS as u64;
-            let vad_flags: u32 = match self.parser.virt_read_struct(vad_flags_addr.into()) {
+            let vad_flags: u32 = match reader.read_struct(vad_flags_addr.into()) {
                 Ok(flags) => flags,
                 Err(_) => continue,
             };
@@ -117,13 +123,13 @@ impl KernelDump {
             }
 
             let starting_vpn_addr = va_vad_current + self.kernel_offsets.MMVAD_STARTING_VPN as u64;
-            let starting_vpn: u32 = match self.parser.virt_read_struct(starting_vpn_addr.into()) {
+            let starting_vpn: u32 = match reader.read_struct(starting_vpn_addr.into()) {
                 Ok(value) => value,
                 Err(_) => continue,
             };
 
             let ending_vpn_addr = va_vad_current + self.kernel_offsets.MMVAD_ENDING_VPN as u64;
-            let ending_vpn: u32 = match self.parser.virt_read_struct(ending_vpn_addr.into()) {
+            let ending_vpn: u32 = match reader.read_struct(ending_vpn_addr.into()) {
                 Ok(value) => value,
                 Err(_) => continue,
             };
@@ -133,7 +139,7 @@ impl KernelDump {
             vad_images.push(VadImage { va_start, va_end });
 
             for child_offset in [self.kernel_offsets.MMVAD_LEFT_CHILD, self.kernel_offsets.MMVAD_RIGHT_CHILD] {
-                let va_vad_leaf: u64 = match self.parser.virt_read_struct((va_vad_current + child_offset as u64).into()) {
+                let va_vad_leaf: u64 = match reader.read_struct((va_vad_current + child_offset as u64).into()) {
                     Ok(leaf) => leaf,
                     Err(_) => continue,
                 };
@@ -151,7 +157,8 @@ impl KernelDump {
         let mut processes = Vec::new();
 
         let header = self.parser.headers();
-        let ps_active_process_head: LIST_ENTRY = self.parser.virt_read_struct(header.ps_active_process_head.into())?;
+        let reader = virt::Reader::new(&self.parser);
+        let ps_active_process_head: LIST_ENTRY = reader.read_struct(header.ps_active_process_head.into())?;
 
         let mut va_current_process = ps_active_process_head.Flink;
         while va_current_process != header.ps_active_process_head {
@@ -163,14 +170,14 @@ impl KernelDump {
             let image_file_name_addr = va_eprocess + self.kernel_offsets.EPROCESS_IMAGE_FILE_NAME as u64;
             let vad_root_addr = va_eprocess + self.kernel_offsets.EPROCESS_VAD_ROOT as u64;
 
-            process.dtb = self.parser.virt_read_struct(dtb_addr.into())?;
-            process.pid = self.parser.virt_read_struct(pid_addr.into())?;
-            process.image_file_name = self.parser.virt_read_struct(image_file_name_addr.into())?;
-            process.vad_root = self.parser.virt_read_struct(vad_root_addr.into())?;
+            process.dtb = reader.read_struct(dtb_addr.into())?;
+            process.pid = reader.read_struct(pid_addr.into())?;
+            reader.read_exact(image_file_name_addr.into(), &mut process.image_file_name)?;
+            process.vad_root = reader.read_struct(vad_root_addr.into())?;
 
             processes.push(process);
 
-            let next_process: LIST_ENTRY = match self.parser.virt_read_struct(va_current_process.into()) {
+            let next_process: LIST_ENTRY = match reader.read_struct(va_current_process.into()) {
                 Ok(entry) => entry,
                 Err(_) => {
                     log::error!("Failed to read process entry at VA: {va_current_process:#x}");
@@ -185,7 +192,7 @@ impl KernelDump {
     }
 
     pub fn read_memory(&self, buf: &mut [u8], process: &Process, basic_addres: usize) -> Result<(), KdmpParserError> {
-        self.parser.virt_read_with_dtb(Gva::from(basic_addres as u64), buf, Gpa::from(process.dtb))?;
+        virt::Reader::with_dtb(&self.parser, Gpa::from(process.dtb)).read_exact(Gva::from(basic_addres as u64), buf)?;
         Ok(())
     }
 }

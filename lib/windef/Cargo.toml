@@ -4,8 +4,8 @@ edition = "2024"
 
 [dependencies]
 libc = "0.2"
-winapi = { version = "0.3.9", features = ["rpcdce", "rpcndr"] }
-windows-sys = { version = "0.60", features = [
+winapi = { version = "0.3", features = ["rpcdce", "rpcndr"] }
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_WindowsProgramming",
     "Win32_System_Kernel",
@@ -25,9 +25,9 @@ windows-sys = { version = "0.60", features = [
 ]}
 
 [build-dependencies]
-rayon = "1.0"
+rayon = "1.12"
 bindgen = "0.72"
-regex = "1.11"
+regex = "1.12"
 
 [lib]
 path = "src/lib.rs"

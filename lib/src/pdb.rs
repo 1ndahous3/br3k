@@ -1,12 +1,11 @@
 use crate::prelude::*;
 
-use scroll::Pread;
 use std::fs;
 use std::io::{self, Write};
 use std::result::Result;
 
 use exe::{Buffer, PE, PtrPE, headers};
-use minidump::format::{CV_INFO_PDB70, CvSignature};
+use minidump::format::{CV_INFO_PDB70, CvSignature, GUID};
 use pdb::{FallibleIterator, PDB, SymbolData, TypeData};
 
 #[derive(thiserror::Error, Debug)]
@@ -140,71 +139,122 @@ impl<'a> Pdb<'a> {
 }
 
 pub fn download_pdb(pe: &PtrPE, folder_path: &str) -> Result<String, exe::Error> {
-    unsafe {
-        static SYMBOL_SERVER: &str = "https://msdl.microsoft.com/download/symbols/";
+    static SYMBOL_SERVER: &str = "https://msdl.microsoft.com/download/symbols/";
 
-        let debug_directory = pe.get_data_directory(headers::ImageDirectoryEntry::Debug)?;
-        if debug_directory.virtual_address.0 == 0 {
-            return Err(exe::Error::SectionNotFound);
-        }
-
-        let mut debug_directory_offset_current = pe.rva_to_offset(debug_directory.virtual_address)?.0 as usize;
-
-        loop {
-            let debug_dir: headers::ImageDebugDirectory = pe.read_val(debug_directory_offset_current)?;
-            if debug_dir.size_of_data == 0 {
-                break;
-            }
-
-            if headers::ImageDebugType::from_u32(debug_dir.type_) != headers::ImageDebugType::CodeView {
-                debug_directory_offset_current += size_of::<headers::ImageDebugDirectory>();
-                continue;
-            }
-
-            let cv_info_offset = pe.rva_to_offset(debug_dir.address_of_raw_data)?;
-
-            let cv_info: CV_INFO_PDB70 = pe.get_buffer().as_slice().pread_with(cv_info_offset.0 as usize, scroll::LE).unwrap();
-
-            if cv_info.cv_signature != CvSignature::Pdb70 as u32 {
-                debug_directory_offset_current += size_of::<headers::ImageDebugDirectory>();
-                continue;
-            }
-
-            let pdb_filename = CStr::from_ptr(cv_info.pdb_file_name.as_ptr() as _).to_string_lossy();
-            let pdb_extention_path = format!("{}/{:#}{}/{}", pdb_filename, cv_info.signature, cv_info.age, pdb_filename);
-            let pdb_filepath = format!("{folder_path}/{pdb_filename}");
-            let url = format!("{SYMBOL_SERVER}{pdb_extention_path}");
-
-            log::info!("PDB URL: {url}");
-            log::info!("downloading, it can take a while...");
-
-            let response = reqwest::blocking::get(&url).map_err(|e| {
-                log::error!("unable to download PDB: {e}");
-                exe::Error::IoError(std::io::ErrorKind::NetworkUnreachable.into())
-            })?;
-
-            if !response.status().is_success() {
-                log::error!("unable to download PDB, HTTP status: {}", response.status());
-                return Err(exe::Error::IoError(std::io::ErrorKind::NetworkUnreachable.into()));
-            }
-
-            let mut file = fs::File::create(&pdb_filepath).map_err(|e| {
-                log::error!("unable to create PDB file: {e}");
-                exe::Error::IoError(std::io::ErrorKind::Other.into())
-            })?;
-
-            file.write_all(&response.bytes().map_err(|e| {
-                log::error!("unable to read response body: {e}");
-                exe::Error::IoError(std::io::ErrorKind::Other.into())
-            })?)
-            .map_err(|e| {
-                log::error!("unable to write to PDB file: {e}");
-                exe::Error::IoError(std::io::ErrorKind::Other.into())
-            })?;
-
-            return Ok(pdb_filepath);
-        }
-
-        Err(exe::Error::SectionNotFound)
+    let debug_directory = pe.get_data_directory(headers::ImageDirectoryEntry::Debug)?;
+    if debug_directory.virtual_address.0 == 0 {
+        return Err(exe::Error::SectionNotFound);
     }
+
+    let mut debug_directory_offset_current = pe.rva_to_offset(debug_directory.virtual_address)?.0 as usize;
+
+    loop {
+        let debug_dir: headers::ImageDebugDirectory = pe.read_val(debug_directory_offset_current)?;
+        if debug_dir.size_of_data == 0 {
+            break;
+        }
+
+        if headers::ImageDebugType::from_u32(debug_dir.type_) != headers::ImageDebugType::CodeView {
+            debug_directory_offset_current += size_of::<headers::ImageDebugDirectory>();
+            continue;
+        }
+
+        let cv_info_offset = pe.rva_to_offset(debug_dir.address_of_raw_data)?;
+
+        let cv_info = read_cv_info_pdb70(pe.get_buffer().as_slice(), cv_info_offset.0 as usize, debug_dir.size_of_data as usize)?;
+
+        if cv_info.cv_signature != CvSignature::Pdb70 as u32 {
+            debug_directory_offset_current += size_of::<headers::ImageDebugDirectory>();
+            continue;
+        }
+
+        let pdb_filename = CStr::from_bytes_until_nul(&cv_info.pdb_file_name)
+            .map_err(|_| exe::Error::OutOfBounds(cv_info.pdb_file_name.len() + 1, cv_info.pdb_file_name.len()))?
+            .to_string_lossy();
+        let pdb_extention_path = format!("{}/{:#}{}/{}", pdb_filename, cv_info.signature, cv_info.age, pdb_filename);
+        let pdb_filepath = format!("{folder_path}/{pdb_filename}");
+        let url = format!("{SYMBOL_SERVER}{pdb_extention_path}");
+
+        log::info!("PDB URL: {url}");
+        log::info!("downloading, it can take a while...");
+
+        let response = reqwest::blocking::get(&url).map_err(|e| {
+            log::error!("unable to download PDB: {e}");
+            exe::Error::IoError(std::io::ErrorKind::NetworkUnreachable.into())
+        })?;
+
+        if !response.status().is_success() {
+            log::error!("unable to download PDB, HTTP status: {}", response.status());
+            return Err(exe::Error::IoError(std::io::ErrorKind::NetworkUnreachable.into()));
+        }
+
+        let mut file = fs::File::create(&pdb_filepath).map_err(|e| {
+            log::error!("unable to create PDB file: {e}");
+            exe::Error::IoError(std::io::ErrorKind::Other.into())
+        })?;
+
+        file.write_all(&response.bytes().map_err(|e| {
+            log::error!("unable to read response body: {e}");
+            exe::Error::IoError(std::io::ErrorKind::Other.into())
+        })?)
+        .map_err(|e| {
+            log::error!("unable to write to PDB file: {e}");
+            exe::Error::IoError(std::io::ErrorKind::Other.into())
+        })?;
+
+        return Ok(pdb_filepath);
+    }
+
+    Err(exe::Error::SectionNotFound)
+}
+
+fn cv_info_bytes(data: &[u8], offset: usize, len: usize) -> Result<&[u8], exe::Error> {
+    let end = offset.checked_add(len)
+        .ok_or(exe::Error::OutOfBounds(data.len(), usize::MAX))?;
+    data.get(offset..end)
+        .ok_or(exe::Error::OutOfBounds(data.len(), end))
+}
+
+fn cv_info_u16(data: &[u8], offset: usize) -> Result<u16, exe::Error> {
+    let bytes = cv_info_bytes(data, offset, size_of::<u16>())?;
+    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+fn cv_info_u32(data: &[u8], offset: usize) -> Result<u32, exe::Error> {
+    let bytes = cv_info_bytes(data, offset, size_of::<u32>())?;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+fn read_cv_info_pdb70(data: &[u8], offset: usize, size: usize) -> Result<CV_INFO_PDB70, exe::Error> {
+    const GUID_SIZE: usize = 16;
+    let data = cv_info_bytes(data, offset, size)?;
+    let fixed_size = size_of::<u32>() + GUID_SIZE + size_of::<u32>();
+
+    if data.len() < fixed_size {
+        return Err(exe::Error::OutOfBounds(fixed_size, data.len()));
+    }
+
+    let guid_data = cv_info_bytes(data, size_of::<u32>(), GUID_SIZE)?;
+    let signature = GUID {
+        data1: cv_info_u32(guid_data, 0)?,
+        data2: cv_info_u16(guid_data, size_of::<u32>())?,
+        data3: cv_info_u16(guid_data, size_of::<u32>() + size_of::<u16>())?,
+        data4: [
+            guid_data[8],
+            guid_data[9],
+            guid_data[10],
+            guid_data[11],
+            guid_data[12],
+            guid_data[13],
+            guid_data[14],
+            guid_data[15],
+        ],
+    };
+
+    Ok(CV_INFO_PDB70 {
+        cv_signature: cv_info_u32(data, 0)?,
+        signature,
+        age: cv_info_u32(data, size_of::<u32>() + GUID_SIZE)?,
+        pdb_file_name: data[fixed_size..].to_vec(),
+    })
 }

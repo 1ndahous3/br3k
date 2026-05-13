@@ -40,9 +40,9 @@ pub enum ProcessMemoryInitError {
     #[error("failed to initialize PDB: {0}")]
     InitPdb(#[source] pdb::PdbError),
     #[error("failed to parse kernel dump: {0}")]
-    ParseKernelDump(#[source] kdmp_parser::KdmpParserError),
+    ParseKernelDump(#[source] kdmp_parser::error::Error),
     #[error("failed to get processes from kernel dump: {0}")]
-    GetProcesses(#[source] kdmp_parser::KdmpParserError),
+    GetProcesses(#[source] kdmp_parser::error::Error),
     #[error("process with PID {pid} was not found in live kernel dump")]
     ProcessNotFound { pid: u32 },
 }
@@ -54,7 +54,7 @@ pub enum ProcessMemoryError {
     #[error("{operation} is not supported by read-only LiveDumpParse process VM strategy")]
     ReadOnlyStrategy { operation: &'static str },
     #[error("failed to read memory from kernel dump: {0}")]
-    KernelDumpRead(#[source] kdmp_parser::KdmpParserError),
+    KernelDumpRead(#[source] kdmp_parser::error::Error),
 }
 
 #[repr(u32)]

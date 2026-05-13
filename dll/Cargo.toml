@@ -8,7 +8,7 @@ crate-type = ["cdylib"]
 [dependencies]
 br3k = { path = "../lib" }
 windef = { path = "../lib/windef" }
-windows-sys = { version = "0.60", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_SystemServices",
     "Win32_UI_WindowsAndMessaging",
