@@ -35,7 +35,7 @@ kdmp-parser = "0.8"
 minidump = "0.26"
 exe = "0.5"
 scroll = "0.13"
-reqwest = { version = "0.13", features = ["blocking"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls"] }
 base64 = "0.22"
 chrono = "0.4"
 scopeguard = "1.2"

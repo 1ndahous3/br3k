@@ -12,6 +12,7 @@ fn main() {
         ("_MSC_VER", Some("1900")),
     ];
 
+    let target = std::env::var("TARGET").unwrap();
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     if target_arch == "x86_64" {
         defines.push(("_WIN64", None))
@@ -50,7 +51,7 @@ fn main() {
         phnt_path = PathBuf::from(format!("../{}", phnt_path.display()));
     };
 
-    let out_dir = PathBuf::from("src/generated");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("generated");
     fs::create_dir_all(&out_dir).unwrap();
 
     let mut modules = all_modules.to_vec();
@@ -90,6 +91,7 @@ fn main() {
         let mut builder = bindgen::Builder::default()
             .anon_fields_prefix("a")
             .header(header_path.to_str().unwrap())
+            .clang_arg(format!("--target={target}"))
             .clang_arg(format!("-include{}/phnt_windows.h", phnt_path.display()))
             .clang_arg(format!("-include{}/phnt.h", phnt_path.display()))
             .clang_arg("-includehstring.h")
@@ -208,7 +210,7 @@ fn generate_pfn_types(file_path: &PathBuf) {
             continue;
         }
 
-        let pfn_type = format!("pub type PFN_{fn_name_prefix}{fn_name_suffix} = unsafe extern \"C\" fn({params}) -> {return_type};");
+        let pfn_type = format!("pub type PFN_{fn_name_prefix}{fn_name_suffix} = unsafe extern \"system\" fn({params}) -> {return_type};");
         pfn_types.push(pfn_type);
     }
 
