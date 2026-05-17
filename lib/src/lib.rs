@@ -1,5 +1,4 @@
 mod prelude;
-pub mod sysapi_ctx;
 pub mod sysapi;
 pub mod ipc;
 mod str;

@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use crate::sysapi;
 
+use super::backend::{DirectSyscallError, DirectSyscallStubs, SysApiBackend};
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -28,6 +30,8 @@ pub enum SysApiCtxError {
     InvalidProcedureName(String),
     #[error("failed to load a copy of {path}: {status}")]
     LoadLibraryCopy { path: &'static str, status: String },
+    #[error(transparent)]
+    DirectSyscall(#[from] DirectSyscallError),
 }
 
 #[allow(unused, non_snake_case)]
@@ -48,6 +52,7 @@ pub struct NtDllApi {
     pub NtMapViewOfSection: Option<ntmmapi::PFN_NtMapViewOfSection>,
     pub NtUnmapViewOfSection: Option<ntmmapi::PFN_NtUnmapViewOfSection>,
     pub NtClose: Option<ntobapi::PFN_NtClose>,
+    pub NtWaitForSingleObject: Option<ntobapi::PFN_NtWaitForSingleObject>,
     pub NtQueryObject: Option<ntobapi::PFN_NtQueryObject>,
     pub NtDuplicateObject: Option<ntobapi::PFN_NtDuplicateObject>,
     pub NtOpenProcess: Option<ntpsapi::PFN_NtOpenProcess>,
@@ -152,7 +157,7 @@ pub struct SysApiDispatchConfig {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct InitOptions {
-    pub ntdll_copy: bool,
+    pub sys_api_backend: SysApiBackend,
     pub sys_api_dispatch: SysApiDispatchConfig,
 }
 
@@ -182,7 +187,7 @@ impl NtDllApi {
 
     pub fn new(opts: &InitOptions) -> Result<Self, SysApiCtxError> {
         unsafe {
-            let module = if opts.ntdll_copy {
+            let module = if opts.sys_api_backend.uses_dll_copy() {
                 const NTDLL_PATH: &str = "c:\\windows\\system32\\ntdll.dll";
                 sysapi::load_library_copy(NTDLL_PATH)
                     .map_err(|error| SysApiCtxError::LoadLibraryCopy { path: NTDLL_PATH, status: error.to_string() })?
@@ -212,6 +217,7 @@ impl NtDllApi {
                 NtMapViewOfSection: Self::get_proc_address(module, "NtMapViewOfSection"),
                 NtUnmapViewOfSection: Self::get_proc_address(module, "NtUnmapViewOfSection"),
                 NtClose: Self::get_proc_address(module, "NtClose"),
+                NtWaitForSingleObject: Self::get_proc_address(module, "NtWaitForSingleObject"),
                 NtQueryObject: Self::get_proc_address(module, "NtQueryObject"),
                 NtDuplicateObject: Self::get_proc_address(module, "NtDuplicateObject"),
                 NtOpenProcess: Self::get_proc_address(module, "NtOpenProcess"),
@@ -276,8 +282,15 @@ impl Win32uApi {
         }
     }
 
-    pub fn new() -> Result<Self, SysApiCtxError> {
-        let module = unsafe { LoadLibraryA(c"win32u.dll".as_ptr() as _) };
+    pub fn new(opts: &InitOptions) -> Result<Self, SysApiCtxError> {
+        let module = if opts.sys_api_backend.uses_dll_copy() {
+            const WIN32U_PATH: &str = "c:\\windows\\system32\\win32u.dll";
+            sysapi::load_library_copy(WIN32U_PATH)
+                .map_err(|error| SysApiCtxError::LoadLibraryCopy { path: WIN32U_PATH, status: error.to_string() })?
+                .0
+        } else {
+            unsafe { LoadLibraryA(c"win32u.dll".as_ptr() as _) }
+        };
         if module.is_null() {
             return Err(SysApiCtxError::ModuleNotLoaded("win32u.dll".to_string()));
         }
@@ -294,30 +307,36 @@ pub struct SysApiCtx {
 
     ntdll: NtDllApi,
     win32u: Win32uApi,
+    direct_syscall_stubs: DirectSyscallStubs,
+    sys_api_backend: SysApiBackend,
     sys_api_dispatch: SysApiDispatchConfig,
 }
 
 impl SysApiCtx {
     pub fn init(opts: InitOptions) -> Result<(), SysApiCtxError> {
-        let opts_native = InitOptions { ntdll_copy: false, ..opts };
+        let opts_native = InitOptions { sys_api_backend: SysApiBackend::Dll, ..opts };
 
         let ctx_native = SysApiCtx {
             ntstatus_decoder: ntstatus::create_ntstatus_decoder(),
             proc_addresses: RefCell::new(HashMap::new()),
             ntdll: NtDllApi::new(&opts_native)?,
-            win32u: Win32uApi::new()?,
+            win32u: Win32uApi::new(&opts_native)?,
+            direct_syscall_stubs: DirectSyscallStubs::new(),
+            sys_api_backend: opts_native.sys_api_backend,
             sys_api_dispatch: opts.sys_api_dispatch,
         };
 
         SYSAPI.store(Box::into_raw(Box::new(ctx_native)), Ordering::Relaxed);
 
         // we had to initialize the original API first to use sysapi during loading copy
-        if opts.ntdll_copy {
+        if opts.sys_api_backend.uses_dll_copy() {
             let ctx = SysApiCtx {
                 ntstatus_decoder: ntstatus::create_ntstatus_decoder(),
                 proc_addresses: RefCell::new(HashMap::new()),
                 ntdll: NtDllApi::new(&opts)?,
-                win32u: Win32uApi::new()?,
+                win32u: Win32uApi::new(&opts)?,
+                direct_syscall_stubs: DirectSyscallStubs::new(),
+                sys_api_backend: opts.sys_api_backend,
                 sys_api_dispatch: opts.sys_api_dispatch,
             };
 
@@ -356,6 +375,15 @@ impl SysApiCtx {
     pub fn sys_api_dispatch() -> &'static SysApiDispatchConfig {
         &Self::try_ctx()
             .expect("SysApiCtx is not initialized").sys_api_dispatch
+    }
+
+    pub fn sys_api_backend() -> SysApiBackend {
+        Self::try_ctx()
+            .expect("SysApiCtx is not initialized").sys_api_backend
+    }
+
+    pub fn direct_syscall<T: Copy>(proc_name: &'static str, api: T) -> Result<T, SysApiCtxError> {
+        Ok(Self::try_ctx()?.direct_syscall_stubs.get(proc_name, api)?)
     }
 
     pub fn get_proc_address(module_name: &str, proc_name: &str) -> Result<PVOID, SysApiCtxError> {

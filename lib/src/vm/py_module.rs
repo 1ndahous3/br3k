@@ -15,8 +15,7 @@ pub mod br3k {
     use crate::vm::prelude::*;
 
     use crate::fs;
-    use crate::sysapi;
-    use crate::sysapi_ctx;
+    use crate::sysapi::{self, backend, ctx};
     use crate::vm;
 
     use crate::cast_pfn;
@@ -26,7 +25,7 @@ pub mod br3k {
 
     use std::str::FromStr;
 
-    use sysapi_ctx::SysApiCtx as api_ctx;
+    use ctx::SysApiCtx as api_ctx;
     use vm::py_proc::Process;
     use vm::py_resource::{BufferView, Handle};
 
@@ -173,8 +172,8 @@ pub mod br3k {
 
     #[derive(FromArgs)]
     pub struct InitSysApiArgs {
-        #[pyarg(any, default = false)]
-        ntdll_copy: bool,
+        #[pyarg(named, optional)]
+        sys_api_backend: OptionalArg<PyStrRef>,
         #[pyarg(named, optional)]
         sys_api_dispatch: OptionalArg<PyDictRef>,
     }
@@ -188,8 +187,8 @@ pub mod br3k {
             .map_err(|_| vm.new_value_error(format!("Invalid system API dispatch variant for {api_name}: {variant}")))
     }
 
-    fn parse_sys_api_dispatch(sys_api_dispatch: OptionalArg<PyDictRef>, vm: &VirtualMachine) -> PyResult<sysapi_ctx::SysApiDispatchConfig> {
-        let mut config = sysapi_ctx::SysApiDispatchConfig::default();
+    fn parse_sys_api_dispatch(sys_api_dispatch: OptionalArg<PyDictRef>, vm: &VirtualMachine) -> PyResult<ctx::SysApiDispatchConfig> {
+        let mut config = ctx::SysApiDispatchConfig::default();
 
         if let Some(sys_api_dispatch) = sys_api_dispatch.present() {
             for (api_name, variant) in &sys_api_dispatch {
@@ -212,7 +211,21 @@ pub mod br3k {
         Ok(config)
     }
 
-    fn log_sys_api_dispatch(sys_api_dispatch: &sysapi_ctx::SysApiDispatchConfig) {
+    fn parse_sys_api_backend(
+        sys_api_backend: OptionalArg<PyStrRef>,
+        vm: &VirtualMachine
+    ) -> PyResult<backend::SysApiBackend> {
+        if let Some(sys_api_backend) = sys_api_backend.present() {
+            let sys_api_backend = sys_api_backend.to_string();
+            return sys_api_backend
+                .parse()
+                .map_err(|_| vm.new_value_error(format!("Invalid system API backend: {sys_api_backend}")));
+        }
+
+        Ok(backend::SysApiBackend::default())
+    }
+
+    fn log_sys_api_dispatch(sys_api_dispatch: &ctx::SysApiDispatchConfig) {
         slog_info!("|   System API dispatch:");
         slog_info!("|     CreateProcess: {:?}", sys_api_dispatch.create_process);
         slog_info!("|     CreateThread: {:?}", sys_api_dispatch.create_thread);
@@ -225,14 +238,15 @@ pub mod br3k {
 
     #[pyfunction]
     fn init_sysapi(args: InitSysApiArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let sys_api_backend = parse_sys_api_backend(args.sys_api_backend, vm)?;
         let sys_api_dispatch = parse_sys_api_dispatch(args.sys_api_dispatch, vm)?;
 
         slog_info!("| System API options:");
-        slog_info!("|   Load and use copy of ntdll.dll: {}", args.ntdll_copy);
+        slog_info!("|   System API backend: {:?}", sys_api_backend);
         log_sys_api_dispatch(&sys_api_dispatch);
 
-        sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
-            ntdll_copy: args.ntdll_copy,
+        ctx::SysApiCtx::init(ctx::InitOptions {
+            sys_api_backend,
             sys_api_dispatch,
         }).map_err(map_to_py_system_error(vm, "Unable to initialize system API"))?;
 

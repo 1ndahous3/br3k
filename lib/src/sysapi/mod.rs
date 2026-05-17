@@ -2,7 +2,14 @@ use crate::prelude::*;
 use crate::str::*;
 use crate::fs;
 
-use crate::sysapi_ctx::{
+pub mod backend;
+pub mod ctx;
+
+pub use backend::SysApiBackend;
+pub use ctx::{InitOptions, SysApiCtx, SysApiDispatchConfig};
+
+use self::backend::DirectSyscallError;
+use self::ctx::{
     SysApiCtx as api_ctx,
     AllocateVirtualMemory,
     CreateProcess,
@@ -11,6 +18,7 @@ use crate::sysapi_ctx::{
     MapViewOfSection,
     ReadVirtualMemory,
     UnmapViewOfSection,
+    SysApiCtxError,
 };
 
 use std::fmt;
@@ -104,9 +112,34 @@ fn require_api<T>(api: Option<T>, operation: &'static str) -> NtResult<T> {
     api.ok_or_else(|| NtStatusError::new(operation, NTSTATUS(ntstatus::STATUS_PROCEDURE_NOT_FOUND)))
 }
 
+fn require_sys_api<T: Copy>(api: Option<T>, operation: &'static str) -> NtResult<T> {
+    let api = require_api(api, operation)?;
+
+    if api_ctx::sys_api_backend() != SysApiBackend::DirectSyscall {
+        return Ok(api);
+    }
+
+    api_ctx::direct_syscall(operation, api).map_err(|error| {
+        log::error!("{error}");
+
+        let status = match error {
+            SysApiCtxError::DirectSyscall(DirectSyscallError::SyscallIdNotFound { .. }) => {
+                ntstatus::STATUS_PROCEDURE_NOT_FOUND
+            }
+            SysApiCtxError::DirectSyscall(DirectSyscallError::Unsupported | DirectSyscallError::StubAllocationFailed { .. }) => {
+                ntstatus::STATUS_NOT_SUPPORTED
+            }
+            _ => ntstatus::STATUS_UNSUCCESSFUL,
+        };
+
+        NtStatusError::new(operation, NTSTATUS(status))
+    })
+}
+
 pub fn close_handle(handle: HANDLE) -> NtResult<()> {
     unsafe {
-        let status = NTSTATUS(api_ctx::ntdll().NtClose.unwrap()(handle));
+        let nt_close = require_sys_api(api_ctx::ntdll().NtClose, "NtClose")?;
+        let status = NTSTATUS(nt_close(handle));
         status
             .is_ok()
             .then_some(())
@@ -122,7 +155,8 @@ pub fn duplicate_handle(
     unsafe {
         let target_handle: HANDLE = ptr::null_mut();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtDuplicateObject.unwrap()(
+        let nt_duplicate_object = require_sys_api(api_ctx::ntdll().NtDuplicateObject, "NtDuplicateObject")?;
+        let status = NTSTATUS(nt_duplicate_object(
             source_process_handle,
             source_handle,
             target_process_handle,
@@ -280,7 +314,8 @@ pub fn create_user_process(name: &str, suspended: bool) -> NtResult<(UniqueHandl
         let process_handle: HANDLE = ptr::null_mut();
         let thread_handle: HANDLE = ptr::null_mut();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateUserProcess.unwrap()(
+        let nt_create_user_process = require_sys_api(api_ctx::ntdll().NtCreateUserProcess, "NtCreateUserProcess")?;
+        let status = NTSTATUS(nt_create_user_process(
             addr_of!(process_handle) as _,
             addr_of!(thread_handle) as _,
             PROCESS_ALL_ACCESS,
@@ -319,7 +354,7 @@ pub fn create_process(section_handle: HANDLE) -> NtResult<UniqueHandle> {
 
         let status: NTSTATUS = match api_ctx::sys_api_dispatch().create_process {
             CreateProcess::NtCreateProcess => {
-                let nt_create_process = require_api(api_ctx::ntdll().NtCreateProcess, "NtCreateProcess")?;
+                let nt_create_process = require_sys_api(api_ctx::ntdll().NtCreateProcess, "NtCreateProcess")?;
                 NTSTATUS(nt_create_process(
                     addr_of!(process_handle) as _,
                     PROCESS_ALL_ACCESS,
@@ -332,7 +367,7 @@ pub fn create_process(section_handle: HANDLE) -> NtResult<UniqueHandle> {
                 ))
             }
             CreateProcess::NtCreateProcessEx => {
-                let nt_create_process_ex = require_api(api_ctx::ntdll().NtCreateProcessEx, "NtCreateProcessEx")?;
+                let nt_create_process_ex = require_sys_api(api_ctx::ntdll().NtCreateProcessEx, "NtCreateProcessEx")?;
                 NTSTATUS(nt_create_process_ex(
                     addr_of!(process_handle) as _,
                     PROCESS_ALL_ACCESS,
@@ -355,7 +390,8 @@ pub fn get_process_basic_info(process_handle: HANDLE) -> NtResult<ntpsapi::PROCE
     unsafe {
         let basic_info = ntpsapi::PROCESS_BASIC_INFORMATION::default();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationProcess.unwrap()(
+        let nt_query_information_process = require_sys_api(api_ctx::ntdll().NtQueryInformationProcess, "NtQueryInformationProcess")?;
+        let status = NTSTATUS(nt_query_information_process(
             process_handle,
             ntpsapi::PROCESSINFOCLASS::ProcessBasicInformation,
             addr_of!(basic_info) as _,
@@ -371,7 +407,8 @@ pub fn get_process_wow64_info(process_handle: HANDLE) -> NtResult<bool> {
     unsafe {
         let wow64_info: usize = 0;
 
-        let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationProcess.unwrap()(
+        let nt_query_information_process = require_sys_api(api_ctx::ntdll().NtQueryInformationProcess, "NtQueryInformationProcess")?;
+        let status = NTSTATUS(nt_query_information_process(
             process_handle,
             ntpsapi::PROCESSINFOCLASS::ProcessWow64Information,
             addr_of!(wow64_info) as _,
@@ -456,7 +493,11 @@ pub fn get_processes_pid_name() -> NtResult<HashMap<u32, String>> {
 
 pub fn open_process_by_hwnd(hwnd: HWND, access_mask: winbase::ACCESS_MASK) -> NtResult<UniqueHandle> {
     unsafe {
-        let process_handle = api_ctx::win32u().NtUserGetWindowProcessHandle.unwrap()(hwnd, access_mask);
+        let nt_user_get_window_process_handle = require_sys_api(
+            api_ctx::win32u().NtUserGetWindowProcessHandle,
+            "NtUserGetWindowProcessHandle"
+        )?;
+        let process_handle = nt_user_get_window_process_handle(hwnd, access_mask);
         if process_handle.is_null() {
             Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL).into())
         } else {
@@ -479,7 +520,8 @@ pub fn open_process(pid: u32, access_mask: u32) -> NtResult<UniqueHandle> {
             ..Default::default()
         };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtOpenProcess.unwrap()(
+        let nt_open_process = require_sys_api(api_ctx::ntdll().NtOpenProcess, "NtOpenProcess")?;
+        let status = NTSTATUS(nt_open_process(
             addr_of!(process_handle) as _,
             access_mask,
             addr_of!(object_attributes) as _,
@@ -494,7 +536,8 @@ pub fn open_next_thread(process_handle: HANDLE, thread_handle: HANDLE, access_ma
     unsafe {
         let new_thread_handle: HANDLE = ptr::null_mut();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtGetNextThread.unwrap()(
+        let nt_get_next_thread = require_sys_api(api_ctx::ntdll().NtGetNextThread, "NtGetNextThread")?;
+        let status = NTSTATUS(nt_get_next_thread(
             process_handle,
             thread_handle,
             access_mask,
@@ -529,7 +572,8 @@ pub fn open_thread(pid: u32, tid: u32, access_mask: winbase::ACCESS_MASK) -> NtR
             UniqueThread: tid as _
         };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtOpenThread.unwrap()(
+        let nt_open_thread = require_sys_api(api_ctx::ntdll().NtOpenThread, "NtOpenThread")?;
+        let status = NTSTATUS(nt_open_thread(
             addr_of!(thread_handle) as _,
             access_mask,
             addr_of!(object_attributes) as _,
@@ -544,7 +588,8 @@ fn create_thread_stack(process_handle: HANDLE, initial_teb: ntpsapi::PINITIAL_TE
     unsafe {
         let sys_info = ntexapi::SYSTEM_BASIC_INFORMATION { ..Default::default() };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtQuerySystemInformation.unwrap()(
+        let nt_query_system_information = require_sys_api(api_ctx::ntdll().NtQuerySystemInformation, "NtQuerySystemInformation")?;
+        let status = NTSTATUS(nt_query_system_information(
             ntexapi::SYSTEM_INFORMATION_CLASS::SystemBasicInformation,
             addr_of!(sys_info) as _,
             size_of::<ntexapi::SYSTEM_BASIC_INFORMATION>() as _,
@@ -671,7 +716,7 @@ pub fn create_thread(process_handle: HANDLE, start_address: PVOID, arg: Option<P
                     (*initial_teb).StackBase,
                 );
 
-                let nt_create_thread = require_api(api_ctx::ntdll().NtCreateThread, "NtCreateThread")?;
+                let nt_create_thread = require_sys_api(api_ctx::ntdll().NtCreateThread, "NtCreateThread")?;
                 NTSTATUS(nt_create_thread(
                     addr_of!(thread_handle) as _,
                     THREAD_ALL_ACCESS,
@@ -686,7 +731,7 @@ pub fn create_thread(process_handle: HANDLE, start_address: PVOID, arg: Option<P
             CreateThread::NtCreateThreadEx => {
                 let arg = arg.unwrap_or(ptr::null_mut());
 
-                let nt_create_thread_ex = require_api(api_ctx::ntdll().NtCreateThreadEx, "NtCreateThreadEx")?;
+                let nt_create_thread_ex = require_sys_api(api_ctx::ntdll().NtCreateThreadEx, "NtCreateThreadEx")?;
                 NTSTATUS(nt_create_thread_ex(
                     addr_of!(thread_handle) as _,
                     THREAD_ALL_ACCESS,
@@ -717,14 +762,16 @@ pub fn create_thread(process_handle: HANDLE, start_address: PVOID, arg: Option<P
 
 pub fn suspend_thread(thread_handle: HANDLE) -> NtResult<()> {
     unsafe {
-        let status = NTSTATUS(api_ctx::ntdll().NtSuspendThread.unwrap()(thread_handle, ptr::null_mut()));
+        let nt_suspend_thread = require_sys_api(api_ctx::ntdll().NtSuspendThread, "NtSuspendThread")?;
+        let status = NTSTATUS(nt_suspend_thread(thread_handle, ptr::null_mut()));
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
 }
 
 pub fn resume_thread(thread_handle: HANDLE) -> NtResult<()> {
     unsafe {
-        let status = NTSTATUS(api_ctx::ntdll().NtResumeThread.unwrap()(thread_handle, ptr::null_mut()));
+        let nt_resume_thread = require_sys_api(api_ctx::ntdll().NtResumeThread, "NtResumeThread")?;
+        let status = NTSTATUS(nt_resume_thread(thread_handle, ptr::null_mut()));
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
 }
@@ -733,7 +780,8 @@ pub fn get_thread_basic_info(thread_handle: HANDLE) -> NtResult<ntpsapi::THREAD_
     unsafe {
         let basic_info = ntpsapi::THREAD_BASIC_INFORMATION::default();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationThread.unwrap()(
+        let nt_query_information_thread = require_sys_api(api_ctx::ntdll().NtQueryInformationThread, "NtQueryInformationThread")?;
+        let status = NTSTATUS(nt_query_information_thread(
             thread_handle,
             ntpsapi::THREADINFOCLASS::ThreadBasicInformation,
             addr_of!(basic_info) as _,
@@ -764,7 +812,8 @@ pub fn get_thread_context(thread_handle: HANDLE) -> NtResult<CONTEXT> {
         let mut context = AlignedContext::default();
         context.ctx.ContextFlags = winbase::CONTEXT_FULL;
 
-        let status = NTSTATUS(api_ctx::ntdll().NtGetContextThread.unwrap()(thread_handle, addr_of!(context) as _));
+        let nt_get_context_thread = require_sys_api(api_ctx::ntdll().NtGetContextThread, "NtGetContextThread")?;
+        let status = NTSTATUS(nt_get_context_thread(thread_handle, addr_of!(context) as _));
 
         if !status.is_ok() { Err(status.into()) } else { Ok(context.ctx) }
     }
@@ -774,7 +823,8 @@ pub fn get_thread_wow64_context(thread_handle: HANDLE) -> NtResult<WOW64_CONTEXT
     unsafe {
         let context = AlignedWow64Context::default();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationThread.unwrap()(
+        let nt_query_information_thread = require_sys_api(api_ctx::ntdll().NtQueryInformationThread, "NtQueryInformationThread")?;
+        let status = NTSTATUS(nt_query_information_thread(
             thread_handle,
             ntpsapi::THREADINFOCLASS::ThreadWow64Context,
             addr_of!(context) as _,
@@ -790,7 +840,8 @@ pub fn set_thread_context(thread_handle: HANDLE, ctx: &CONTEXT) -> NtResult<()> 
     unsafe {
         let context = AlignedContext { ctx: *ctx };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtSetContextThread.unwrap()(thread_handle, addr_of!(context) as _));
+        let nt_set_context_thread = require_sys_api(api_ctx::ntdll().NtSetContextThread, "NtSetContextThread")?;
+        let status = NTSTATUS(nt_set_context_thread(thread_handle, addr_of!(context) as _));
 
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
@@ -800,7 +851,8 @@ pub fn set_thread_wow64_context(thread_handle: HANDLE, ctx: &WOW64_CONTEXT) -> N
     unsafe {
         let context = AlignedWow64Context { ctx: *ctx };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtSetInformationThread.unwrap()(
+        let nt_set_information_thread = require_sys_api(api_ctx::ntdll().NtSetInformationThread, "NtSetInformationThread")?;
+        let status = NTSTATUS(nt_set_information_thread(
             thread_handle,
             ntpsapi::THREADINFOCLASS::ThreadWow64Context,
             addr_of!(context) as _,
@@ -821,7 +873,7 @@ pub fn allocate_virtual_memory(
     unsafe {
         let status = match api_ctx::sys_api_dispatch().allocate_virtual_memory {
             AllocateVirtualMemory::NtAllocateVirtualMemory => {
-                let nt_allocate_virtual_memory = require_api(api_ctx::ntdll().NtAllocateVirtualMemory, "NtAllocateVirtualMemory")?;
+                let nt_allocate_virtual_memory = require_sys_api(api_ctx::ntdll().NtAllocateVirtualMemory, "NtAllocateVirtualMemory")?;
                 NTSTATUS(nt_allocate_virtual_memory(
                     process_handle,
                     addr_of!(base_address) as _,
@@ -832,7 +884,7 @@ pub fn allocate_virtual_memory(
                 ))
             }
             AllocateVirtualMemory::NtAllocateVirtualMemoryEx => {
-                let nt_allocate_virtual_memory_ex = require_api(api_ctx::ntdll().NtAllocateVirtualMemoryEx, "NtAllocateVirtualMemoryEx")?;
+                let nt_allocate_virtual_memory_ex = require_sys_api(api_ctx::ntdll().NtAllocateVirtualMemoryEx, "NtAllocateVirtualMemoryEx")?;
                 NTSTATUS(nt_allocate_virtual_memory_ex(
                     process_handle,
                     addr_of!(base_address) as _,
@@ -857,7 +909,7 @@ pub fn create_section(size: usize) -> NtResult<UniqueHandle> {
 
         let status = match api_ctx::sys_api_dispatch().create_section {
             CreateSection::NtCreateSection => {
-                let nt_create_section = require_api(api_ctx::ntdll().NtCreateSection, "NtCreateSection")?;
+                let nt_create_section = require_sys_api(api_ctx::ntdll().NtCreateSection, "NtCreateSection")?;
                 NTSTATUS(nt_create_section(
                     addr_of!(section_handle) as _,
                     SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
@@ -869,7 +921,7 @@ pub fn create_section(size: usize) -> NtResult<UniqueHandle> {
                 ))
             }
             CreateSection::NtCreateSectionEx => {
-                let nt_create_section_ex = require_api(api_ctx::ntdll().NtCreateSectionEx, "NtCreateSectionEx")?;
+                let nt_create_section_ex = require_sys_api(api_ctx::ntdll().NtCreateSectionEx, "NtCreateSectionEx")?;
                 NTSTATUS(nt_create_section_ex(
                     addr_of!(section_handle) as _,
                     SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
@@ -905,7 +957,7 @@ pub fn create_file_section(
 
         let status = match api_ctx::sys_api_dispatch().create_section {
             CreateSection::NtCreateSection => {
-                let nt_create_section = require_api(api_ctx::ntdll().NtCreateSection, "NtCreateSection")?;
+                let nt_create_section = require_sys_api(api_ctx::ntdll().NtCreateSection, "NtCreateSection")?;
                 NTSTATUS(nt_create_section(
                     addr_of!(section_handle) as _,
                     access_mask,
@@ -917,7 +969,7 @@ pub fn create_file_section(
                 ))
             }
             CreateSection::NtCreateSectionEx => {
-                let nt_create_section_ex = require_api(api_ctx::ntdll().NtCreateSectionEx, "NtCreateSectionEx")?;
+                let nt_create_section_ex = require_sys_api(api_ctx::ntdll().NtCreateSectionEx, "NtCreateSectionEx")?;
                 NTSTATUS(nt_create_section_ex(
                     addr_of!(section_handle) as _,
                     access_mask,
@@ -946,7 +998,7 @@ pub fn map_view_of_section(
     unsafe {
         let status = match api_ctx::sys_api_dispatch().map_view_of_section {
             MapViewOfSection::NtMapViewOfSection => {
-                let nt_map_view_of_section = require_api(api_ctx::ntdll().NtMapViewOfSection, "NtMapViewOfSection")?;
+                let nt_map_view_of_section = require_sys_api(api_ctx::ntdll().NtMapViewOfSection, "NtMapViewOfSection")?;
                 NTSTATUS(nt_map_view_of_section(
                     section_handle,
                     process_handle,
@@ -961,7 +1013,7 @@ pub fn map_view_of_section(
                 ))
             }
             MapViewOfSection::NtMapViewOfSectionEx => {
-                let nt_map_view_of_section_ex = require_api(api_ctx::ntdll().NtMapViewOfSectionEx, "NtMapViewOfSectionEx")?;
+                let nt_map_view_of_section_ex = require_sys_api(api_ctx::ntdll().NtMapViewOfSectionEx, "NtMapViewOfSectionEx")?;
                 NTSTATUS(nt_map_view_of_section_ex(
                     section_handle,
                     process_handle,
@@ -984,11 +1036,11 @@ pub fn unmap_view_of_section(base_address: PVOID, process_handle: HANDLE) -> NtR
     unsafe {
         let status = match api_ctx::sys_api_dispatch().unmap_view_of_section {
             UnmapViewOfSection::NtUnmapViewOfSection => {
-                let nt_unmap_view_of_section = require_api(api_ctx::ntdll().NtUnmapViewOfSection, "NtUnmapViewOfSection")?;
+                let nt_unmap_view_of_section = require_sys_api(api_ctx::ntdll().NtUnmapViewOfSection, "NtUnmapViewOfSection")?;
                 NTSTATUS(nt_unmap_view_of_section(process_handle, base_address))
             }
             UnmapViewOfSection::NtUnmapViewOfSectionEx => {
-                let nt_unmap_view_of_section_ex = require_api(api_ctx::ntdll().NtUnmapViewOfSectionEx, "NtUnmapViewOfSectionEx")?;
+                let nt_unmap_view_of_section_ex = require_sys_api(api_ctx::ntdll().NtUnmapViewOfSectionEx, "NtUnmapViewOfSectionEx")?;
                 NTSTATUS(nt_unmap_view_of_section_ex(process_handle, base_address, 0))
             }
         };
@@ -1001,7 +1053,8 @@ pub fn protect_virtual_memory(base_address: PVOID, size: usize, protect: PAGE_PR
     unsafe {
         let new_protect = protect;
 
-        let status = NTSTATUS(api_ctx::ntdll().NtProtectVirtualMemory.unwrap()(
+        let nt_protect_virtual_memory = require_sys_api(api_ctx::ntdll().NtProtectVirtualMemory, "NtProtectVirtualMemory")?;
+        let status = NTSTATUS(nt_protect_virtual_memory(
             process_handle,
             addr_of!(base_address) as _,
             addr_of!(size) as _,
@@ -1024,7 +1077,8 @@ where
 
         let number_of_bytes_written: usize = 0;
 
-        let status = NTSTATUS(api_ctx::ntdll().NtWriteVirtualMemory.unwrap()(
+        let nt_write_virtual_memory = require_sys_api(api_ctx::ntdll().NtWriteVirtualMemory, "NtWriteVirtualMemory")?;
+        let status = NTSTATUS(nt_write_virtual_memory(
             process_handle,
             base_address,
             data,
@@ -1049,7 +1103,7 @@ where
 
         let status = match api_ctx::sys_api_dispatch().read_virtual_memory {
             ReadVirtualMemory::NtReadVirtualMemory => {
-                let nt_read_virtual_memory = require_api(api_ctx::ntdll().NtReadVirtualMemory, "NtReadVirtualMemory")?;
+                let nt_read_virtual_memory = require_sys_api(api_ctx::ntdll().NtReadVirtualMemory, "NtReadVirtualMemory")?;
                 NTSTATUS(nt_read_virtual_memory(
                     process_handle,
                     base_address,
@@ -1059,7 +1113,7 @@ where
                 ))
             }
             ReadVirtualMemory::NtReadVirtualMemoryEx => {
-                let nt_read_virtual_memory_ex = require_api(api_ctx::ntdll().NtReadVirtualMemoryEx, "NtReadVirtualMemoryEx")?;
+                let nt_read_virtual_memory_ex = require_sys_api(api_ctx::ntdll().NtReadVirtualMemoryEx, "NtReadVirtualMemoryEx")?;
                 NTSTATUS(nt_read_virtual_memory_ex(
                     process_handle,
                     base_address,
@@ -1090,7 +1144,8 @@ pub fn create_transaction(path: &str) -> NtResult<UniqueHandle> {
 
         let transaction_handle: HANDLE = ptr::null_mut();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateTransaction.unwrap()(
+        let nt_create_transaction = require_sys_api(api_ctx::ntdll().NtCreateTransaction, "NtCreateTransaction")?;
+        let status = NTSTATUS(nt_create_transaction(
             addr_of!(transaction_handle) as _,
             winbase::TRANSACTION_ALL_ACCESS,
             addr_of!(object_attributes) as _,
@@ -1109,7 +1164,8 @@ pub fn create_transaction(path: &str) -> NtResult<UniqueHandle> {
 
 pub fn rollback_transaction(transaction_handle: HANDLE) -> NtResult<()> {
     unsafe {
-        let status = NTSTATUS(api_ctx::ntdll().NtRollbackTransaction.unwrap()(transaction_handle, true as _));
+        let nt_rollback_transaction = require_sys_api(api_ctx::ntdll().NtRollbackTransaction, "NtRollbackTransaction")?;
+        let status = NTSTATUS(nt_rollback_transaction(transaction_handle, true as _));
 
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
@@ -1131,7 +1187,7 @@ pub fn queue_apc_thread(
     apc_argument3: PVOID,
 ) -> NtResult<()> {
     unsafe {
-        let nt_queue_apc_thread = api_ctx::ntdll().NtQueueApcThread.unwrap();
+        let nt_queue_apc_thread = require_sys_api(api_ctx::ntdll().NtQueueApcThread, "NtQueueApcThread")?;
         let status = NTSTATUS(nt_queue_apc_thread(
             thread_handle,
             apc_routine,
@@ -1153,7 +1209,8 @@ pub fn create_event() -> NtResult<UniqueHandle> {
             ..Default::default()
         };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateEvent.unwrap()(
+        let nt_create_event = require_sys_api(api_ctx::ntdll().NtCreateEvent, "NtCreateEvent")?;
+        let status = NTSTATUS(nt_create_event(
             addr_of!(event_handle) as _,
             EVENT_ALL_ACCESS,
             addr_of!(object_attributes) as _,
@@ -1184,7 +1241,8 @@ pub fn create_named_pipe(name: &str, sd: PVOID) -> NtResult<UniqueHandle> {
         let mut default_timeout: ntwin::LARGE_INTEGER = mem::zeroed();
         default_timeout.bindgen_union_field = -1200000000 as _; // 120 seconds
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateNamedPipeFile.unwrap()(
+        let nt_create_named_pipe_file = require_sys_api(api_ctx::ntdll().NtCreateNamedPipeFile, "NtCreateNamedPipeFile")?;
+        let status = NTSTATUS(nt_create_named_pipe_file(
             addr_of!(file_handle) as _,
             FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE,
             addr_of!(object_attributes) as _,
@@ -1220,7 +1278,8 @@ pub fn open_named_pipe(name: &str) -> NtResult<UniqueHandle> {
             ..Default::default()
         };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
+        let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
+        let status = NTSTATUS(nt_create_file(
             addr_of!(file_handle) as _,
             FILE_GENERIC_READ | FILE_GENERIC_WRITE,
             addr_of!(object_attributes) as _,
@@ -1254,7 +1313,8 @@ pub fn open_file(path: &str) -> NtResult<UniqueHandle> {
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
         let file_handle: HANDLE = ptr::null_mut();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
+        let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
+        let status = NTSTATUS(nt_create_file(
             addr_of!(file_handle) as _,
             FILE_GENERIC_READ,
             addr_of!(object_attributes) as _,
@@ -1290,7 +1350,8 @@ pub fn create_file(path: &str, access_mask: u32, share_access: u32, size: usize)
 
         let allocation_size = ntwin::LARGE_INTEGER { bindgen_union_field: size as _, ..Default::default() };
 
-        let status = NTSTATUS(api_ctx::ntdll().NtCreateFile.unwrap()(
+        let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
+        let status = NTSTATUS(nt_create_file(
             addr_of!(file_handle) as _,
             access_mask,
             addr_of!(object_attributes) as _,
@@ -1312,7 +1373,8 @@ pub fn write_file(file_handle: HANDLE, data: PVOID, size: usize) -> NtResult<boo
     unsafe {
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtWriteFile.unwrap()(
+        let nt_write_file = require_sys_api(api_ctx::ntdll().NtWriteFile, "NtWriteFile")?;
+        let status = NTSTATUS(nt_write_file(
             file_handle,
             ptr::null_mut(),
             ptr::null_mut(),
@@ -1332,7 +1394,8 @@ pub fn read_file(file_handle: HANDLE, data: PVOID, size: usize) -> NtResult<bool
     unsafe {
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtReadFile.unwrap()(
+        let nt_read_file = require_sys_api(api_ctx::ntdll().NtReadFile, "NtReadFile")?;
+        let status = NTSTATUS(nt_read_file(
             file_handle,
             ptr::null_mut(),
             ptr::null_mut(),
@@ -1353,7 +1416,8 @@ pub fn get_file_size(file_handle: HANDLE) -> NtResult<usize> {
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
         let file_information = ntioapi::FILE_STANDARD_INFORMATION::default();
 
-        let status = NTSTATUS(api_ctx::ntdll().NtQueryInformationFile.unwrap()(
+        let nt_query_information_file = require_sys_api(api_ctx::ntdll().NtQueryInformationFile, "NtQueryInformationFile")?;
+        let status = NTSTATUS(nt_query_information_file(
             file_handle,
             addr_of!(io_status_block) as _,
             addr_of!(file_information) as _,
@@ -1436,7 +1500,8 @@ pub fn dump_live_system(file_handle: HANDLE) -> NtResult<()> {
         // live_dump_control.Flags.IncludeUserSpaceMemoryPages = 1;
         live_dump_control.Flags.bindgen_union_field = 6;
 
-        let status = NTSTATUS(api_ctx::ntdll().NtSystemDebugControl.unwrap()(
+        let nt_system_debug_control = require_sys_api(api_ctx::ntdll().NtSystemDebugControl, "NtSystemDebugControl")?;
+        let status = NTSTATUS(nt_system_debug_control(
             ntexapi::SYSDBG_COMMAND::SysDbgGetLiveKernelDump,
             addr_of!(live_dump_control) as _,
             offset_of!(ntexapi::SYSDBG_LIVEDUMP_CONTROL, SelectiveControl) as _,
@@ -1453,9 +1518,10 @@ pub fn get_process_handles(pid: u32) -> NtResult<Vec<HANDLE>> {
     unsafe {
         let data_size: ULONG = 0;
         let mut data = Vec::<u8>::new();
+        let nt_query_system_information = require_sys_api(api_ctx::ntdll().NtQuerySystemInformation, "NtQuerySystemInformation")?;
 
         loop {
-            let status = NTSTATUS(api_ctx::ntdll().NtQuerySystemInformation.unwrap()(
+            let status = NTSTATUS(nt_query_system_information(
                 ntexapi::SYSTEM_INFORMATION_CLASS::SystemHandleInformation,
                 data.as_mut_ptr() as _,
                 data.len() as _,
@@ -1493,9 +1559,10 @@ pub fn get_handle_info(handle: HANDLE) -> NtResult<(String, String)> {
     unsafe {
         let data_size: ULONG = 0;
         let mut data = Vec::<u8>::new();
+        let nt_query_object = require_sys_api(api_ctx::ntdll().NtQueryObject, "NtQueryObject")?;
 
         loop {
-            let status = NTSTATUS(api_ctx::ntdll().NtQueryObject.unwrap()(
+            let status = NTSTATUS(nt_query_object(
                 handle,
                 ntobapi::OBJECT_INFORMATION_CLASS::ObjectNameInformation,
                 data.as_mut_ptr() as _,
@@ -1519,7 +1586,7 @@ pub fn get_handle_info(handle: HANDLE) -> NtResult<(String, String)> {
         let name = (*info).Name.to_u16cstring();
 
         loop {
-            let status = NTSTATUS(api_ctx::ntdll().NtQueryObject.unwrap()(
+            let status = NTSTATUS(nt_query_object(
                 handle,
                 ntobapi::OBJECT_INFORMATION_CLASS::ObjectTypeInformation,
                 data.as_mut_ptr() as _,
@@ -1554,6 +1621,7 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> NtResult<UniqueH
             log::error!("unable to find NtSetEvent address");
             NTSTATUS(ntstatus::STATUS_PROCEDURE_NOT_FOUND)
         })?;
+        let nt_wait_for_single_object = require_sys_api(api_ctx::ntdll().NtWaitForSingleObject, "NtWaitForSingleObject")?;
 
         while !thread_handle.is_null() {
             let local_event = create_event()?;
@@ -1583,7 +1651,7 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> NtResult<UniqueH
 
             let mut timeout = ntwin::LARGE_INTEGER { bindgen_union_field: (-10_000_000i64) as u64, ..Default::default() };
 
-            let status = NTSTATUS(ntobapi::NtWaitForSingleObject(*local_event, FALSE as _, &mut timeout));
+            let status = NTSTATUS(nt_wait_for_single_object(*local_event, FALSE as _, &mut timeout));
             if status.is_err() {
                 log::error!("unable to wait for event, {}", status.0);
                 thread_handle = open_next_thread(process_handle, *thread_handle, THREAD_ALL_ACCESS)?;

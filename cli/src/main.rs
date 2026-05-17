@@ -2,8 +2,7 @@ use clap::{Arg, Command};
 
 use br3k::ipc;
 use br3k::logging;
-use br3k::sysapi;
-use br3k::sysapi_ctx;
+use br3k::sysapi::{self, ctx};
 use br3k::vm;
 
 use std::borrow::Cow;
@@ -112,7 +111,7 @@ fn main() {
         let pid: u32 = unsafe { (*sysapi::teb()).ClientId.UniqueProcess } as _;
         log::info!("Mode: IPC client ({pid})");
 
-        if let Err(e) = sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions::default()) {
+        if let Err(e) = ctx::SysApiCtx::init(ctx::InitOptions::default()) {
             log::error!("Unable to initialize system API context: {e}");
             std::process::exit(1);
         }

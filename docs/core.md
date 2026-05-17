@@ -16,8 +16,7 @@ Most system APIs are called directly from `ntdll.dll`, bypassing `kernel32.dll` 
 
 Options:
 
-- Load a clean copy of `ntdll.dll` to avoid hooked functions.
-- **TODO**: Use direct syscalls to bypass hooks.
+- Select a system API backend: call exports from loaded DLLs (default), load clean DLL copies, or use direct syscall stubs for supported managed system calls.
 - Select explicit system API dispatch variants, such as `NtCreateProcess()` or `NtMapViewOfSectionEx()`, when a technique needs a less common API path.
 
 ## RPC API

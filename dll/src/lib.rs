@@ -13,8 +13,8 @@ use windows_sys::Win32::System::SystemServices::{
 
 use br3k::ipc;
 use br3k::logging;
+use br3k::sysapi::{self, ctx};
 use br3k::vm;
-use br3k::{sysapi, sysapi_ctx};
 
 // Backtrace causes deadlock if panic occurs not
 // on DLL_PROCESS_ATTACH (because it loads dbghelp.dll during fmt::Display)
@@ -102,7 +102,7 @@ extern "system" fn DllMain(dll_module: HINSTANCE, call_reason: u32, _: *mut ()) 
 
             logging::log_header();
 
-            if let Err(e) = sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions::default()) {
+            if let Err(e) = ctx::SysApiCtx::init(ctx::InitOptions::default()) {
                 log::error!("Unable to initialize system API context: {e}");
                 finish_payload();
                 return false;
