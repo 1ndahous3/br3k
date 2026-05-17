@@ -1,5 +1,10 @@
+# =============================================================================
+# IMPORTANT USAGE NOTICE
+# 1. Use only for authorized, non-malicious education, research, and testing.
+# =============================================================================
+
 import br3k
-from br3k import ProcessOpenStrategy, ThreadOpenStrategy, ProcessVmStrategy
+from br3k import ProcessOpenStrategy, ProcessVmWriteStrategy, ThreadOpenStrategy
 
 PROCESS_NAME = "notepad.exe"
 
@@ -14,7 +19,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         name=PROCESS_NAME,
-        process_vm_strategy=ProcessVmStrategy.AllocateInAddr,
+        process_vm_write_strategy=ProcessVmWriteStrategy.AllocateInAddr,
         process_open_strategy=ProcessOpenStrategy.OpenProcess,
         thread_open_strategy=ThreadOpenStrategy.ThreadOpenAnyNext
     )
@@ -30,5 +35,3 @@ if __name__ == "__main__":
     thread.suspend()
     thread.set_ep(new_thread=False, ep=ep)
     thread.resume()
-
-    br3k.script_success()

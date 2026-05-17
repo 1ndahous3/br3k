@@ -1,0 +1,7 @@
+variables:
+  TARGET_PROCESS_NEW: true
+  TARGET_PROCESS_GUI: false
+  TARGET_PROCESS: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+  INJECT_BR3K_DLL: false
+  BR3K_DLL_PATH: null
+  BR3K_SCRIPT_PATH: null

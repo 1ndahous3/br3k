@@ -1,7 +1,7 @@
 pub use rustpython_vm::{
     VirtualMachine, Interpreter,
     pyclass, pymodule,
-    AsObject, FromArgs,
+    AsObject, TryFromObject, FromArgs,
     PyPayload,
     Py, PyRef, PyObjectRef, PyResult,
     class::PyClassImpl,
@@ -10,7 +10,8 @@ pub use rustpython_vm::{
     builtins::{
         PyModule, PyType,
         PyStr, PyBytes,
-        PyStrRef, PyBaseExceptionRef
+        PyStrRef, PyBaseExceptionRef,
+        PyDictRef
     }
 };
 
@@ -47,7 +48,9 @@ pub fn process_memory_error_to_py_exception(
 ) -> PyBaseExceptionRef {
     let message = format!("{context}: {error}");
     match error {
-        api_strategy::ProcessMemoryError::ReadOnlyStrategy { .. } => vm.new_value_error(message),
+        api_strategy::ProcessMemoryError::MissingReadStrategy { .. } => vm.new_value_error(message),
+        api_strategy::ProcessMemoryError::MissingWriteStrategy { .. } => vm.new_value_error(message),
+        api_strategy::ProcessMemoryError::MissingLocalSectionMap { .. } => vm.new_value_error(message),
         _ => vm.new_system_error(message),
     }
 }

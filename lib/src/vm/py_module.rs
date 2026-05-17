@@ -24,6 +24,8 @@ pub mod br3k {
     use crate::shellcode;
     use crate::slog_info;
 
+    use std::str::FromStr;
+
     use sysapi_ctx::SysApiCtx as api_ctx;
     use vm::py_proc::Process;
     use vm::py_resource::{BufferView, Handle};
@@ -117,7 +119,7 @@ pub mod br3k {
     use crate::vm::api_strategy;
 
     macro_rules! register_enum {
-        ($vm:expr, $module:expr, $enum_type:path) => {{
+        ($vm:expr, $module:expr, $int_enum:expr, $enum_type:path) => {{
             let enum_name = std::any::type_name::<$enum_type>()
                 .rsplit("::")
                 .next()
@@ -125,21 +127,15 @@ pub mod br3k {
                     $vm.new_system_error(format!("Failed to determine enum name for {}", std::any::type_name::<$enum_type>()))
                 })?;
 
-            let type_obj = $vm.ctx.new_class(
-                Some(enum_name),
-                enum_name,
-                $vm.ctx.types.object_type.to_owned(),
-                Default::default(),
-            );
+            let members = $vm.ctx.new_dict();
 
             for item in <$enum_type as strum::VariantArray>::VARIANTS {
                 let name: &'static str = item.into();
-                let attr_name = $vm.ctx.intern_str(name);
-                let value = $vm.ctx.new_int(item.clone() as u32);
-                type_obj.set_attr(attr_name, value.into());
+                members.set_item(name, $vm.ctx.new_int(item.clone() as u32).into(), $vm)?;
             }
 
-            $module.set_attr(enum_name, type_obj, $vm)?;
+            let enum_obj = $int_enum.call((enum_name, members), $vm)?;
+            $module.set_attr(enum_name, enum_obj, $vm)?;
         }};
     }
 
@@ -160,11 +156,15 @@ pub mod br3k {
             "ComIRundown" => py_com_irundown::ComIRundown::make_static_type(),
         });
 
-        register_enum!(vm, module, api_strategy::ProcessVmStrategy);
-        register_enum!(vm, module, api_strategy::ProcessOpenStrategy);
-        register_enum!(vm, module, api_strategy::ThreadOpenStrategy);
-        register_enum!(vm, module, fs::FsFileMode);
-        register_enum!(vm, module, fs::FsSectionMode);
+        let enum_module = vm.import("enum", 0)?;
+        let int_enum = enum_module.get_attr("IntEnum", vm)?;
+
+        register_enum!(vm, module, int_enum, api_strategy::ProcessVmReadStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ProcessVmWriteStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ProcessOpenStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ThreadOpenStrategy);
+        register_enum!(vm, module, int_enum, fs::FsFileMode);
+        register_enum!(vm, module, int_enum, fs::FsSectionMode);
 
         Ok(())
     }
@@ -174,20 +174,66 @@ pub mod br3k {
     #[derive(FromArgs)]
     pub struct InitSysApiArgs {
         #[pyarg(any, default = false)]
-        ntdll_alt_api: bool,
-        #[pyarg(any, default = false)]
         ntdll_copy: bool,
+        #[pyarg(named, optional)]
+        sys_api_dispatch: OptionalArg<PyDictRef>,
+    }
+
+    fn parse_sys_api_dispatch_variant<T>(api_name: &str, variant: &str, vm: &VirtualMachine) -> PyResult<T>
+    where
+        T: FromStr,
+    {
+        variant
+            .parse()
+            .map_err(|_| vm.new_value_error(format!("Invalid system API dispatch variant for {api_name}: {variant}")))
+    }
+
+    fn parse_sys_api_dispatch(sys_api_dispatch: OptionalArg<PyDictRef>, vm: &VirtualMachine) -> PyResult<sysapi_ctx::SysApiDispatchConfig> {
+        let mut config = sysapi_ctx::SysApiDispatchConfig::default();
+
+        if let Some(sys_api_dispatch) = sys_api_dispatch.present() {
+            for (api_name, variant) in &sys_api_dispatch {
+                let api_name = PyStrRef::try_from_object(vm, api_name)?.to_string();
+                let variant = PyStrRef::try_from_object(vm, variant)?.to_string();
+
+                match api_name.as_str() {
+                    "CreateProcess" => config.create_process = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "CreateThread" => config.create_thread = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "CreateSection" => config.create_section = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "MapViewOfSection" => config.map_view_of_section = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "UnmapViewOfSection" => config.unmap_view_of_section = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "AllocateVirtualMemory" => config.allocate_virtual_memory = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "ReadVirtualMemory" => config.read_virtual_memory = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    _ => return Err(vm.new_value_error(format!("Unknown system API dispatch target: {api_name}"))),
+                }
+            }
+        }
+
+        Ok(config)
+    }
+
+    fn log_sys_api_dispatch(sys_api_dispatch: &sysapi_ctx::SysApiDispatchConfig) {
+        slog_info!("|   System API dispatch:");
+        slog_info!("|     CreateProcess: {:?}", sys_api_dispatch.create_process);
+        slog_info!("|     CreateThread: {:?}", sys_api_dispatch.create_thread);
+        slog_info!("|     CreateSection: {:?}", sys_api_dispatch.create_section);
+        slog_info!("|     MapViewOfSection: {:?}", sys_api_dispatch.map_view_of_section);
+        slog_info!("|     UnmapViewOfSection: {:?}", sys_api_dispatch.unmap_view_of_section);
+        slog_info!("|     AllocateVirtualMemory: {:?}", sys_api_dispatch.allocate_virtual_memory);
+        slog_info!("|     ReadVirtualMemory: {:?}", sys_api_dispatch.read_virtual_memory);
     }
 
     #[pyfunction]
     fn init_sysapi(args: InitSysApiArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let sys_api_dispatch = parse_sys_api_dispatch(args.sys_api_dispatch, vm)?;
+
         slog_info!("| System API options:");
         slog_info!("|   Load and use copy of ntdll.dll: {}", args.ntdll_copy);
-        slog_info!("|   Use NT alternative API: {}", args.ntdll_alt_api);
+        log_sys_api_dispatch(&sys_api_dispatch);
 
         sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
             ntdll_copy: args.ntdll_copy,
-            ntdll_alt_api: args.ntdll_alt_api
+            sys_api_dispatch,
         }).map_err(map_to_py_system_error(vm, "Unable to initialize system API"))?;
 
         Ok(())
@@ -215,6 +261,23 @@ pub mod br3k {
     fn fs_get_temp_folder() -> PyResult<String> {
         let temp_folder = fs::get_temp_folder();
         Ok(temp_folder)
+    }
+
+    #[derive(FromArgs)]
+    pub struct FsGetTempPathArgs {
+        #[pyarg(any, optional)]
+        filename: OptionalArg<PyStrRef>,
+    }
+
+    #[pyfunction]
+    fn fs_get_temp_path(args: FsGetTempPathArgs) -> PyResult<String> {
+        let mut temp_path = std::env::temp_dir();
+
+        if let Some(filename) = args.filename.present() {
+            temp_path.push(filename.to_string());
+        }
+
+        Ok(temp_path.to_string_lossy().into_owned())
     }
 
     #[derive(FromArgs)]
@@ -435,9 +498,4 @@ pub mod br3k {
         Ok(())
     }
 
-    #[pyfunction]
-    fn script_success() -> PyResult<()> {
-        slog_info!("[+] Success");
-        Ok(())
-    }
 }

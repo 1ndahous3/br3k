@@ -55,7 +55,19 @@ macro_rules! slog_trace {
 use prelude::*;
 use py_module::br3k;
 
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::result::Result;
+
+#[derive(Clone)]
+pub enum ScriptVarType {
+    String(Cow<'static, str>),
+    Number(u32),
+    Boolean(bool),
+    None,
+}
+
+pub type ScriptVars = HashMap<String, ScriptVarType>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VmError {
@@ -88,7 +100,12 @@ impl Default for Vm {
 }
 
 impl Vm {
-    pub fn execute_script(&self, script: &str, script_path: Option<String>) -> Result<(), VmError> {
+    pub fn execute_script(
+        &self,
+        script: &str,
+        script_path: Option<String>,
+        script_vars: &Option<ScriptVars>
+    ) -> Result<(), VmError> {
         self.interpreter.enter(|vm| {
             let scope = vm.new_scope_with_builtins();
 
@@ -128,7 +145,42 @@ impl Vm {
                 VmError::RuntimeSetup("set __name__")
             })?;
 
-            let res = vm.run_string(scope, script, script_path.unwrap_or(String::from("<script>")));
+            let script_path = script_path.unwrap_or(String::from("<script>"));
+            scope.globals.set_item("__file__", vm.ctx.new_str(script_path.clone()).into(), vm).map_err(|exc| {
+                vm.print_exception(exc);
+                VmError::RuntimeSetup("set __file__")
+            })?;
+
+            if let Some(script_vars) = script_vars {
+                for var in script_vars {
+
+                    let value = match var.1 {
+                        ScriptVarType::String(str) => {
+                            log::info!("custom script variable: {}={}", var.0, str);
+                            vm.ctx.new_str(str.as_ref()).into()
+                        },
+                        ScriptVarType::Number(num) => {
+                            log::info!("custom script variable: {}={}", var.0, num);
+                            vm.ctx.new_int(*num).into()
+                        },
+                        ScriptVarType::Boolean(bool) => {
+                            log::info!("custom script variable: {}={}", var.0, bool);
+                            vm.ctx.new_bool(*bool).into()
+                        },
+                        ScriptVarType::None => {
+                            log::info!("custom script variable: {}=None", var.0);
+                            vm.ctx.none().into()
+                        }
+                    };
+
+                    scope.globals.set_item(var.0.as_str(), value, vm).map_err(|exc| {
+                        vm.print_exception(exc);
+                        VmError::RuntimeSetup("set custom script variable")
+                    })?;
+                }
+            }
+
+            let res = vm.run_string(scope, script, script_path);
 
             match res {
                 Ok(_) => Ok(()),

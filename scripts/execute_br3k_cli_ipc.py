@@ -1,5 +1,10 @@
+# =============================================================================
+# IMPORTANT USAGE NOTICE
+# 1. Use only for authorized, non-malicious education, research, and testing.
+# =============================================================================
+
 import br3k
-from br3k import ProcessVmStrategy
+from br3k import ProcessVmWriteStrategy
 
 BR3K_CLI_FILEPATH = "path\\to\\br3k-cli.exe"
 SCRIPT_FILEPATH = "path\\to\\script.py"
@@ -13,7 +18,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         image_path=BR3K_CLI_FILEPATH,
-        process_vm_strategy=ProcessVmStrategy.AllocateInAddr
+        process_vm_write_strategy=ProcessVmWriteStrategy.AllocateInAddr
     )
 
     process.create_user(suspended=True)
@@ -27,5 +32,3 @@ if __name__ == "__main__":
 
     script_data = br3k.FileMapping(SCRIPT_FILEPATH)
     ipc.send_data(script_data.bytes())
-
-    br3k.script_success()

@@ -2,7 +2,16 @@ use crate::prelude::*;
 use crate::str::*;
 use crate::fs;
 
-use crate::sysapi_ctx::SysApiCtx as api_ctx;
+use crate::sysapi_ctx::{
+    SysApiCtx as api_ctx,
+    AllocateVirtualMemory,
+    CreateProcess,
+    CreateSection,
+    CreateThread,
+    MapViewOfSection,
+    ReadVirtualMemory,
+    UnmapViewOfSection,
+};
 
 use std::fmt;
 use std::arch;
@@ -89,6 +98,10 @@ impl From<NTSTATUS> for NtStatusError {
     fn from(status: NTSTATUS) -> Self {
         Self::from_status(status)
     }
+}
+
+fn require_api<T>(api: Option<T>, operation: &'static str) -> NtResult<T> {
+    api.ok_or_else(|| NtStatusError::new(operation, NTSTATUS(ntstatus::STATUS_PROCEDURE_NOT_FOUND)))
 }
 
 pub fn close_handle(handle: HANDLE) -> NtResult<()> {
@@ -304,29 +317,34 @@ pub fn create_process(section_handle: HANDLE) -> NtResult<UniqueHandle> {
             ..Default::default()
         };
 
-        let status: NTSTATUS = if api_ctx::ntdll().NtCreateProcess.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtCreateProcess.unwrap()(
-                addr_of!(process_handle) as _,
-                PROCESS_ALL_ACCESS,
-                addr_of!(object_attributes) as _,
-                NT_CURRENT_PROCESS,
-                true.into(),
-                section_handle,
-                ptr::null_mut(),
-                ptr::null_mut(),
-            ))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtCreateProcessEx.unwrap()(
-                addr_of!(process_handle) as _,
-                PROCESS_ALL_ACCESS,
-                addr_of!(object_attributes) as _,
-                NT_CURRENT_PROCESS,
-                ntpsapi::PROCESS_CREATE_FLAGS_INHERIT_HANDLES,
-                section_handle,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-            ))
+        let status: NTSTATUS = match api_ctx::sys_api_dispatch().create_process {
+            CreateProcess::NtCreateProcess => {
+                let nt_create_process = require_api(api_ctx::ntdll().NtCreateProcess, "NtCreateProcess")?;
+                NTSTATUS(nt_create_process(
+                    addr_of!(process_handle) as _,
+                    PROCESS_ALL_ACCESS,
+                    addr_of!(object_attributes) as _,
+                    NT_CURRENT_PROCESS,
+                    true.into(),
+                    section_handle,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                ))
+            }
+            CreateProcess::NtCreateProcessEx => {
+                let nt_create_process_ex = require_api(api_ctx::ntdll().NtCreateProcessEx, "NtCreateProcessEx")?;
+                NTSTATUS(nt_create_process_ex(
+                    addr_of!(process_handle) as _,
+                    PROCESS_ALL_ACCESS,
+                    addr_of!(object_attributes) as _,
+                    NT_CURRENT_PROCESS,
+                    ntpsapi::PROCESS_CREATE_FLAGS_INHERIT_HANDLES,
+                    section_handle,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    0,
+                ))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(process_handle)) }
@@ -562,7 +580,7 @@ fn create_thread_stack(process_handle: HANDLE, initial_teb: ntpsapi::PINITIAL_TE
             PAGE_READWRITE,
             process_handle,
             ptr::null_mut(),
-            MEM_RESERVE
+            MEM_RESERVE,
         )?;
 
         (*initial_teb).OldInitialTeb.OldStackBase = ptr::null_mut();
@@ -584,7 +602,7 @@ fn create_thread_stack(process_handle: HANDLE, initial_teb: ntpsapi::PINITIAL_TE
             PAGE_READWRITE,
             process_handle,
             stack,
-            MEM_COMMIT
+            MEM_COMMIT,
         )?;
 
         (*initial_teb).StackLimit = stack;
@@ -615,69 +633,74 @@ pub fn create_thread(process_handle: HANDLE, start_address: PVOID, arg: Option<P
             ..Default::default()
         };
 
-        let status = if api_ctx::ntdll().NtCreateThread.is_some() {
-            if arg.is_some() {
-                return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED).into());
+        let status = match api_ctx::sys_api_dispatch().create_thread {
+            CreateThread::NtCreateThread => {
+                if arg.is_some() {
+                    return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED).into());
+                }
+
+                let client_id = allocate_virtual_memory(
+                    size_of::<ntdef::CLIENT_ID>(),
+                    PAGE_READWRITE,
+                    process_handle,
+                    ptr::null_mut(),
+                    MEM_COMMIT | MEM_RESERVE,
+                )? as ntdef::PCLIENT_ID;
+                let initial_teb = allocate_virtual_memory(
+                    size_of::<ntpsapi::INITIAL_TEB>(),
+                    PAGE_READWRITE,
+                    process_handle,
+                    ptr::null_mut(),
+                    MEM_COMMIT | MEM_RESERVE,
+                )? as ntpsapi::PINITIAL_TEB;
+                let context = allocate_virtual_memory(
+                    size_of::<CONTEXT>(),
+                    PAGE_READWRITE,
+                    process_handle,
+                    ptr::null_mut(),
+                    MEM_COMMIT | MEM_RESERVE,
+                )? as winbase::PCONTEXT;
+
+                create_thread_stack(process_handle, initial_teb)?;
+
+                api_ctx::ntdll().RtlInitializeContext.unwrap()(
+                    process_handle,
+                    context,
+                    ptr::null_mut(),
+                    start_address as _,
+                    (*initial_teb).StackBase,
+                );
+
+                let nt_create_thread = require_api(api_ctx::ntdll().NtCreateThread, "NtCreateThread")?;
+                NTSTATUS(nt_create_thread(
+                    addr_of!(thread_handle) as _,
+                    THREAD_ALL_ACCESS,
+                    addr_of!(object_attributes) as _,
+                    process_handle,
+                    client_id as _,
+                    context as _,
+                    initial_teb as _,
+                    false as _,
+                ))
             }
+            CreateThread::NtCreateThreadEx => {
+                let arg = arg.unwrap_or(ptr::null_mut());
 
-            let client_id = allocate_virtual_memory(
-                size_of::<ntdef::CLIENT_ID>(),
-                PAGE_READWRITE,
-                process_handle,
-                ptr::null_mut(),
-                MEM_COMMIT | MEM_RESERVE,
-            )? as ntdef::PCLIENT_ID;
-            let initial_teb = allocate_virtual_memory(
-                size_of::<ntpsapi::INITIAL_TEB>(),
-                PAGE_READWRITE,
-                process_handle,
-                ptr::null_mut(),
-                MEM_COMMIT | MEM_RESERVE,
-            )? as ntpsapi::PINITIAL_TEB;
-            let context = allocate_virtual_memory(
-                size_of::<CONTEXT>(),
-                PAGE_READWRITE,
-                process_handle,
-                ptr::null_mut(),
-                MEM_COMMIT | MEM_RESERVE,
-            )? as winbase::PCONTEXT;
-
-            create_thread_stack(process_handle, initial_teb)?;
-
-            api_ctx::ntdll().RtlInitializeContext.unwrap()(
-                process_handle,
-                context,
-                ptr::null_mut(),
-                start_address as _,
-                (*initial_teb).StackBase,
-            );
-
-            NTSTATUS(api_ctx::ntdll().NtCreateThread.unwrap()(
-                addr_of!(thread_handle) as _,
-                THREAD_ALL_ACCESS,
-                addr_of!(object_attributes) as _,
-                process_handle,
-                client_id as _,
-                context as _,
-                initial_teb as _,
-                false as _,
-            ))
-        } else {
-            let arg = arg.unwrap_or(ptr::null_mut());
-
-            NTSTATUS(api_ctx::ntdll().NtCreateThreadEx.unwrap()(
-                addr_of!(thread_handle) as _,
-                THREAD_ALL_ACCESS,
-                addr_of!(object_attributes) as _,
-                process_handle,
-                start_address,
-                arg,
-                0,
-                0,
-                0,
-                0,
-                ptr::null_mut(),
-            ))
+                let nt_create_thread_ex = require_api(api_ctx::ntdll().NtCreateThreadEx, "NtCreateThreadEx")?;
+                NTSTATUS(nt_create_thread_ex(
+                    addr_of!(thread_handle) as _,
+                    THREAD_ALL_ACCESS,
+                    addr_of!(object_attributes) as _,
+                    process_handle,
+                    start_address,
+                    arg,
+                    0,
+                    0,
+                    0,
+                    0,
+                    ptr::null_mut(),
+                ))
+            }
         };
 
         if !status.is_ok() {
@@ -796,25 +819,30 @@ pub fn allocate_virtual_memory(
     allocation_type: ULONG,
 ) -> NtResult<PVOID> {
     unsafe {
-        let status = if api_ctx::ntdll().NtAllocateVirtualMemoryEx.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtAllocateVirtualMemoryEx.unwrap()(
-                process_handle,
-                addr_of!(base_address) as _,
-                addr_of!(size) as _,
-                allocation_type,
-                protect,
-                ptr::null_mut(),
-                0,
-            ))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtAllocateVirtualMemory.unwrap()(
-                process_handle,
-                addr_of!(base_address) as _,
-                0,
-                addr_of!(size) as _,
-                allocation_type,
-                protect,
-            ))
+        let status = match api_ctx::sys_api_dispatch().allocate_virtual_memory {
+            AllocateVirtualMemory::NtAllocateVirtualMemory => {
+                let nt_allocate_virtual_memory = require_api(api_ctx::ntdll().NtAllocateVirtualMemory, "NtAllocateVirtualMemory")?;
+                NTSTATUS(nt_allocate_virtual_memory(
+                    process_handle,
+                    addr_of!(base_address) as _,
+                    0,
+                    addr_of!(size) as _,
+                    allocation_type,
+                    protect,
+                ))
+            }
+            AllocateVirtualMemory::NtAllocateVirtualMemoryEx => {
+                let nt_allocate_virtual_memory_ex = require_api(api_ctx::ntdll().NtAllocateVirtualMemoryEx, "NtAllocateVirtualMemoryEx")?;
+                NTSTATUS(nt_allocate_virtual_memory_ex(
+                    process_handle,
+                    addr_of!(base_address) as _,
+                    addr_of!(size) as _,
+                    allocation_type,
+                    protect,
+                    ptr::null_mut(),
+                    0,
+                ))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(base_address) }
@@ -827,28 +855,33 @@ pub fn create_section(size: usize) -> NtResult<UniqueHandle> {
 
         let maximum_size = ntwin::LARGE_INTEGER { bindgen_union_field: size as _, ..Default::default() };
 
-        let status = if api_ctx::ntdll().NtCreateSectionEx.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtCreateSectionEx.unwrap()(
-                addr_of!(section_handle) as _,
-                SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
-                ptr::null_mut(),
-                addr_of!(maximum_size) as _,
-                PAGE_EXECUTE_READWRITE,
-                SEC_COMMIT,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-            ))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtCreateSection.unwrap()(
-                addr_of!(section_handle) as _,
-                SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
-                ptr::null_mut(),
-                addr_of!(maximum_size) as _,
-                PAGE_EXECUTE_READWRITE,
-                SEC_COMMIT,
-                ptr::null_mut(),
-            ))
+        let status = match api_ctx::sys_api_dispatch().create_section {
+            CreateSection::NtCreateSection => {
+                let nt_create_section = require_api(api_ctx::ntdll().NtCreateSection, "NtCreateSection")?;
+                NTSTATUS(nt_create_section(
+                    addr_of!(section_handle) as _,
+                    SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
+                    ptr::null_mut(),
+                    addr_of!(maximum_size) as _,
+                    PAGE_EXECUTE_READWRITE,
+                    SEC_COMMIT,
+                    ptr::null_mut(),
+                ))
+            }
+            CreateSection::NtCreateSectionEx => {
+                let nt_create_section_ex = require_api(api_ctx::ntdll().NtCreateSectionEx, "NtCreateSectionEx")?;
+                NTSTATUS(nt_create_section_ex(
+                    addr_of!(section_handle) as _,
+                    SECTION_MAP_READ | SECTION_MAP_WRITE | SECTION_MAP_EXECUTE,
+                    ptr::null_mut(),
+                    addr_of!(maximum_size) as _,
+                    PAGE_EXECUTE_READWRITE,
+                    SEC_COMMIT,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    0,
+                ))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(section_handle)) }
@@ -870,28 +903,33 @@ pub fn create_file_section(
             maximum_size.bindgen_union_field = size as _;
         }
 
-        let status = if api_ctx::ntdll().NtCreateSectionEx.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtCreateSectionEx.unwrap()(
-                addr_of!(section_handle) as _,
-                access_mask,
-                ptr::null_mut(),
-                addr_of!(maximum_size) as _,
-                protection,
-                if as_image { SEC_IMAGE } else { SEC_COMMIT },
-                file_handle,
-                ptr::null_mut(),
-                0,
-            ))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtCreateSection.unwrap()(
-                addr_of!(section_handle) as _,
-                access_mask,
-                ptr::null_mut(),
-                addr_of!(maximum_size) as _,
-                protection,
-                if as_image { SEC_IMAGE } else { SEC_COMMIT },
-                file_handle,
-            ))
+        let status = match api_ctx::sys_api_dispatch().create_section {
+            CreateSection::NtCreateSection => {
+                let nt_create_section = require_api(api_ctx::ntdll().NtCreateSection, "NtCreateSection")?;
+                NTSTATUS(nt_create_section(
+                    addr_of!(section_handle) as _,
+                    access_mask,
+                    ptr::null_mut(),
+                    addr_of!(maximum_size) as _,
+                    protection,
+                    if as_image { SEC_IMAGE } else { SEC_COMMIT },
+                    file_handle,
+                ))
+            }
+            CreateSection::NtCreateSectionEx => {
+                let nt_create_section_ex = require_api(api_ctx::ntdll().NtCreateSectionEx, "NtCreateSectionEx")?;
+                NTSTATUS(nt_create_section_ex(
+                    addr_of!(section_handle) as _,
+                    access_mask,
+                    ptr::null_mut(),
+                    addr_of!(maximum_size) as _,
+                    protection,
+                    if as_image { SEC_IMAGE } else { SEC_COMMIT },
+                    file_handle,
+                    ptr::null_mut(),
+                    0,
+                ))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(section_handle)) }
@@ -906,31 +944,36 @@ pub fn map_view_of_section(
     base_address: PVOID,
 ) -> NtResult<PVOID> {
     unsafe {
-        let status = if api_ctx::ntdll().NtMapViewOfSectionEx.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtMapViewOfSectionEx.unwrap()(
-                section_handle,
-                process_handle,
-                addr_of!(base_address) as _,
-                ptr::null_mut(),
-                addr_of!(size) as _,
-                0,
-                protect,
-                ptr::null_mut(),
-                0,
-            ))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtMapViewOfSection.unwrap()(
-                section_handle,
-                process_handle,
-                addr_of!(base_address) as _,
-                0,
-                0,
-                ptr::null_mut(),
-                addr_of!(size) as _,
-                ntmmapi::SECTION_INHERIT::ViewUnmap,
-                0,
-                protect,
-            ))
+        let status = match api_ctx::sys_api_dispatch().map_view_of_section {
+            MapViewOfSection::NtMapViewOfSection => {
+                let nt_map_view_of_section = require_api(api_ctx::ntdll().NtMapViewOfSection, "NtMapViewOfSection")?;
+                NTSTATUS(nt_map_view_of_section(
+                    section_handle,
+                    process_handle,
+                    addr_of!(base_address) as _,
+                    0,
+                    0,
+                    ptr::null_mut(),
+                    addr_of!(size) as _,
+                    ntmmapi::SECTION_INHERIT::ViewUnmap,
+                    0,
+                    protect,
+                ))
+            }
+            MapViewOfSection::NtMapViewOfSectionEx => {
+                let nt_map_view_of_section_ex = require_api(api_ctx::ntdll().NtMapViewOfSectionEx, "NtMapViewOfSectionEx")?;
+                NTSTATUS(nt_map_view_of_section_ex(
+                    section_handle,
+                    process_handle,
+                    addr_of!(base_address) as _,
+                    ptr::null_mut(),
+                    addr_of!(size) as _,
+                    0,
+                    protect,
+                    ptr::null_mut(),
+                    0,
+                ))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(base_address) }
@@ -939,10 +982,15 @@ pub fn map_view_of_section(
 
 pub fn unmap_view_of_section(base_address: PVOID, process_handle: HANDLE) -> NtResult<()> {
     unsafe {
-        let status = if api_ctx::ntdll().NtUnmapViewOfSectionEx.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtUnmapViewOfSectionEx.unwrap()(process_handle, base_address, 0))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtUnmapViewOfSection.unwrap()(process_handle, base_address))
+        let status = match api_ctx::sys_api_dispatch().unmap_view_of_section {
+            UnmapViewOfSection::NtUnmapViewOfSection => {
+                let nt_unmap_view_of_section = require_api(api_ctx::ntdll().NtUnmapViewOfSection, "NtUnmapViewOfSection")?;
+                NTSTATUS(nt_unmap_view_of_section(process_handle, base_address))
+            }
+            UnmapViewOfSection::NtUnmapViewOfSectionEx => {
+                let nt_unmap_view_of_section_ex = require_api(api_ctx::ntdll().NtUnmapViewOfSectionEx, "NtUnmapViewOfSectionEx")?;
+                NTSTATUS(nt_unmap_view_of_section_ex(process_handle, base_address, 0))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
@@ -999,23 +1047,28 @@ where
 
         let number_of_bytes_read: usize = 0;
 
-        let status = if api_ctx::ntdll().NtReadVirtualMemoryEx.is_some() {
-            NTSTATUS(api_ctx::ntdll().NtReadVirtualMemoryEx.unwrap()(
-                process_handle,
-                base_address,
-                data,
-                size,
-                addr_of!(number_of_bytes_read) as _,
-                0, //
-            ))
-        } else {
-            NTSTATUS(api_ctx::ntdll().NtReadVirtualMemory.unwrap()(
-                process_handle,
-                base_address,
-                data,
-                size,
-                addr_of!(number_of_bytes_read) as _,
-            ))
+        let status = match api_ctx::sys_api_dispatch().read_virtual_memory {
+            ReadVirtualMemory::NtReadVirtualMemory => {
+                let nt_read_virtual_memory = require_api(api_ctx::ntdll().NtReadVirtualMemory, "NtReadVirtualMemory")?;
+                NTSTATUS(nt_read_virtual_memory(
+                    process_handle,
+                    base_address,
+                    data,
+                    size,
+                    addr_of!(number_of_bytes_read) as _,
+                ))
+            }
+            ReadVirtualMemory::NtReadVirtualMemoryEx => {
+                let nt_read_virtual_memory_ex = require_api(api_ctx::ntdll().NtReadVirtualMemoryEx, "NtReadVirtualMemoryEx")?;
+                NTSTATUS(nt_read_virtual_memory_ex(
+                    process_handle,
+                    base_address,
+                    data,
+                    size,
+                    addr_of!(number_of_bytes_read) as _,
+                    0, //
+                ))
+            }
         };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(number_of_bytes_read) }

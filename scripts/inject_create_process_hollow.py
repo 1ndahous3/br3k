@@ -1,5 +1,10 @@
+# =============================================================================
+# IMPORTANT USAGE NOTICE
+# 1. Use only for authorized, non-malicious education, research, and testing.
+# =============================================================================
+
 import br3k
-from br3k import ProcessVmStrategy
+from br3k import ProcessVmWriteStrategy
 
 ORIGINAL_IMAGE_FILEPATH = "C:\\Windows\\System32\\notepad.exe"
 INJECTED_IMAGE_FILEPATH = "C:\\Windows\\System32\\calc.exe"
@@ -21,7 +26,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         image_path=INJECTED_IMAGE_FILEPATH,
-        process_vm_strategy=ProcessVmStrategy.AllocateInAddr
+        process_vm_write_strategy=ProcessVmWriteStrategy.AllocateInAddr
     )
     process.create_user(suspended=True)
     process.init_memory()
@@ -32,5 +37,3 @@ if __name__ == "__main__":
     thread = process.main_thread
     thread.set_ep(new_thread=True, ep=ep)
     thread.resume()
-
-    br3k.script_success()

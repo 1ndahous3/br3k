@@ -24,7 +24,7 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
 
-use strum_macros::{FromRepr, IntoStaticStr, VariantArray};
+use strum_macros::{FromRepr, IntoStaticStr, VariantArray, EnumIter};
 use scopeguard::ScopeGuard;
 
 use sysapi::UniqueHandle;
@@ -51,78 +51,148 @@ pub enum ProcessMemoryInitError {
 pub enum ProcessMemoryError {
     #[error(transparent)]
     NtStatus(#[from] sysapi::NtStatusError),
-    #[error("{operation} is not supported by read-only LiveDumpParse process VM strategy")]
-    ReadOnlyStrategy { operation: &'static str },
+    #[error("{operation} requires initialized process VM read strategy")]
+    MissingReadStrategy { operation: &'static str },
+    #[error("{operation} requires initialized process VM write strategy")]
+    MissingWriteStrategy { operation: &'static str },
+    #[error("{operation} requires initialized local section map")]
+    MissingLocalSectionMap { operation: &'static str },
     #[error("failed to read memory from kernel dump: {0}")]
     KernelDumpRead(#[source] kdmp_parser::error::Error),
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
-pub enum ProcessVmStrategy {
-    AllocateInAddr,
+#[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum ProcessVmReadStrategy {
+    ReadVirtualMemory,
     CreateSectionMap,
     CreateSectionMapLocalMap,
     LiveDumpParse,
 }
 
-impl fmt::Display for ProcessVmStrategy {
+impl fmt::Display for ProcessVmReadStrategy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self:?}")
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ProcessMemory {
-    AllocateInAddr {
+pub enum ProcessMemoryRead {
+    ReadVirtualMemory {
         handle: HANDLE,
-        base_addr_remote: PVOID,
     },
     CreateSectionMap {
         handle: HANDLE,
-        section: HANDLE,
-        base_addr_remote: PVOID,
     },
     CreateSectionMapLocalMap {
-        handle: HANDLE,
-        section: HANDLE,
-        base_addr_remote: PVOID,
         base_addr_local: PVOID,
     },
     LiveDumpParse {
-        // RO
-        base_addr_remote: PVOID,
         kdump: Arc<kdump::KernelDump>,
         kdump_process: kdump::Process,
     },
 }
 
+#[repr(u32)]
+#[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum ProcessVmWriteStrategy {
+    AllocateInAddr,
+    CreateSectionMap,
+    CreateSectionMapLocalMap,
+}
+
+impl fmt::Display for ProcessVmWriteStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ProcessMemoryWrite {
+    AllocateInAddr {
+        handle: HANDLE,
+    },
+    CreateSectionMap {
+        handle: HANDLE,
+        section: HANDLE,
+    },
+    CreateSectionMapLocalMap {
+        handle: HANDLE,
+        section: HANDLE,
+        base_addr_local: PVOID,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessMemory {
+    base_addr_remote: PVOID,
+    read: Option<ProcessMemoryRead>,
+    write: Option<ProcessMemoryWrite>,
+}
+
 impl ProcessMemory {
-    pub fn init_allocate_in_addr(handle: HANDLE) -> Result<Self, ProcessMemoryInitError> {
-        Ok(ProcessMemory::AllocateInAddr {
-            handle,
-            base_addr_remote: ptr::null_mut()
-        })
-    }
+    pub fn init(
+        read_strategy: Option<&ProcessVmReadStrategy>,
+        write_strategy: Option<&ProcessVmWriteStrategy>,
+        handle: HANDLE,
+        pid: u32,
+    ) -> Result<Self, ProcessMemoryInitError> {
+        let read = match read_strategy {
+            Some(ProcessVmReadStrategy::ReadVirtualMemory) => Some(Self::init_read_virtual_memory(handle)),
+            Some(ProcessVmReadStrategy::CreateSectionMap) => Some(Self::init_read_create_section_map(handle)),
+            Some(ProcessVmReadStrategy::CreateSectionMapLocalMap) => Some(Self::init_read_create_section_map_local_map()),
+            Some(ProcessVmReadStrategy::LiveDumpParse) => Some(Self::init_live_dump_parse(pid)?),
+            None => None,
+        };
 
-    pub fn init_create_section_map(handle: HANDLE) -> Result<Self, ProcessMemoryInitError> {
-        Ok(ProcessMemory::CreateSectionMap {
-            handle,
-            section: ptr::null_mut(),
-            base_addr_remote: ptr::null_mut()
-        })
-    }
+        let write = match write_strategy {
+            Some(ProcessVmWriteStrategy::AllocateInAddr) => Some(Self::init_allocate_in_addr(handle)),
+            Some(ProcessVmWriteStrategy::CreateSectionMap) => Some(Self::init_create_section_map(handle)),
+            Some(ProcessVmWriteStrategy::CreateSectionMapLocalMap) => Some(Self::init_create_section_map_local_map(handle)),
+            None => None,
+        };
 
-    pub fn init_create_section_map_local_map(handle: HANDLE) -> Result<Self, ProcessMemoryInitError> {
-        Ok(ProcessMemory::CreateSectionMapLocalMap {
-            handle,
-            section: ptr::null_mut(),
+        Ok(Self {
             base_addr_remote: ptr::null_mut(),
-            base_addr_local: ptr::null_mut(),
+            read,
+            write,
         })
     }
 
-    pub fn init_live_dump_parse(pid: u32) -> Result<Self, ProcessMemoryInitError> {
+    fn init_read_virtual_memory(handle: HANDLE) -> ProcessMemoryRead {
+        ProcessMemoryRead::ReadVirtualMemory { handle }
+    }
+
+    fn init_read_create_section_map(handle: HANDLE) -> ProcessMemoryRead {
+        ProcessMemoryRead::CreateSectionMap { handle }
+    }
+
+    fn init_read_create_section_map_local_map() -> ProcessMemoryRead {
+        ProcessMemoryRead::CreateSectionMapLocalMap {
+            base_addr_local: ptr::null_mut(),
+        }
+    }
+
+    fn init_allocate_in_addr(handle: HANDLE) -> ProcessMemoryWrite {
+        ProcessMemoryWrite::AllocateInAddr { handle }
+    }
+
+    fn init_create_section_map(handle: HANDLE) -> ProcessMemoryWrite {
+        ProcessMemoryWrite::CreateSectionMap {
+            handle,
+            section: ptr::null_mut(),
+        }
+    }
+
+    fn init_create_section_map_local_map(handle: HANDLE) -> ProcessMemoryWrite {
+        ProcessMemoryWrite::CreateSectionMapLocalMap {
+            handle,
+            section: ptr::null_mut(),
+            base_addr_local: ptr::null_mut(),
+        }
+    }
+
+    fn init_live_dump_parse(pid: u32) -> Result<ProcessMemoryRead, ProcessMemoryInitError> {
         let dump_filepath = PathBuf::from(fs::get_temp_folder()).join("system.dmp");
         let dump_filepath = dump_filepath.to_str()
             .ok_or(ProcessMemoryInitError::TempPathNotUtf8)?;
@@ -158,19 +228,21 @@ impl ProcessMemory {
         let process = processes.iter().find(|p| p.pid == pid)
             .ok_or(ProcessMemoryInitError::ProcessNotFound { pid })?;
 
-        Ok(ProcessMemory::LiveDumpParse {
-            base_addr_remote: ptr::null_mut(),
+        Ok(ProcessMemoryRead::LiveDumpParse {
             kdump: Arc::new(kdump),
             kdump_process: process.clone()
         })
     }
 
     pub fn create_memory(&mut self, size: usize) -> Result<(), ProcessMemoryError> {
-        match self {
-            ProcessMemory::AllocateInAddr { handle, base_addr_remote } => {
+        let write = self.write.as_mut()
+            .ok_or(ProcessMemoryError::MissingWriteStrategy { operation: "create memory" })?;
+
+        match write {
+            ProcessMemoryWrite::AllocateInAddr { handle } => {
                 let allocation_type = MEM_COMMIT | MEM_RESERVE;
                 let protect = PAGE_EXECUTE_READWRITE;
-                let remote_base = *base_addr_remote;
+                let remote_base = self.base_addr_remote;
                 let base_addr = sysapi::allocate_virtual_memory(
                     size,
                     protect,
@@ -178,30 +250,30 @@ impl ProcessMemory {
                     remote_base,
                     allocation_type
                 )?;
-                *base_addr_remote = base_addr;
+                self.base_addr_remote = base_addr;
 
                 Ok(())
             }
-            ProcessMemory::CreateSectionMap { handle, section, base_addr_remote } => {
+            ProcessMemoryWrite::CreateSectionMap { handle, section } => {
                 *section = ScopeGuard::into_inner(sysapi::create_section(size)?);
-                *base_addr_remote = sysapi::map_view_of_section(
+                self.base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_EXECUTE_READWRITE,
                     *handle,
-                    *base_addr_remote
+                    self.base_addr_remote
                 )?;
 
                 Ok(())
             }
-            ProcessMemory::CreateSectionMapLocalMap { handle, section, base_addr_remote, base_addr_local } => {
+            ProcessMemoryWrite::CreateSectionMapLocalMap { handle, section, base_addr_local } => {
                 *section = ScopeGuard::into_inner(sysapi::create_section(size)?);
-                *base_addr_remote = sysapi::map_view_of_section(
+                self.base_addr_remote = sysapi::map_view_of_section(
                     *section,
                     size,
                     PAGE_EXECUTE_READWRITE,
                     *handle,
-                    *base_addr_remote
+                    self.base_addr_remote
                 )?;
                 *base_addr_local = sysapi::map_view_of_section(
                     *section,
@@ -211,46 +283,47 @@ impl ProcessMemory {
                     ptr::null_mut()
                 )?;
 
+                if let Some(ProcessMemoryRead::CreateSectionMapLocalMap { base_addr_local: read_base_addr_local }) = self.read.as_mut() {
+                    *read_base_addr_local = *base_addr_local;
+                }
+
                 Ok(())
             }
-            ProcessMemory::LiveDumpParse { .. } => Err(ProcessMemoryError::ReadOnlyStrategy { operation: "create memory" }),
         }
     }
 
     pub fn read_memory(&self, offset: usize, data: PVOID, size: usize) -> Result<(), ProcessMemoryError> {
+        let read = self.read.as_ref()
+            .ok_or(ProcessMemoryError::MissingReadStrategy { operation: "read memory" })?;
+
         unsafe {
-            match self {
-                ProcessMemory::AllocateInAddr { handle, base_addr_remote } => {
+            match read {
+                ProcessMemoryRead::ReadVirtualMemory { handle }
+                | ProcessMemoryRead::CreateSectionMap { handle } => {
                     let buffer = slice::from_raw_parts_mut(data as *mut u8, size);
                     sysapi::read_virtual_memory(
                         buffer,
-                        base_addr_remote.wrapping_add(offset),
+                        self.base_addr_remote.wrapping_add(offset),
                         *handle
                     )?;
 
                     Ok(())
                 }
-                ProcessMemory::CreateSectionMap { handle, base_addr_remote, .. } => {
-                    let buffer = slice::from_raw_parts_mut(data as *mut u8, size);
-                    sysapi::read_virtual_memory(
-                        buffer,
-                        base_addr_remote.wrapping_add(offset),
-                        *handle
-                    )?;
+                ProcessMemoryRead::CreateSectionMapLocalMap { base_addr_local } => {
+                    if base_addr_local.is_null() {
+                        return Err(ProcessMemoryError::MissingLocalSectionMap { operation: "read memory" });
+                    }
 
-                    Ok(())
-                }
-                ProcessMemory::CreateSectionMapLocalMap { base_addr_local, .. } => {
                     ptr::copy_nonoverlapping(base_addr_local.wrapping_add(offset), data, size);
 
                     Ok(())
                 }
-                ProcessMemory::LiveDumpParse { base_addr_remote, kdump, kdump_process, .. } => {
+                ProcessMemoryRead::LiveDumpParse { kdump, kdump_process } => {
                     let dst = slice::from_raw_parts_mut(data as *mut u8, size);
                     kdump.read_memory(
                         dst,
                         kdump_process,
-                        base_addr_remote.add(offset) as _
+                        self.base_addr_remote.add(offset) as _
                     ).map_err(ProcessMemoryError::KernelDumpRead)?;
 
                     Ok(())
@@ -260,37 +333,39 @@ impl ProcessMemory {
     }
 
     pub fn write_memory(&self, offset: usize, data: PVOID, size: usize) -> Result<(), ProcessMemoryError> {
-        match self {
-            ProcessMemory::AllocateInAddr { handle, base_addr_remote } => unsafe {
+        let write = self.write.as_ref()
+            .ok_or(ProcessMemoryError::MissingWriteStrategy { operation: "write memory" })?;
+
+        match write {
+            ProcessMemoryWrite::AllocateInAddr { handle } => unsafe {
                 let buffer = slice::from_raw_parts(data as *const u8, size);
 
                 sysapi::write_virtual_memory(
                     buffer,
-                    base_addr_remote.wrapping_add(offset),
+                    self.base_addr_remote.wrapping_add(offset),
                     *handle
                 )?;
 
                 Ok(())
             },
-            ProcessMemory::CreateSectionMap { handle, base_addr_remote, .. } => unsafe {
+            ProcessMemoryWrite::CreateSectionMap { handle, .. } => unsafe {
                 let buffer = slice::from_raw_parts(data as *const u8, size);
 
                 sysapi::write_virtual_memory(
                     buffer,
-                    base_addr_remote.wrapping_add(offset),
+                    self.base_addr_remote.wrapping_add(offset),
                     *handle
                 )?;
 
                 Ok(())
             },
-            ProcessMemory::CreateSectionMapLocalMap { base_addr_local, .. } => {
+            ProcessMemoryWrite::CreateSectionMapLocalMap { base_addr_local, .. } => {
                 unsafe {
                     ptr::copy_nonoverlapping(data, base_addr_local.wrapping_add(offset), size);
                 }
 
                 Ok(())
             }
-            ProcessMemory::LiveDumpParse { .. } => Err(ProcessMemoryError::ReadOnlyStrategy { operation: "write memory" }),
         }
     }
 
@@ -316,34 +391,16 @@ impl ProcessMemory {
     }
 
     pub fn get_remote_base_addr(&self) -> PVOID {
-        match self {
-            ProcessMemory::AllocateInAddr { base_addr_remote, .. } => *base_addr_remote,
-            ProcessMemory::CreateSectionMap { base_addr_remote, .. } => *base_addr_remote,
-            ProcessMemory::CreateSectionMapLocalMap { base_addr_remote, .. } => *base_addr_remote,
-            ProcessMemory::LiveDumpParse { base_addr_remote, .. } => *base_addr_remote,
-        }
+        self.base_addr_remote
     }
 
     pub fn set_remote_base_addr(&mut self, addr: PVOID) {
-        match self {
-            ProcessMemory::AllocateInAddr { base_addr_remote, .. } => {
-                *base_addr_remote = addr;
-            }
-            ProcessMemory::CreateSectionMap { base_addr_remote, .. } => {
-                *base_addr_remote = addr;
-            }
-            ProcessMemory::CreateSectionMapLocalMap { base_addr_remote, .. } => {
-                *base_addr_remote = addr;
-            }
-            ProcessMemory::LiveDumpParse { base_addr_remote, .. } => {
-                *base_addr_remote = addr;
-            }
-        }
+        self.base_addr_remote = addr;
     }
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
+#[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
 pub enum ProcessOpenStrategy {
     OpenProcess,
     OpenProcessByHwnd,
@@ -405,7 +462,7 @@ impl ProcessOpenStrategy {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
+#[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
 pub enum ThreadOpenStrategy {
     ThreadOpenByTid,
     ThreadOpenAnyNext,

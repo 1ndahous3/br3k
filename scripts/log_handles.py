@@ -1,3 +1,8 @@
+# =============================================================================
+# IMPORTANT USAGE NOTICE
+# 1. Use only for authorized, non-malicious education, research, and testing.
+# =============================================================================
+
 import br3k
 
 if __name__ == "__main__":
@@ -9,5 +14,3 @@ if __name__ == "__main__":
 
     process = br3k.Process(current=True)
     process.log_handles()
-
-    br3k.script_success()

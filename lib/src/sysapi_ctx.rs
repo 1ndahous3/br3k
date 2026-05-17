@@ -3,11 +3,12 @@ use crate::sysapi;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::result::Result;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use windows_sys::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress, LoadLibraryA};
+
+use strum_macros::EnumString;
 
 use windef::*;
 
@@ -79,7 +80,7 @@ pub struct NtDllApi {
     pub RtlCreateEnvironmentEx: Option<ntrtl::PFN_RtlCreateEnvironmentEx>,
     pub RtlDestroyEnvironment: Option<ntrtl::PFN_RtlDestroyEnvironment>,
     pub RtlSetCurrentTransaction: Option<ntrtl::PFN_RtlSetCurrentTransaction>,
-    // Alternative API
+    // Dispatch-configurable system API alternatives
     pub NtCreateProcess: Option<ntpsapi::PFN_NtCreateProcess>,
     pub NtCreateThread: Option<ntpsapi::PFN_NtCreateThread>,
     pub NtCreateSectionEx: Option<ntmmapi::PFN_NtCreateSectionEx>,
@@ -89,23 +90,94 @@ pub struct NtDllApi {
     pub NtReadVirtualMemoryEx: Option<ntmmapi::PFN_NtReadVirtualMemoryEx>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum CreateProcess {
+    NtCreateProcess,
+    #[default]
+    NtCreateProcessEx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum CreateThread {
+    NtCreateThread,
+    #[default]
+    NtCreateThreadEx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum CreateSection {
+    #[default]
+    NtCreateSection,
+    NtCreateSectionEx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum MapViewOfSection {
+    #[default]
+    NtMapViewOfSection,
+    NtMapViewOfSectionEx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum UnmapViewOfSection {
+    #[default]
+    NtUnmapViewOfSection,
+    NtUnmapViewOfSectionEx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum AllocateVirtualMemory {
+    #[default]
+    NtAllocateVirtualMemory,
+    NtAllocateVirtualMemoryEx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum ReadVirtualMemory {
+    #[default]
+    NtReadVirtualMemory,
+    NtReadVirtualMemoryEx,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SysApiDispatchConfig {
+    pub create_process: CreateProcess,
+    pub create_thread: CreateThread,
+    pub create_section: CreateSection,
+    pub map_view_of_section: MapViewOfSection,
+    pub unmap_view_of_section: UnmapViewOfSection,
+    pub allocate_virtual_memory: AllocateVirtualMemory,
+    pub read_virtual_memory: ReadVirtualMemory,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct InitOptions {
     pub ntdll_copy: bool,
-    pub ntdll_alt_api: bool,
+    pub sys_api_dispatch: SysApiDispatchConfig,
 }
 
 impl NtDllApi {
-    fn get_proc_address<T>(module: HMODULE, proc_name: &str) -> Option<T> {
+    fn get_proc_address_impl<T>(module: HMODULE, proc_name: &str, log_error: bool) -> Option<T> {
         unsafe {
             let proc = CString::new(proc_name).ok()?;
             let address = GetProcAddress(module, proc.as_ptr() as _);
             if let Some(address) = address {
                 Some(mem::transmute_copy(&address))
             } else {
-                log::error!("Unable to get address of \"{proc_name}\" from ntdll.dll");
+                if log_error {
+                    log::error!("Unable to get address of \"{proc_name}\" from ntdll.dll");
+                }
                 None
             }
         }
+    }
+
+    fn get_proc_address<T>(module: HMODULE, proc_name: &str) -> Option<T> {
+        Self::get_proc_address_impl(module, proc_name, true)
+    }
+
+    fn get_proc_address_opt<T>(module: HMODULE, proc_name: &str) -> Option<T> {
+        Self::get_proc_address_impl(module, proc_name, false)
     }
 
     pub fn new(opts: &InitOptions) -> Result<Self, SysApiCtxError> {
@@ -172,18 +244,14 @@ impl NtDllApi {
                 RtlCreateEnvironmentEx: Self::get_proc_address(module, "RtlCreateEnvironmentEx"),
                 RtlDestroyEnvironment: Self::get_proc_address(module, "RtlDestroyEnvironment"),
                 RtlSetCurrentTransaction: Self::get_proc_address(module, "RtlSetCurrentTransaction"),
-                // Alternative API
-                NtCreateProcess: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtCreateProcess") } else { None },
-                NtCreateThread: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtCreateThread") } else { None },
-                NtCreateSectionEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtCreateSectionEx") } else { None },
-                NtMapViewOfSectionEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtMapViewOfSectionEx") } else { None },
-                NtUnmapViewOfSectionEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtUnmapViewOfSectionEx") } else { None },
-                NtAllocateVirtualMemoryEx: if opts.ntdll_alt_api {
-                    Self::get_proc_address(module, "NtAllocateVirtualMemoryEx")
-                } else {
-                    None
-                },
-                NtReadVirtualMemoryEx: if opts.ntdll_alt_api { Self::get_proc_address(module, "NtReadVirtualMemoryEx") } else { None },
+                // Dispatch-configurable system API alternatives
+                NtCreateProcess: Self::get_proc_address_opt(module, "NtCreateProcess"),
+                NtCreateThread: Self::get_proc_address_opt(module, "NtCreateThread"),
+                NtCreateSectionEx: Self::get_proc_address_opt(module, "NtCreateSectionEx"),
+                NtMapViewOfSectionEx: Self::get_proc_address_opt(module, "NtMapViewOfSectionEx"),
+                NtUnmapViewOfSectionEx: Self::get_proc_address_opt(module, "NtUnmapViewOfSectionEx"),
+                NtAllocateVirtualMemoryEx: Self::get_proc_address_opt(module, "NtAllocateVirtualMemoryEx"),
+                NtReadVirtualMemoryEx: Self::get_proc_address_opt(module, "NtReadVirtualMemoryEx"),
             })
         }
     }
@@ -226,6 +294,7 @@ pub struct SysApiCtx {
 
     ntdll: NtDllApi,
     win32u: Win32uApi,
+    sys_api_dispatch: SysApiDispatchConfig,
 }
 
 impl SysApiCtx {
@@ -237,6 +306,7 @@ impl SysApiCtx {
             proc_addresses: RefCell::new(HashMap::new()),
             ntdll: NtDllApi::new(&opts_native)?,
             win32u: Win32uApi::new()?,
+            sys_api_dispatch: opts.sys_api_dispatch,
         };
 
         SYSAPI.store(Box::into_raw(Box::new(ctx_native)), Ordering::Relaxed);
@@ -248,6 +318,7 @@ impl SysApiCtx {
                 proc_addresses: RefCell::new(HashMap::new()),
                 ntdll: NtDllApi::new(&opts)?,
                 win32u: Win32uApi::new()?,
+                sys_api_dispatch: opts.sys_api_dispatch,
             };
 
             SYSAPI.store(Box::into_raw(Box::new(ctx)), Ordering::Relaxed);
@@ -280,6 +351,11 @@ impl SysApiCtx {
     pub fn ntstatus_decoder() -> &'static HashMap<NTSTATUS, &'static str> {
         &Self::try_ctx()
             .expect("SysApiCtx is not initialized").ntstatus_decoder
+    }
+
+    pub fn sys_api_dispatch() -> &'static SysApiDispatchConfig {
+        &Self::try_ctx()
+            .expect("SysApiCtx is not initialized").sys_api_dispatch
     }
 
     pub fn get_proc_address(module_name: &str, proc_name: &str) -> Result<PVOID, SysApiCtxError> {

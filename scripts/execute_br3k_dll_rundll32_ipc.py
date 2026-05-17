@@ -1,3 +1,8 @@
+# =============================================================================
+# IMPORTANT USAGE NOTICE
+# 1. Use only for authorized, non-malicious education, research, and testing.
+# =============================================================================
+
 import subprocess
 import br3k
 
@@ -20,5 +25,3 @@ if __name__ == "__main__":
 
     script_data = br3k.FileMapping(SCRIPT_FILEPATH)
     ipc.send_data(script_data.bytes())
-
-    br3k.script_success()

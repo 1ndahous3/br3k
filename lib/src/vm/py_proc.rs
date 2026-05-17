@@ -101,7 +101,8 @@ pub struct Process {
 
     pub process_open_strategy: RefCell<Option<api_strategy::ProcessOpenStrategy>>,
     pub thread_open_strategy: RefCell<Option<api_strategy::ThreadOpenStrategy>>,
-    pub process_vm_strategy: RefCell<Option<api_strategy::ProcessVmStrategy>>,
+    pub process_vm_read_strategy: RefCell<Option<api_strategy::ProcessVmReadStrategy>>,
+    pub process_vm_write_strategy: RefCell<Option<api_strategy::ProcessVmWriteStrategy>>,
 
     pub process_handle: RefCell<sysapi::UniqueHandle>,
     pub thread: RefCell<Option<PyRef<Thread>>>,
@@ -121,7 +122,9 @@ pub struct ProcessNewArgs {
     #[pyarg(named, optional)]
     section_handle: OptionalArg<PyRef<Handle>>,
     #[pyarg(named, optional)]
-    process_vm_strategy: OptionalArg<u32>,
+    process_vm_read_strategy: OptionalArg<u32>,
+    #[pyarg(named, optional)]
+    process_vm_write_strategy: OptionalArg<u32>,
     #[pyarg(named, optional)]
     process_open_strategy: OptionalArg<u32>,
     #[pyarg(named, optional)]
@@ -162,11 +165,18 @@ impl Constructor for Process {
 
         let invalid_strategy = |name: &str| vm.new_value_error(format!("Invalid {name}"));
 
-        let process_vm_strategy = args
-            .process_vm_strategy
+        let process_vm_read_strategy = args
+            .process_vm_read_strategy
             .into_option()
-            .map(|v| api_strategy::ProcessVmStrategy::from_repr(v)
-                .ok_or_else(|| invalid_strategy("ProcessVmStrategy")))
+            .map(|v| api_strategy::ProcessVmReadStrategy::from_repr(v)
+                .ok_or_else(|| invalid_strategy("ProcessVmReadStrategy")))
+            .transpose()?;
+
+        let process_vm_write_strategy = args
+            .process_vm_write_strategy
+            .into_option()
+            .map(|v| api_strategy::ProcessVmWriteStrategy::from_repr(v)
+                .ok_or_else(|| invalid_strategy("ProcessVmWriteStrategy")))
             .transpose()?;
 
         let process_open_strategy = args
@@ -187,7 +197,8 @@ impl Constructor for Process {
             pid: pid.into(),
             image_path: image_path.into(),
             section_handle: section_handle.into(),
-            process_vm_strategy: process_vm_strategy.into(),
+            process_vm_read_strategy: process_vm_read_strategy.into(),
+            process_vm_write_strategy: process_vm_write_strategy.into(),
             process_open_strategy: process_open_strategy.into(),
             thread_open_strategy: thread_open_strategy.into(),
             process_handle: sysapi::null_handle().into(),
@@ -314,25 +325,33 @@ impl Process {
 
     #[pymethod]
     fn init_memory(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let mut process_vm_strategy = self.process_vm_strategy.borrow_mut();
-        let missing_strategy = || vm.new_value_error("Process VM strategy is not set".to_string());
-        let process_vm_strategy = process_vm_strategy.as_mut()
-            .ok_or_else(missing_strategy)?;
+        let process_vm_read_strategy = self.process_vm_read_strategy.borrow().clone();
+        let process_vm_write_strategy = self.process_vm_write_strategy.borrow().clone();
+
+        if process_vm_read_strategy.is_none() && process_vm_write_strategy.is_none() {
+            return Err(vm.new_value_error("Process VM read or write strategy is not set".to_string()));
+        }
 
         let process_handle = **self.process_handle.borrow();
 
-        let memory = match process_vm_strategy {
-            api_strategy::ProcessVmStrategy::AllocateInAddr => api_strategy::ProcessMemory::init_allocate_in_addr(process_handle),
-            api_strategy::ProcessVmStrategy::CreateSectionMap => api_strategy::ProcessMemory::init_create_section_map(process_handle),
-            api_strategy::ProcessVmStrategy::CreateSectionMapLocalMap => {
-                api_strategy::ProcessMemory::init_create_section_map_local_map(process_handle)
-            }
-            api_strategy::ProcessVmStrategy::LiveDumpParse => api_strategy::ProcessMemory::init_live_dump_parse(*self.pid.borrow()),
-        };
+        if process_vm_read_strategy == Some(api_strategy::ProcessVmReadStrategy::LiveDumpParse) {
+            sysapi::adjust_privilege(windef::ntseapi::SE_DEBUG_PRIVILEGE)
+                .map_err(map_to_py_system_error(vm, "Unable to get debug privilege"))?;
+        }
 
-        let strategy_error = |e| to_py_system_error(vm, &format!("Failed to initialize process vm strategy {process_vm_strategy:?}"), e);
-        let memory = memory
-            .map_err(strategy_error)?;
+        let memory = api_strategy::ProcessMemory::init(
+            process_vm_read_strategy.as_ref(),
+            process_vm_write_strategy.as_ref(),
+            process_handle,
+            *self.pid.borrow()
+        )
+        .map_err(|e| {
+            to_py_system_error(
+                vm,
+                &format!("Failed to initialize process VM strategies read={process_vm_read_strategy:?}, write={process_vm_write_strategy:?}"),
+                e,
+            )
+        })?;
 
         self.memory.replace(Some(memory));
         Ok(())

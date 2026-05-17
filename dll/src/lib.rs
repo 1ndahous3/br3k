@@ -47,7 +47,7 @@ extern "system" fn main() {
                         };
 
                         let vm = vm::Vm::default();
-                        match vm.execute_script(&script, None) {
+                        match vm.execute_script(&script, None, &None) {
                             Ok(_) => log::info!("Script executed successfully"),
                             Err(_) => log::error!("Error executing script"),
                         }
@@ -102,10 +102,7 @@ extern "system" fn DllMain(dll_module: HINSTANCE, call_reason: u32, _: *mut ()) 
 
             logging::log_header();
 
-            if let Err(e) = sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions {
-                ntdll_copy: false,
-                ntdll_alt_api: false,
-            }) {
+            if let Err(e) = sysapi_ctx::SysApiCtx::init(sysapi_ctx::InitOptions::default()) {
                 log::error!("Unable to initialize system API context: {e}");
                 finish_payload();
                 return false;

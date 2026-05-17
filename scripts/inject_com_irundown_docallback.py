@@ -1,5 +1,10 @@
+# =============================================================================
+# IMPORTANT USAGE NOTICE
+# 1. Use only for authorized, non-malicious education, research, and testing.
+# =============================================================================
+
 import br3k
-from br3k import ProcessOpenStrategy, ProcessVmStrategy
+from br3k import ProcessOpenStrategy, ProcessVmReadStrategy
 
 PROCESS_NAME = "notepad.exe"
 
@@ -11,7 +16,7 @@ if __name__ == "__main__":
 
     process = br3k.Process(
         name=PROCESS_NAME,
-        process_vm_strategy=ProcessVmStrategy.AllocateInAddr,
+        process_vm_read_strategy=ProcessVmReadStrategy.ReadVirtualMemory,
         process_open_strategy=ProcessOpenStrategy.OpenProcess
     )
 
@@ -43,5 +48,3 @@ if __name__ == "__main__":
 
     irundown.read_ipid_entries()
     irundown.execute(ep=pfn_messagebox, arg1=0)
-
-    br3k.script_success()
