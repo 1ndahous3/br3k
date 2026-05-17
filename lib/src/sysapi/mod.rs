@@ -126,7 +126,11 @@ fn require_sys_api<T: Copy>(api: Option<T>, operation: &'static str) -> NtResult
             SysApiCtxError::DirectSyscall(DirectSyscallError::SyscallIdNotFound { .. }) => {
                 ntstatus::STATUS_PROCEDURE_NOT_FOUND
             }
-            SysApiCtxError::DirectSyscall(DirectSyscallError::Unsupported | DirectSyscallError::StubAllocationFailed { .. }) => {
+            SysApiCtxError::DirectSyscall(
+                DirectSyscallError::StubNotPrepared { .. } |
+                DirectSyscallError::StubAllocationFailed { .. } |
+                DirectSyscallError::StubInstructionCacheFlushFailed { .. }
+            ) => {
                 ntstatus::STATUS_NOT_SUPPORTED
             }
             _ => ntstatus::STATUS_UNSUCCESSFUL,
@@ -185,22 +189,7 @@ pub fn null_handle() -> UniqueHandle {
 }
 
 pub fn peb() -> ntpebteb::PPEB {
-    #[cfg(target_arch = "x86_64")]
-    {
-        unsafe {
-            let peb: u64;
-            arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
-            peb as _
-        }
-    }
-    #[cfg(target_arch = "x86")]
-    {
-        unsafe {
-            let peb: u32;
-            arch::asm!("mov {}, fs:[0x30]", out(reg) peb);
-            peb as _
-        }
-    }
+    unsafe { (*teb()).ProcessEnvironmentBlock }
 }
 
 pub fn teb() -> ntexapi::PTEB {
@@ -217,6 +206,14 @@ pub fn teb() -> ntexapi::PTEB {
         unsafe {
             let teb: u32;
             arch::asm!("mov {}, fs:[0x18]", out(reg) teb);
+            teb as _
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe {
+            let teb: usize;
+            arch::asm!("mov {}, x18", out(reg) teb);
             teb as _
         }
     }
@@ -1061,6 +1058,15 @@ pub fn protect_virtual_memory(base_address: PVOID, size: usize, protect: PAGE_PR
             protect,
             addr_of!(new_protect) as _,
         ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn flush_instruction_cache(process_handle: HANDLE, base_address: PVOID, length: usize) -> NtResult<()> {
+    unsafe {
+        let nt_flush_instruction_cache = require_sys_api(api_ctx::ntdll().NtFlushInstructionCache, "NtFlushInstructionCache")?;
+        let status = NTSTATUS(nt_flush_instruction_cache(process_handle, base_address, length));
 
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }

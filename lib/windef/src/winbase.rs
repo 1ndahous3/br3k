@@ -379,3 +379,6 @@ pub const CONTEXT_FULL: CONTEXT_FLAGS = windows_sys::Win32::System::Diagnostics:
 
 #[cfg(target_arch = "x86")]
 pub const CONTEXT_FULL: CONTEXT_FLAGS = windows_sys::Win32::System::Diagnostics::Debug::CONTEXT_FULL_X86;
+
+#[cfg(target_arch = "aarch64")]
+pub const CONTEXT_FULL: CONTEXT_FLAGS = windows_sys::Win32::System::Diagnostics::Debug::CONTEXT_FULL_ARM64;

@@ -7,17 +7,21 @@ use std::slice;
 use strum_macros::EnumString;
 
 use windows_sys::Win32::System::Memory::{
-    VirtualAlloc, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE,
+    MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE,
 };
+
+use windef::winbase::NT_CURRENT_PROCESS;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DirectSyscallError {
-    #[error("direct system calls are not supported on this architecture")]
-    Unsupported,
     #[error("unable to resolve direct system call id for {proc_name}")]
     SyscallIdNotFound { proc_name: &'static str },
+    #[error("direct system call stub is not prepared for {proc_name}")]
+    StubNotPrepared { proc_name: &'static str },
     #[error("unable to allocate direct system call stub for {proc_name}")]
     StubAllocationFailed { proc_name: &'static str },
+    #[error("unable to flush direct system call stub instruction cache for {proc_name}")]
+    StubInstructionCacheFlushFailed { proc_name: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
@@ -52,21 +56,57 @@ struct X86SyscallDescriptor {
     gateway: X86SyscallGateway,
 }
 
+#[cfg(target_arch = "aarch64")]
+const ARM64_RET: u32 = 0xd65f03c0;
+#[cfg(target_arch = "aarch64")]
+const ARM64_SVC_BASE: u32 = 0xd4000001;
+#[cfg(target_arch = "aarch64")]
+const ARM64_SVC_MASK: u32 = 0xffe0001f;
+
 impl DirectSyscallStubs {
     pub(crate) fn new() -> Self {
         Self { stubs: RefCell::new(HashMap::new()) }
     }
 
-    pub(crate) fn get<T: Copy>(&self, proc_name: &'static str, api: T) -> Result<T, DirectSyscallError> {
-        let mut stubs = self.stubs.borrow_mut();
+    pub(crate) fn get<T: Copy>(&self, proc_name: &'static str, _api: T) -> Result<T, DirectSyscallError> {
+        let stubs = self.stubs.borrow();
+        let stub = stubs
+            .get(proc_name)
+            .ok_or(DirectSyscallError::StubNotPrepared { proc_name })?;
 
-        if let Some(stub) = stubs.get(proc_name) {
-            return Ok(unsafe { mem::transmute_copy(stub) });
-        }
+        Ok(unsafe { mem::transmute_copy(stub) })
+    }
+
+    pub(crate) fn prepare<T: Copy>(&self, proc_name: &'static str, api: T) -> Result<(), DirectSyscallError> {
+        let mut stubs = self.stubs.borrow_mut();
 
         let stub = Self::create_stub(proc_name, api)?;
         stubs.insert(proc_name, stub);
-        Ok(unsafe { mem::transmute_copy(&stub) })
+        Ok(())
+    }
+
+    fn allocate_stub(proc_name: &'static str, stub: &[u8]) -> Result<PVOID, DirectSyscallError> {
+        let allocation = super::allocate_virtual_memory(
+            stub.len(),
+            PAGE_EXECUTE_READWRITE,
+            NT_CURRENT_PROCESS,
+            ptr::null_mut(),
+            MEM_COMMIT | MEM_RESERVE,
+        )
+            .map_err(|_| DirectSyscallError::StubAllocationFailed { proc_name })?;
+
+        unsafe {
+            ptr::copy_nonoverlapping(stub.as_ptr(), allocation as *mut u8, stub.len());
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            if super::flush_instruction_cache(NT_CURRENT_PROCESS, allocation as _, stub.len()).is_err() {
+                return Err(DirectSyscallError::StubInstructionCacheFlushFailed { proc_name });
+            }
+        }
+
+        Ok(allocation as _)
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -83,23 +123,7 @@ impl DirectSyscallStubs {
         ];
         stub[4..8].copy_from_slice(&syscall_id.to_le_bytes());
 
-        let allocation = unsafe {
-            VirtualAlloc(
-                ptr::null_mut(),
-                stub.len(),
-                MEM_COMMIT | MEM_RESERVE,
-                PAGE_EXECUTE_READWRITE,
-            )
-        };
-        if allocation.is_null() {
-            return Err(DirectSyscallError::StubAllocationFailed { proc_name });
-        }
-
-        unsafe {
-            ptr::copy_nonoverlapping(stub.as_ptr(), allocation as *mut u8, stub.len());
-        }
-
-        Ok(allocation as _)
+        Self::allocate_stub(proc_name, &stub)
     }
 
     #[cfg(target_arch = "x86")]
@@ -135,28 +159,21 @@ impl DirectSyscallStubs {
             stub.extend_from_slice(&descriptor.stack_cleanup.to_le_bytes());
         }
 
-        let allocation = unsafe {
-            VirtualAlloc(
-                ptr::null_mut(),
-                stub.len(),
-                MEM_COMMIT | MEM_RESERVE,
-                PAGE_EXECUTE_READWRITE,
-            )
-        };
-        if allocation.is_null() {
-            return Err(DirectSyscallError::StubAllocationFailed { proc_name });
-        }
-
-        unsafe {
-            ptr::copy_nonoverlapping(stub.as_ptr(), allocation as *mut u8, stub.len());
-        }
-
-        Ok(allocation as _)
+        Self::allocate_stub(proc_name, &stub)
     }
 
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
-    fn create_stub<T: Copy>(_proc_name: &'static str, _api: T) -> Result<PVOID, DirectSyscallError> {
-        Err(DirectSyscallError::Unsupported)
+    #[cfg(target_arch = "aarch64")]
+    fn create_stub<T: Copy>(proc_name: &'static str, api: T) -> Result<PVOID, DirectSyscallError> {
+        let api: PVOID = unsafe { mem::transmute_copy(&api) };
+        let syscall_id = Self::arm64_syscall_id_from_stub(api)
+            .ok_or(DirectSyscallError::SyscallIdNotFound { proc_name })?;
+
+        let svc = ARM64_SVC_BASE | ((syscall_id & 0xffff) << 5);
+        let mut stub = [0u8; 8];
+        stub[0..4].copy_from_slice(&svc.to_le_bytes());
+        stub[4..8].copy_from_slice(&ARM64_RET.to_le_bytes());
+
+        Self::allocate_stub(proc_name, &stub)
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -270,5 +287,33 @@ impl DirectSyscallStubs {
         }
 
         None
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn arm64_syscall_id_from_stub(api: PVOID) -> Option<u32> {
+        unsafe {
+            let stub = slice::from_raw_parts(api as *const u8, 32);
+
+            for offset in (0..=(stub.len().saturating_sub(8))).step_by(4) {
+                let instruction = u32::from_le_bytes([
+                    stub[offset],
+                    stub[offset + 1],
+                    stub[offset + 2],
+                    stub[offset + 3],
+                ]);
+                let next_instruction = u32::from_le_bytes([
+                    stub[offset + 4],
+                    stub[offset + 5],
+                    stub[offset + 6],
+                    stub[offset + 7],
+                ]);
+
+                if instruction & ARM64_SVC_MASK == ARM64_SVC_BASE && next_instruction == ARM64_RET {
+                    return Some((instruction >> 5) & 0xffff);
+                }
+            }
+
+            None
+        }
     }
 }

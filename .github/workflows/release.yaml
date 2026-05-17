@@ -11,7 +11,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [x86_64-pc-windows-msvc, i686-pc-windows-msvc]
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x86_64
+          - target: i686-pc-windows-msvc
+            arch: i686
+          - target: aarch64-pc-windows-msvc
+            arch: aarch64
 
     steps:
       - name: Checkout
@@ -34,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           $Target = "${{ matrix.target }}"
-          $Arch = if ($Target -eq "x86_64-pc-windows-msvc") { "x86_64" } else { "i686" }
+          $Arch = "${{ matrix.arch }}"
 
           $TargetDir = "target\$Target\release"
 

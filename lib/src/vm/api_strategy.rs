@@ -555,6 +555,25 @@ fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(thread_handle: HA
     Ok(())
 }
 
+#[cfg(target_arch = "aarch64")]
+fn thread_set_ep<const IS_NEW_THREAD: bool, const IS_64: bool>(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
+    if !IS_64 {
+        return Err(NTSTATUS(ntstatus::STATUS_NOT_IMPLEMENTED).into());
+    }
+
+    let mut context = sysapi::get_thread_context(thread_handle)?;
+
+    if IS_NEW_THREAD {
+        context.Anonymous.Anonymous.X0 = exec_address as _;
+    } else {
+        context.Pc = exec_address as _;
+    }
+
+    sysapi::set_thread_context(thread_handle, &context)?;
+
+    Ok(())
+}
+
 pub fn new_thread_set_ep_x64(thread_handle: HANDLE, exec_address: PVOID) -> sysapi::NtResult<()> {
     thread_set_ep::<true, true>(thread_handle, exec_address)
 }

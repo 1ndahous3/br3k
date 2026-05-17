@@ -48,6 +48,7 @@ pub struct NtDllApi {
     pub NtReadVirtualMemory: Option<ntmmapi::PFN_NtReadVirtualMemory>,
     pub NtWriteVirtualMemory: Option<ntmmapi::PFN_NtWriteVirtualMemory>,
     pub NtProtectVirtualMemory: Option<ntmmapi::PFN_NtProtectVirtualMemory>,
+    pub NtFlushInstructionCache: Option<ntmmapi::PFN_NtFlushInstructionCache>,
     pub NtCreateSection: Option<ntmmapi::PFN_NtCreateSection>,
     pub NtMapViewOfSection: Option<ntmmapi::PFN_NtMapViewOfSection>,
     pub NtUnmapViewOfSection: Option<ntmmapi::PFN_NtUnmapViewOfSection>,
@@ -213,6 +214,7 @@ impl NtDllApi {
                 NtReadVirtualMemory: Self::get_proc_address(module, "NtReadVirtualMemory"),
                 NtWriteVirtualMemory: Self::get_proc_address(module, "NtWriteVirtualMemory"),
                 NtProtectVirtualMemory: Self::get_proc_address(module, "NtProtectVirtualMemory"),
+                NtFlushInstructionCache: Self::get_proc_address(module, "NtFlushInstructionCache"),
                 NtCreateSection: Self::get_proc_address(module, "NtCreateSection"),
                 NtMapViewOfSection: Self::get_proc_address(module, "NtMapViewOfSection"),
                 NtUnmapViewOfSection: Self::get_proc_address(module, "NtUnmapViewOfSection"),
@@ -328,20 +330,93 @@ impl SysApiCtx {
 
         SYSAPI.store(Box::into_raw(Box::new(ctx_native)), Ordering::Relaxed);
 
-        // we had to initialize the original API first to use sysapi during loading copy
-        if opts.sys_api_backend.uses_dll_copy() {
+        // Keep a Dll-backed context current while building backends that need sysapi during init.
+        if opts.sys_api_backend != SysApiBackend::Dll {
+            let ntdll = NtDllApi::new(&opts)?;
+            let win32u = Win32uApi::new(&opts)?;
+            let direct_syscall_stubs = DirectSyscallStubs::new();
+
+            if opts.sys_api_backend == SysApiBackend::DirectSyscall {
+                Self::prepare_direct_syscall_stubs(&direct_syscall_stubs, &ntdll, &win32u)?;
+            }
+
             let ctx = SysApiCtx {
                 ntstatus_decoder: ntstatus::create_ntstatus_decoder(),
                 proc_addresses: RefCell::new(HashMap::new()),
-                ntdll: NtDllApi::new(&opts)?,
-                win32u: Win32uApi::new(&opts)?,
-                direct_syscall_stubs: DirectSyscallStubs::new(),
+                ntdll,
+                win32u,
+                direct_syscall_stubs,
                 sys_api_backend: opts.sys_api_backend,
                 sys_api_dispatch: opts.sys_api_dispatch,
             };
 
             SYSAPI.store(Box::into_raw(Box::new(ctx)), Ordering::Relaxed);
         }
+
+        Ok(())
+    }
+
+    fn prepare_direct_syscall<T: Copy>(
+        stubs: &DirectSyscallStubs,
+        proc_name: &'static str,
+        api: Option<T>,
+    ) -> Result<(), SysApiCtxError> {
+        if let Some(api) = api {
+            stubs.prepare(proc_name, api)?;
+        }
+
+        Ok(())
+    }
+
+    fn prepare_direct_syscall_stubs(
+        stubs: &DirectSyscallStubs,
+        ntdll: &NtDllApi,
+        win32u: &Win32uApi,
+    ) -> Result<(), SysApiCtxError> {
+        Self::prepare_direct_syscall(stubs, "NtClose", ntdll.NtClose)?;
+        Self::prepare_direct_syscall(stubs, "NtDuplicateObject", ntdll.NtDuplicateObject)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateUserProcess", ntdll.NtCreateUserProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateProcess", ntdll.NtCreateProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateProcessEx", ntdll.NtCreateProcessEx)?;
+        Self::prepare_direct_syscall(stubs, "NtQueryInformationProcess", ntdll.NtQueryInformationProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtOpenProcess", ntdll.NtOpenProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtGetNextThread", ntdll.NtGetNextThread)?;
+        Self::prepare_direct_syscall(stubs, "NtOpenThread", ntdll.NtOpenThread)?;
+        Self::prepare_direct_syscall(stubs, "NtQuerySystemInformation", ntdll.NtQuerySystemInformation)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateThread", ntdll.NtCreateThread)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateThreadEx", ntdll.NtCreateThreadEx)?;
+        Self::prepare_direct_syscall(stubs, "NtSuspendThread", ntdll.NtSuspendThread)?;
+        Self::prepare_direct_syscall(stubs, "NtResumeThread", ntdll.NtResumeThread)?;
+        Self::prepare_direct_syscall(stubs, "NtQueryInformationThread", ntdll.NtQueryInformationThread)?;
+        Self::prepare_direct_syscall(stubs, "NtGetContextThread", ntdll.NtGetContextThread)?;
+        Self::prepare_direct_syscall(stubs, "NtSetContextThread", ntdll.NtSetContextThread)?;
+        Self::prepare_direct_syscall(stubs, "NtSetInformationThread", ntdll.NtSetInformationThread)?;
+        Self::prepare_direct_syscall(stubs, "NtAllocateVirtualMemory", ntdll.NtAllocateVirtualMemory)?;
+        Self::prepare_direct_syscall(stubs, "NtAllocateVirtualMemoryEx", ntdll.NtAllocateVirtualMemoryEx)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateSection", ntdll.NtCreateSection)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateSectionEx", ntdll.NtCreateSectionEx)?;
+        Self::prepare_direct_syscall(stubs, "NtMapViewOfSection", ntdll.NtMapViewOfSection)?;
+        Self::prepare_direct_syscall(stubs, "NtMapViewOfSectionEx", ntdll.NtMapViewOfSectionEx)?;
+        Self::prepare_direct_syscall(stubs, "NtUnmapViewOfSection", ntdll.NtUnmapViewOfSection)?;
+        Self::prepare_direct_syscall(stubs, "NtUnmapViewOfSectionEx", ntdll.NtUnmapViewOfSectionEx)?;
+        Self::prepare_direct_syscall(stubs, "NtProtectVirtualMemory", ntdll.NtProtectVirtualMemory)?;
+        Self::prepare_direct_syscall(stubs, "NtFlushInstructionCache", ntdll.NtFlushInstructionCache)?;
+        Self::prepare_direct_syscall(stubs, "NtWriteVirtualMemory", ntdll.NtWriteVirtualMemory)?;
+        Self::prepare_direct_syscall(stubs, "NtReadVirtualMemory", ntdll.NtReadVirtualMemory)?;
+        Self::prepare_direct_syscall(stubs, "NtReadVirtualMemoryEx", ntdll.NtReadVirtualMemoryEx)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateTransaction", ntdll.NtCreateTransaction)?;
+        Self::prepare_direct_syscall(stubs, "NtRollbackTransaction", ntdll.NtRollbackTransaction)?;
+        Self::prepare_direct_syscall(stubs, "NtQueueApcThread", ntdll.NtQueueApcThread)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateEvent", ntdll.NtCreateEvent)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateNamedPipeFile", ntdll.NtCreateNamedPipeFile)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateFile", ntdll.NtCreateFile)?;
+        Self::prepare_direct_syscall(stubs, "NtWriteFile", ntdll.NtWriteFile)?;
+        Self::prepare_direct_syscall(stubs, "NtReadFile", ntdll.NtReadFile)?;
+        Self::prepare_direct_syscall(stubs, "NtQueryInformationFile", ntdll.NtQueryInformationFile)?;
+        Self::prepare_direct_syscall(stubs, "NtSystemDebugControl", ntdll.NtSystemDebugControl)?;
+        Self::prepare_direct_syscall(stubs, "NtQueryObject", ntdll.NtQueryObject)?;
+        Self::prepare_direct_syscall(stubs, "NtWaitForSingleObject", ntdll.NtWaitForSingleObject)?;
+        Self::prepare_direct_syscall(stubs, "NtUserGetWindowProcessHandle", win32u.NtUserGetWindowProcessHandle)?;
 
         Ok(())
     }

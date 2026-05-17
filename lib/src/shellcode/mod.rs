@@ -26,7 +26,13 @@ pub fn is_aligned(value: usize, bits: u32) -> bool {
 }
 
 pub fn messageboxw() -> Vec<u8> {
+    #[cfg(target_arch = "aarch64")]
+    let shellcode = include_bytes!("MessageBoxA_arm64.bin");
+    #[cfg(target_arch = "x86_64")]
     let shellcode = include_bytes!("MessageBoxA.bin");
+    #[cfg(target_arch = "x86")]
+    let shellcode = include_bytes!("MessageBoxA.bin");
+
     let mut data = Vec::with_capacity(shellcode.len());
     data.extend_from_slice(shellcode);
     data
