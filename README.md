@@ -2,11 +2,10 @@
 
 **br3k** is a mini-framework for Windows pentesting, designed to implement non-standard scenarios and combine interesting methods.
 
-Its core provides many options to vary the pentest flow: select strategies to open a target process, read/write its memory, use different low-level API variants, and so on.
+It provides many options to vary the pentest flow: selecting different strategies, choosing the system API backend, and configuring dispatch for specific low-level functions.
+Some features are documented in [core](docs/core.md) notes.
 
-There are many well-known pentest techniques (process injection, payload delivery between targets) and other scripts implemented (see [scripts](docs/scripts.md) notes).
-
-Some features are briefly documented in [core](docs/core.md) notes.
+The repository includes many well-known pentest techniques (process injection, payload delivery between targets) and other scripts (see [scripts](docs/scripts.md) notes).
 
 ## Usage Notice
 

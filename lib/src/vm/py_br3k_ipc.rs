@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use windef::ntstatus;
 
-use crate::ipc;
+use crate::br3k_ipc;
 use crate::sysapi;
 use crate::vm;
 use crate::{slog_info, slog_warn};
@@ -14,7 +14,7 @@ use crate::{slog_info, slog_warn};
 use vm::py_proc::Process;
 
 #[derive(FromArgs)]
-pub struct IpcNewArgs {
+pub struct Br3kIPCNewArgs {
     #[pyarg(any)]
     process: PyRef<Process>,
 }
@@ -25,15 +25,15 @@ pub struct SendDataArgs {
     data: Vec<u8>,
 }
 
-#[pyclass(module = false, name = "Ipc")]
+#[pyclass(module = false, name = "Br3kIPC")]
 #[derive(Debug, PyPayload)]
-pub struct Ipc {
+pub struct Br3kIPC {
     process: PyRef<Process>,
     pipe_handle: RefCell<sysapi::UniqueHandle>,
 }
 
-impl Constructor for Ipc {
-    type Args = IpcNewArgs;
+impl Constructor for Br3kIPC {
+    type Args = Br3kIPCNewArgs;
 
     fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
         Ok(Self {
@@ -44,13 +44,13 @@ impl Constructor for Ipc {
 }
 
 #[pyclass(with(Constructor))]
-impl Ipc {
+impl Br3kIPC {
     #[pymethod]
     pub fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
         let pid = *self.process.pid.borrow();
         slog_info!("Creating pipe for process, PID = {pid}");
 
-        let pipe_handle = ipc::create_pipe(pid)
+        let pipe_handle = br3k_ipc::create_pipe(pid)
             .map_err(map_to_py_system_error(vm, "Unable to create pipe"))?;
 
         self.pipe_handle.replace(pipe_handle);
@@ -62,7 +62,7 @@ impl Ipc {
         let pipe_handle = self.pipe_handle.borrow();
 
         for _ in 0..10 {
-            return match ipc::send_data(**pipe_handle, args.data.as_slice()) {
+            return match br3k_ipc::send_data(**pipe_handle, args.data.as_slice()) {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     if e.status.0 == ntstatus::STATUS_PIPE_LISTENING {
@@ -81,7 +81,7 @@ impl Ipc {
 
     #[pymethod]
     pub fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let pipe_handle = ipc::open_pipe(*self.process.pid.borrow())
+        let pipe_handle = br3k_ipc::open_pipe(*self.process.pid.borrow())
             .map_err(map_to_py_system_error(vm, "Unable to open pipe"))?;
 
         self.pipe_handle.replace(pipe_handle);

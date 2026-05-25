@@ -1,6 +1,6 @@
 mod prelude;
 pub mod sysapi;
-pub mod ipc;
+pub mod br3k_ipc;
 mod str;
 pub mod fs;
 mod kdump;

@@ -16,7 +16,10 @@ use self::ctx::{
     CreateSection,
     CreateThread,
     MapViewOfSection,
+    QueueApcThread,
     ReadVirtualMemory,
+    SetInformation_Delete,
+    SetInformation_Rename,
     UnmapViewOfSection,
     SysApiCtxError,
 };
@@ -47,10 +50,11 @@ use windows_sys::Win32::System::Memory::{
     SECTION_FLAGS, SECTION_MAP_EXECUTE, SECTION_MAP_READ, SECTION_MAP_WRITE, SECTION_ALL_ACCESS
 };
 use windows_sys::Win32::Storage::FileSystem::{
+    DELETE,
     SYNCHRONIZE,
     FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
     FILE_READ_DATA, FILE_WRITE_DATA,
-    FILE_SHARE_READ, FILE_SHARE_WRITE
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE
 };
 
 use windef::*;
@@ -529,6 +533,69 @@ pub fn open_process(pid: u32, access_mask: u32) -> NtResult<UniqueHandle> {
     }
 }
 
+pub fn suspend_process(process_handle: HANDLE) -> NtResult<()> {
+    suspend_process_by_nt_suspend_process(process_handle)
+}
+
+pub fn suspend_process_by_nt_suspend_process(process_handle: HANDLE) -> NtResult<()> {
+    unsafe {
+        let nt_suspend_process = require_sys_api(api_ctx::ntdll().NtSuspendProcess, "NtSuspendProcess")?;
+        let status = NTSTATUS(nt_suspend_process(process_handle));
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn resume_process(process_handle: HANDLE) -> NtResult<()> {
+    resume_process_by_nt_resume_process(process_handle)
+}
+
+pub fn resume_process_by_nt_resume_process(process_handle: HANDLE) -> NtResult<()> {
+    unsafe {
+        let nt_resume_process = require_sys_api(api_ctx::ntdll().NtResumeProcess, "NtResumeProcess")?;
+        let status = NTSTATUS(nt_resume_process(process_handle));
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn suspend_process_by_state_change(process_handle: HANDLE) -> NtResult<()> {
+    change_process_state(process_handle, ntpsapi::PROCESS_STATE_CHANGE_TYPE::ProcessStateChangeSuspend)
+}
+
+pub fn resume_process_by_state_change(process_handle: HANDLE) -> NtResult<()> {
+    change_process_state(process_handle, ntpsapi::PROCESS_STATE_CHANGE_TYPE::ProcessStateChangeResume)
+}
+
+fn change_process_state(process_handle: HANDLE, state_change_type: ntpsapi::PROCESS_STATE_CHANGE_TYPE) -> NtResult<()> {
+    unsafe {
+        let state_change_handle: HANDLE = ptr::null_mut();
+        let nt_create_process_state_change = require_sys_api(api_ctx::ntdll().NtCreateProcessStateChange, "NtCreateProcessStateChange")?;
+        let status = NTSTATUS(nt_create_process_state_change(
+            addr_of!(state_change_handle) as _,
+            ntpsapi::STATECHANGE_SET_ATTRIBUTES,
+            ptr::null_mut(),
+            process_handle,
+            0,
+        ));
+
+        if !status.is_ok() {
+            return Err(status.into());
+        }
+
+        let state_change_handle = wrap_handle(state_change_handle);
+        let nt_change_process_state = require_sys_api(api_ctx::ntdll().NtChangeProcessState, "NtChangeProcessState")?;
+        let status = NTSTATUS(nt_change_process_state(
+            *state_change_handle,
+            process_handle,
+            state_change_type,
+            ptr::null_mut(),
+            0,
+            0,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
 pub fn open_next_thread(process_handle: HANDLE, thread_handle: HANDLE, access_mask: winbase::ACCESS_MASK) -> NtResult<UniqueHandle> {
     unsafe {
         let new_thread_handle: HANDLE = ptr::null_mut();
@@ -758,6 +825,10 @@ pub fn create_thread(process_handle: HANDLE, start_address: PVOID, arg: Option<P
 }
 
 pub fn suspend_thread(thread_handle: HANDLE) -> NtResult<()> {
+    suspend_thread_by_nt_suspend_thread(thread_handle)
+}
+
+pub fn suspend_thread_by_nt_suspend_thread(thread_handle: HANDLE) -> NtResult<()> {
     unsafe {
         let nt_suspend_thread = require_sys_api(api_ctx::ntdll().NtSuspendThread, "NtSuspendThread")?;
         let status = NTSTATUS(nt_suspend_thread(thread_handle, ptr::null_mut()));
@@ -766,9 +837,52 @@ pub fn suspend_thread(thread_handle: HANDLE) -> NtResult<()> {
 }
 
 pub fn resume_thread(thread_handle: HANDLE) -> NtResult<()> {
+    resume_thread_by_nt_resume_thread(thread_handle)
+}
+
+pub fn resume_thread_by_nt_resume_thread(thread_handle: HANDLE) -> NtResult<()> {
     unsafe {
         let nt_resume_thread = require_sys_api(api_ctx::ntdll().NtResumeThread, "NtResumeThread")?;
         let status = NTSTATUS(nt_resume_thread(thread_handle, ptr::null_mut()));
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn suspend_thread_by_state_change(thread_handle: HANDLE) -> NtResult<()> {
+    change_thread_state(thread_handle, ntpsapi::THREAD_STATE_CHANGE_TYPE::ThreadStateChangeSuspend)
+}
+
+pub fn resume_thread_by_state_change(thread_handle: HANDLE) -> NtResult<()> {
+    change_thread_state(thread_handle, ntpsapi::THREAD_STATE_CHANGE_TYPE::ThreadStateChangeResume)
+}
+
+fn change_thread_state(thread_handle: HANDLE, state_change_type: ntpsapi::THREAD_STATE_CHANGE_TYPE) -> NtResult<()> {
+    unsafe {
+        let state_change_handle: HANDLE = ptr::null_mut();
+        let nt_create_thread_state_change = require_sys_api(api_ctx::ntdll().NtCreateThreadStateChange, "NtCreateThreadStateChange")?;
+        let status = NTSTATUS(nt_create_thread_state_change(
+            addr_of!(state_change_handle) as _,
+            ntpsapi::STATECHANGE_SET_ATTRIBUTES,
+            ptr::null_mut(),
+            thread_handle,
+            0,
+        ));
+
+        if !status.is_ok() {
+            return Err(status.into());
+        }
+
+        let state_change_handle = wrap_handle(state_change_handle);
+        let nt_change_thread_state = require_sys_api(api_ctx::ntdll().NtChangeThreadState, "NtChangeThreadState")?;
+        let status = NTSTATUS(nt_change_thread_state(
+            *state_change_handle,
+            thread_handle,
+            state_change_type,
+            ptr::null_mut(),
+            0,
+            0,
+        ));
+
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
 }
@@ -1193,14 +1307,41 @@ pub fn queue_apc_thread(
     apc_argument3: PVOID,
 ) -> NtResult<()> {
     unsafe {
-        let nt_queue_apc_thread = require_sys_api(api_ctx::ntdll().NtQueueApcThread, "NtQueueApcThread")?;
-        let status = NTSTATUS(nt_queue_apc_thread(
-            thread_handle,
-            apc_routine,
-            apc_argument1,
-            apc_argument2,
-            apc_argument3)
-        );
+        let status = match api_ctx::sys_api_dispatch().queue_apc_thread {
+            QueueApcThread::NtQueueApcThread => {
+                let nt_queue_apc_thread = require_sys_api(api_ctx::ntdll().NtQueueApcThread, "NtQueueApcThread")?;
+                NTSTATUS(nt_queue_apc_thread(
+                    thread_handle,
+                    apc_routine,
+                    apc_argument1,
+                    apc_argument2,
+                    apc_argument3
+                ))
+            }
+            QueueApcThread::NtQueueApcThreadEx => {
+                let nt_queue_apc_thread_ex = require_sys_api(api_ctx::ntdll().NtQueueApcThreadEx, "NtQueueApcThreadEx")?;
+                NTSTATUS(nt_queue_apc_thread_ex(
+                    thread_handle,
+                    ptr::null_mut(),
+                    apc_routine,
+                    apc_argument1,
+                    apc_argument2,
+                    apc_argument3
+                ))
+            }
+            QueueApcThread::NtQueueApcThreadEx2 => {
+                let nt_queue_apc_thread_ex2 = require_sys_api(api_ctx::ntdll().NtQueueApcThreadEx2, "NtQueueApcThreadEx2")?;
+                NTSTATUS(nt_queue_apc_thread_ex2(
+                    thread_handle,
+                    ptr::null_mut(),
+                    ntpsapi::QUEUE_USER_APC_FLAGS_NONE,
+                    apc_routine,
+                    apc_argument1,
+                    apc_argument2,
+                    apc_argument3
+                ))
+            }
+        };
 
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
@@ -1304,6 +1445,55 @@ pub fn open_named_pipe(name: &str) -> NtResult<UniqueHandle> {
 }
 
 pub fn open_file(path: &str) -> NtResult<UniqueHandle> {
+    open_file_by_nt_create_file(
+        path,
+        FILE_GENERIC_READ,
+        FILE_SHARE_READ,
+        ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT
+    )
+}
+
+pub fn open_file_by_nt_open_file(
+    path: &str,
+    access_mask: u32,
+    share_access: u32,
+    open_options: u32,
+) -> NtResult<UniqueHandle> {
+    unsafe {
+        let nt_path = format!("\\??\\{path}");
+        let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_path) as _,
+            Attributes: ntdef::OBJ_CASE_INSENSITIVE,
+            ..Default::default()
+        };
+
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_handle: HANDLE = ptr::null_mut();
+
+        let nt_open_file = require_sys_api(api_ctx::ntdll().NtOpenFile, "NtOpenFile")?;
+        let status = NTSTATUS(nt_open_file(
+            addr_of!(file_handle) as _,
+            access_mask,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            share_access,
+            open_options,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(file_handle)) }
+    }
+}
+
+pub fn open_file_by_nt_create_file(
+    path: &str,
+    access_mask: u32,
+    share_access: u32,
+    create_options: u32,
+) -> NtResult<UniqueHandle> {
     unsafe {
         let nt_path = format!("\\??\\{path}");
         let nt_path = U16CString::from_str(nt_path).unwrap();
@@ -1322,19 +1512,301 @@ pub fn open_file(path: &str) -> NtResult<UniqueHandle> {
         let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
         let status = NTSTATUS(nt_create_file(
             addr_of!(file_handle) as _,
-            FILE_GENERIC_READ,
+            access_mask,
             addr_of!(object_attributes) as _,
             addr_of!(io_status_block) as _,
             ptr::null_mut(),
             FILE_ATTRIBUTE_NORMAL,
-            FILE_SHARE_READ,
+            share_access,
+            ntioapi::FILE_OPEN,
+            create_options,
+            ptr::null_mut(),
+            0,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(file_handle)) }
+    }
+}
+
+pub fn delete_file(path: &str) -> NtResult<()> {
+    delete_file_by_nt_delete_file(path)
+}
+
+pub fn delete_file_by_nt_delete_file(path: &str) -> NtResult<()> {
+    unsafe {
+        let nt_path = format!("\\??\\{path}");
+        let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_path) as _,
+            Attributes: ntdef::OBJ_CASE_INSENSITIVE,
+            ..Default::default()
+        };
+
+        let nt_delete_file = require_sys_api(api_ctx::ntdll().NtDeleteFile, "NtDeleteFile")?;
+        let status = NTSTATUS(nt_delete_file(addr_of!(object_attributes) as _));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn delete_file_by_nt_open_file_delete_on_close(path: &str) -> NtResult<()> {
+    let _file_handle = open_file_by_nt_open_file(
+        path,
+        DELETE | SYNCHRONIZE,
+        FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+        ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT | ntioapi::FILE_DELETE_ON_CLOSE
+    )?;
+
+    Ok(())
+}
+
+pub fn delete_file_by_nt_create_file_delete_on_close(path: &str) -> NtResult<()> {
+    let _file_handle = open_file_by_nt_create_file(
+        path,
+        DELETE | SYNCHRONIZE,
+        FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+        ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT | ntioapi::FILE_DELETE_ON_CLOSE
+    )?;
+
+    Ok(())
+}
+
+pub fn delete_file_by_set_information_file(path: &str) -> NtResult<()> {
+    unsafe {
+        let nt_path = format!("\\??\\{path}");
+        let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_path) as _,
+            Attributes: ntdef::OBJ_CASE_INSENSITIVE,
+            ..Default::default()
+        };
+
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_handle: HANDLE = ptr::null_mut();
+
+        let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
+        let status = NTSTATUS(nt_create_file(
+            addr_of!(file_handle) as _,
+            DELETE | SYNCHRONIZE,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            ptr::null_mut(),
+            FILE_ATTRIBUTE_NORMAL,
+            FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
             ntioapi::FILE_OPEN,
             ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT,
             ptr::null_mut(),
             0,
         ));
 
-        if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(file_handle)) }
+        if !status.is_ok() {
+            return Err(status.into());
+        }
+
+        let file_handle = wrap_handle(file_handle);
+        set_file_delete_disposition(*file_handle)
+    }
+}
+
+fn set_file_delete_disposition(file_handle: HANDLE) -> NtResult<()> {
+    unsafe {
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let nt_set_information_file = require_sys_api(api_ctx::ntdll().NtSetInformationFile, "NtSetInformationFile")?;
+
+        let status = match api_ctx::sys_api_dispatch().set_information_delete {
+            SetInformation_Delete::FileDispositionInformation => {
+                let file_information = ntioapi::FILE_DISPOSITION_INFORMATION { DeleteFileW: 1 };
+                NTSTATUS(nt_set_information_file(
+                    file_handle,
+                    addr_of!(io_status_block) as _,
+                    addr_of!(file_information) as _,
+                    size_of::<ntioapi::FILE_DISPOSITION_INFORMATION>() as _,
+                    ntioapi::FILE_INFORMATION_CLASS::FileDispositionInformation,
+                ))
+            }
+            SetInformation_Delete::FileDispositionInformationEx => {
+                let file_information = winbase::FILE_DISPOSITION_INFORMATION_EX {
+                    Flags: winbase::FILE_DISPOSITION_DELETE,
+                };
+                NTSTATUS(nt_set_information_file(
+                    file_handle,
+                    addr_of!(io_status_block) as _,
+                    addr_of!(file_information) as _,
+                    size_of::<winbase::FILE_DISPOSITION_INFORMATION_EX>() as _,
+                    ntioapi::FILE_INFORMATION_CLASS::FileDispositionInformationEx,
+                ))
+            }
+        };
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn rename_file(path: &str, new_path: &str) -> NtResult<()> {
+    rename_file_by_rename(path, new_path)
+}
+
+pub fn rename_file_by_rename(path: &str, new_path: &str) -> NtResult<()> {
+    unsafe {
+        let nt_path = format!("\\??\\{path}");
+        let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_path) as _,
+            Attributes: ntdef::OBJ_CASE_INSENSITIVE,
+            ..Default::default()
+        };
+
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_handle: HANDLE = ptr::null_mut();
+
+        let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
+        let status = NTSTATUS(nt_create_file(
+            addr_of!(file_handle) as _,
+            DELETE | SYNCHRONIZE,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            ptr::null_mut(),
+            FILE_ATTRIBUTE_NORMAL,
+            FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ntioapi::FILE_OPEN,
+            ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT,
+            ptr::null_mut(),
+            0,
+        ));
+
+        if !status.is_ok() {
+            return Err(status.into());
+        }
+
+        let file_handle = wrap_handle(file_handle);
+        set_file_rename_information(*file_handle, new_path)
+    }
+}
+
+pub fn rename_file_by_copy_delete(path: &str, new_path: &str) -> NtResult<()> {
+    {
+        let (_, _, src_data) = fs::map_file(path)?;
+        let dst_file = create_file(new_path, FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, src_data.len())?;
+        write_file(*dst_file, src_data.as_ptr() as _, src_data.len())?;
+    }
+
+    delete_file(path)
+}
+
+pub fn zero_file_by_open_file(path: &str, file_open: impl FnOnce(&str) -> NtResult<UniqueHandle>) -> NtResult<()> {
+    let file_handle = file_open(path)?;
+    let file_size = get_file_size(*file_handle)?;
+    let zeroes = vec![0u8; 0x10000.min(file_size)];
+    let mut bytes_left = file_size;
+
+    while bytes_left > 0 {
+        let write_size = zeroes.len().min(bytes_left);
+        write_file(*file_handle, zeroes.as_ptr() as _, write_size)?;
+        bytes_left -= write_size;
+    }
+
+    Ok(())
+}
+
+pub fn zero_file_by_file_mapping(path: &str) -> NtResult<()> {
+    unsafe {
+        let file_handle = open_file_by_nt_create_file(
+            path,
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT
+        )?;
+        let file_size = get_file_size(*file_handle)?;
+
+        if file_size == 0 {
+            return Ok(());
+        }
+
+        let section_handle = create_file_section(
+            *file_handle,
+            SECTION_MAP_WRITE,
+            PAGE_READWRITE,
+            false,
+            None
+        )?;
+        let file_data = map_view_of_section(
+            *section_handle,
+            file_size,
+            PAGE_READWRITE,
+            NT_CURRENT_PROCESS,
+            ptr::null_mut()
+        )?;
+
+        ptr::write_bytes(file_data as *mut u8, 0, file_size);
+        unmap_view_of_section(file_data, NT_CURRENT_PROCESS)
+    }
+}
+
+fn set_file_rename_information(file_handle: HANDLE, new_path: &str) -> NtResult<()> {
+    unsafe {
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let nt_set_information_file = require_sys_api(api_ctx::ntdll().NtSetInformationFile, "NtSetInformationFile")?;
+        let nt_new_path = format!("\\??\\{new_path}");
+        let nt_new_path: Vec<u16> = nt_new_path.encode_utf16().collect();
+
+        let status = match api_ctx::sys_api_dispatch().set_information_rename {
+            SetInformation_Rename::FileRenameInformation => {
+                let file_name_offset = offset_of!(ntioapi::FILE_RENAME_INFORMATION, FileName);
+                let file_name_size = nt_new_path.len() * size_of::<u16>();
+                let mut file_information = vec![0u8; file_name_offset + file_name_size];
+                let file_information_ptr = file_information.as_mut_ptr() as *mut ntioapi::FILE_RENAME_INFORMATION;
+
+                (*file_information_ptr).RootDirectory = ptr::null_mut();
+                (*file_information_ptr).FileNameLength = file_name_size as _;
+                ptr::copy_nonoverlapping(
+                    nt_new_path.as_ptr(),
+                    (*file_information_ptr).FileName.as_mut_ptr(),
+                    nt_new_path.len()
+                );
+
+                NTSTATUS(nt_set_information_file(
+                    file_handle,
+                    addr_of!(io_status_block) as _,
+                    file_information.as_mut_ptr() as _,
+                    file_information.len() as _,
+                    ntioapi::FILE_INFORMATION_CLASS::FileRenameInformation,
+                ))
+            }
+            SetInformation_Rename::FileRenameInformationEx => {
+                let file_name_offset = offset_of!(ntioapi::FILE_RENAME_INFORMATION_EX, FileName);
+                let file_name_size = nt_new_path.len() * size_of::<u16>();
+                let mut file_information = vec![0u8; file_name_offset + file_name_size];
+                let file_information_ptr = file_information.as_mut_ptr() as *mut ntioapi::FILE_RENAME_INFORMATION_EX;
+
+                (*file_information_ptr).Flags = 0;
+                (*file_information_ptr).RootDirectory = ptr::null_mut();
+                (*file_information_ptr).FileNameLength = file_name_size as _;
+                ptr::copy_nonoverlapping(
+                    nt_new_path.as_ptr(),
+                    (*file_information_ptr).FileName.as_mut_ptr(),
+                    nt_new_path.len()
+                );
+
+                NTSTATUS(nt_set_information_file(
+                    file_handle,
+                    addr_of!(io_status_block) as _,
+                    file_information.as_mut_ptr() as _,
+                    file_information.len() as _,
+                    ntioapi::FILE_INFORMATION_CLASS::FileRenameInformationEx,
+                ))
+            }
+        };
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
 }
 

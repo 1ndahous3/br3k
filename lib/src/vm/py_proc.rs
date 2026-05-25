@@ -217,6 +217,18 @@ pub struct CreateUserArgs {
 }
 
 #[derive(FromArgs)]
+pub struct ProcessSuspendArgs {
+    #[pyarg(named, optional)]
+    process_suspend_strategy: OptionalArg<u32>,
+}
+
+#[derive(FromArgs)]
+pub struct ProcessResumeArgs {
+    #[pyarg(named, optional)]
+    process_resume_strategy: OptionalArg<u32>,
+}
+
+#[derive(FromArgs)]
 pub struct WriteMemoryArgs {
     #[pyarg(any)]
     data: Vec<u8>,
@@ -319,6 +331,46 @@ impl Process {
 
         self.process_handle.replace(process_handle);
         self.pid.replace(basic_info.UniqueProcessId as _);
+
+        Ok(())
+    }
+
+    #[pymethod]
+    fn suspend(&self, args: ProcessSuspendArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let process_handle = **self.process_handle.borrow();
+        if process_handle.is_null() {
+            return Err(vm.new_system_error("Process is not opened"));
+        }
+
+        let strategy = args.process_suspend_strategy
+            .into_option()
+            .map(|v| api_strategy::ProcessSuspendStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid ProcessSuspendStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::ProcessSuspendStrategy::NtSuspendProcess);
+
+        strategy.suspend(process_handle)
+            .map_err(map_to_py_system_error(vm, "Failed to suspend process"))?;
+
+        Ok(())
+    }
+
+    #[pymethod]
+    fn resume(&self, args: ProcessResumeArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let process_handle = **self.process_handle.borrow();
+        if process_handle.is_null() {
+            return Err(vm.new_system_error("Process is not opened"));
+        }
+
+        let strategy = args.process_resume_strategy
+            .into_option()
+            .map(|v| api_strategy::ProcessResumeStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid ProcessResumeStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::ProcessResumeStrategy::NtResumeProcess);
+
+        strategy.resume(process_handle)
+            .map_err(map_to_py_system_error(vm, "Failed to resume process"))?;
 
         Ok(())
     }

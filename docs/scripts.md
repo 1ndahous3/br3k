@@ -1,8 +1,8 @@
 # Scripts
 
-Example scripts can be found in the `scripts` directory. They demonstrate known techniques and provide small, editable starting points for experiments.
+Example scripts can be found in the `scripts` directory. This collection contains only examples of some well-known techniques and does not cover all the capabilities of the framework. They provide small, editable starting points for experiments.
 
-Test-oriented scenarios live in the `tests` directory and are intended to be launched with explicit config globals, for example through the CLI `--config` option.
+Test-oriented scenarios live in the `tests` directory and are intended to be launched with explicit config globals, for example through the CLI `--config` option. Config files are YAML documents with a top-level `variables` object.
 
 ## Injection
 
@@ -17,6 +17,7 @@ Test-oriented scenarios live in the `tests` directory and are intended to be lau
 | Early Bird APC injection | `scripts/inject_queue_apc_early_bird.py` | Create suspended process -> write executable code -> queue user APC in main thread -> resume main thread | [CyberBit](https://www.cyberbit.com/endpoint-security/new-early-bird-code-injection-technique-discovered/), [IRED Team](https://www.ired.team/offensive-security/code-injection-process-injection/early-bird-apc-queue-code-injection) |
 
 ## Other Scripts
+
 - `scripts/log_handles.py`: logs open handles in the process.
 - `scripts/execute_br3k_cli_ipc.py`: executes br3k CLI and passes another script through br3k IPC.
 - `scripts/execute_br3k_dll_rundll32_ipc.py`: executes `rundll32.exe` with the br3k DLL and passes another script through br3k IPC.
@@ -26,3 +27,4 @@ Test-oriented scenarios live in the `tests` directory and are intended to be lau
 
 - `tests/injects_code.py`: iterates code injection and execution scenarios.
 - `tests/injects_images.py`: iterates image injection and substitution scenarios.
+- `tests/files.py`: iterates file open, delete, and change scenarios.

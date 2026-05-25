@@ -118,6 +118,14 @@ pub type PULONG_PTR = *mut ULONG_PTR;
 pub type PSIZE_T = *mut SIZE_T;
 pub type PDWORD = *mut DWORD;
 
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FILE_DISPOSITION_INFORMATION_EX {
+    pub Flags: ULONG,
+}
+
+pub const FILE_DISPOSITION_DELETE: ULONG = 0x00000001;
+
 pub type LPCWCH = *const WCHAR;
 pub type PCWCH = *const WCHAR;
 pub type PWCH = *mut WCHAR;

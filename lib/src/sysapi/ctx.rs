@@ -58,8 +58,14 @@ pub struct NtDllApi {
     pub NtDuplicateObject: Option<ntobapi::PFN_NtDuplicateObject>,
     pub NtOpenProcess: Option<ntpsapi::PFN_NtOpenProcess>,
     pub NtQueryInformationProcess: Option<ntpsapi::PFN_NtQueryInformationProcess>,
+    pub NtSuspendProcess: Option<ntpsapi::PFN_NtSuspendProcess>,
+    pub NtResumeProcess: Option<ntpsapi::PFN_NtResumeProcess>,
+    pub NtCreateProcessStateChange: Option<ntpsapi::PFN_NtCreateProcessStateChange>,
+    pub NtChangeProcessState: Option<ntpsapi::PFN_NtChangeProcessState>,
     pub NtSuspendThread: Option<ntpsapi::PFN_NtSuspendThread>,
     pub NtResumeThread: Option<ntpsapi::PFN_NtResumeThread>,
+    pub NtCreateThreadStateChange: Option<ntpsapi::PFN_NtCreateThreadStateChange>,
+    pub NtChangeThreadState: Option<ntpsapi::PFN_NtChangeThreadState>,
     pub NtGetContextThread: Option<ntpsapi::PFN_NtGetContextThread>,
     pub NtSetContextThread: Option<ntpsapi::PFN_NtSetContextThread>,
     pub NtQueryInformationThread: Option<ntpsapi::PFN_NtQueryInformationThread>,
@@ -69,13 +75,17 @@ pub struct NtDllApi {
     pub NtCreateThreadEx: Option<ntpsapi::PFN_NtCreateThreadEx>,
     pub NtOpenThread: Option<ntpsapi::PFN_NtOpenThread>,
     pub NtGetNextThread: Option<ntpsapi::PFN_NtGetNextThread>,
+    pub NtOpenFile: Option<ntioapi::PFN_NtOpenFile>,
     pub NtCreateFile: Option<ntioapi::PFN_NtCreateFile>,
+    pub NtDeleteFile: Option<ntioapi::PFN_NtDeleteFile>,
     pub NtWriteFile: Option<ntioapi::PFN_NtWriteFile>,
+    pub NtSetInformationFile: Option<ntioapi::PFN_NtSetInformationFile>,
     pub NtCreateTransaction: Option<nttmapi::PFN_NtCreateTransaction>,
     pub NtRollbackTransaction: Option<nttmapi::PFN_NtRollbackTransaction>,
     pub NtQueryInformationFile: Option<ntioapi::PFN_NtQueryInformationFile>,
     pub NtQueueApcThread: Option<ntpsapi::PFN_NtQueueApcThread>,
     pub NtQueueApcThreadEx: Option<ntpsapi::PFN_NtQueueApcThreadEx>,
+    pub NtQueueApcThreadEx2: Option<ntpsapi::PFN_NtQueueApcThreadEx2>,
     pub NtCreateEvent: Option<ntexapi::PFN_NtCreateEvent>,
     pub NtCreateNamedPipeFile: Option<ntioapi::PFN_NtCreateNamedPipeFile>,
     pub NtSystemDebugControl: Option<ntexapi::PFN_NtSystemDebugControl>,
@@ -145,6 +155,30 @@ pub enum ReadVirtualMemory {
     NtReadVirtualMemoryEx,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum QueueApcThread {
+    #[default]
+    NtQueueApcThread,
+    NtQueueApcThreadEx,
+    NtQueueApcThreadEx2,
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum SetInformation_Delete {
+    #[default]
+    FileDispositionInformation,
+    FileDispositionInformationEx,
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString)]
+pub enum SetInformation_Rename {
+    #[default]
+    FileRenameInformation,
+    FileRenameInformationEx,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SysApiDispatchConfig {
     pub create_process: CreateProcess,
@@ -154,6 +188,9 @@ pub struct SysApiDispatchConfig {
     pub unmap_view_of_section: UnmapViewOfSection,
     pub allocate_virtual_memory: AllocateVirtualMemory,
     pub read_virtual_memory: ReadVirtualMemory,
+    pub queue_apc_thread: QueueApcThread,
+    pub set_information_delete: SetInformation_Delete,
+    pub set_information_rename: SetInformation_Rename,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -224,8 +261,14 @@ impl NtDllApi {
                 NtDuplicateObject: Self::get_proc_address(module, "NtDuplicateObject"),
                 NtOpenProcess: Self::get_proc_address(module, "NtOpenProcess"),
                 NtQueryInformationProcess: Self::get_proc_address(module, "NtQueryInformationProcess"),
+                NtSuspendProcess: Self::get_proc_address(module, "NtSuspendProcess"),
+                NtResumeProcess: Self::get_proc_address(module, "NtResumeProcess"),
+                NtCreateProcessStateChange: Self::get_proc_address(module, "NtCreateProcessStateChange"),
+                NtChangeProcessState: Self::get_proc_address(module, "NtChangeProcessState"),
                 NtSuspendThread: Self::get_proc_address(module, "NtSuspendThread"),
                 NtResumeThread: Self::get_proc_address(module, "NtResumeThread"),
+                NtCreateThreadStateChange: Self::get_proc_address(module, "NtCreateThreadStateChange"),
+                NtChangeThreadState: Self::get_proc_address(module, "NtChangeThreadState"),
                 NtGetContextThread: Self::get_proc_address(module, "NtGetContextThread"),
                 NtSetContextThread: Self::get_proc_address(module, "NtSetContextThread"),
                 NtQueryInformationThread: Self::get_proc_address(module, "NtQueryInformationThread"),
@@ -235,13 +278,17 @@ impl NtDllApi {
                 NtCreateThreadEx: Self::get_proc_address(module, "NtCreateThreadEx"),
                 NtOpenThread: Self::get_proc_address(module, "NtOpenThread"),
                 NtGetNextThread: Self::get_proc_address(module, "NtGetNextThread"),
+                NtOpenFile: Self::get_proc_address(module, "NtOpenFile"),
                 NtCreateFile: Self::get_proc_address(module, "NtCreateFile"),
+                NtDeleteFile: Self::get_proc_address(module, "NtDeleteFile"),
                 NtWriteFile: Self::get_proc_address(module, "NtWriteFile"),
+                NtSetInformationFile: Self::get_proc_address(module, "NtSetInformationFile"),
                 NtCreateTransaction: Self::get_proc_address(module, "NtCreateTransaction"),
                 NtRollbackTransaction: Self::get_proc_address(module, "NtRollbackTransaction"),
                 NtQueryInformationFile: Self::get_proc_address(module, "NtQueryInformationFile"),
                 NtQueueApcThread: Self::get_proc_address(module, "NtQueueApcThread"),
                 NtQueueApcThreadEx: Self::get_proc_address(module, "NtQueueApcThreadEx"),
+                NtQueueApcThreadEx2: Self::get_proc_address(module, "NtQueueApcThreadEx2"),
                 NtCreateEvent: Self::get_proc_address(module, "NtCreateEvent"),
                 NtCreateNamedPipeFile: Self::get_proc_address(module, "NtCreateNamedPipeFile"),
                 NtSystemDebugControl: Self::get_proc_address(module, "NtSystemDebugControl"),
@@ -380,6 +427,10 @@ impl SysApiCtx {
         Self::prepare_direct_syscall(stubs, "NtCreateProcessEx", ntdll.NtCreateProcessEx)?;
         Self::prepare_direct_syscall(stubs, "NtQueryInformationProcess", ntdll.NtQueryInformationProcess)?;
         Self::prepare_direct_syscall(stubs, "NtOpenProcess", ntdll.NtOpenProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtSuspendProcess", ntdll.NtSuspendProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtResumeProcess", ntdll.NtResumeProcess)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateProcessStateChange", ntdll.NtCreateProcessStateChange)?;
+        Self::prepare_direct_syscall(stubs, "NtChangeProcessState", ntdll.NtChangeProcessState)?;
         Self::prepare_direct_syscall(stubs, "NtGetNextThread", ntdll.NtGetNextThread)?;
         Self::prepare_direct_syscall(stubs, "NtOpenThread", ntdll.NtOpenThread)?;
         Self::prepare_direct_syscall(stubs, "NtQuerySystemInformation", ntdll.NtQuerySystemInformation)?;
@@ -387,6 +438,8 @@ impl SysApiCtx {
         Self::prepare_direct_syscall(stubs, "NtCreateThreadEx", ntdll.NtCreateThreadEx)?;
         Self::prepare_direct_syscall(stubs, "NtSuspendThread", ntdll.NtSuspendThread)?;
         Self::prepare_direct_syscall(stubs, "NtResumeThread", ntdll.NtResumeThread)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateThreadStateChange", ntdll.NtCreateThreadStateChange)?;
+        Self::prepare_direct_syscall(stubs, "NtChangeThreadState", ntdll.NtChangeThreadState)?;
         Self::prepare_direct_syscall(stubs, "NtQueryInformationThread", ntdll.NtQueryInformationThread)?;
         Self::prepare_direct_syscall(stubs, "NtGetContextThread", ntdll.NtGetContextThread)?;
         Self::prepare_direct_syscall(stubs, "NtSetContextThread", ntdll.NtSetContextThread)?;
@@ -407,11 +460,16 @@ impl SysApiCtx {
         Self::prepare_direct_syscall(stubs, "NtCreateTransaction", ntdll.NtCreateTransaction)?;
         Self::prepare_direct_syscall(stubs, "NtRollbackTransaction", ntdll.NtRollbackTransaction)?;
         Self::prepare_direct_syscall(stubs, "NtQueueApcThread", ntdll.NtQueueApcThread)?;
+        Self::prepare_direct_syscall(stubs, "NtQueueApcThreadEx", ntdll.NtQueueApcThreadEx)?;
+        Self::prepare_direct_syscall(stubs, "NtQueueApcThreadEx2", ntdll.NtQueueApcThreadEx2)?;
         Self::prepare_direct_syscall(stubs, "NtCreateEvent", ntdll.NtCreateEvent)?;
         Self::prepare_direct_syscall(stubs, "NtCreateNamedPipeFile", ntdll.NtCreateNamedPipeFile)?;
+        Self::prepare_direct_syscall(stubs, "NtOpenFile", ntdll.NtOpenFile)?;
         Self::prepare_direct_syscall(stubs, "NtCreateFile", ntdll.NtCreateFile)?;
+        Self::prepare_direct_syscall(stubs, "NtDeleteFile", ntdll.NtDeleteFile)?;
         Self::prepare_direct_syscall(stubs, "NtWriteFile", ntdll.NtWriteFile)?;
         Self::prepare_direct_syscall(stubs, "NtReadFile", ntdll.NtReadFile)?;
+        Self::prepare_direct_syscall(stubs, "NtSetInformationFile", ntdll.NtSetInformationFile)?;
         Self::prepare_direct_syscall(stubs, "NtQueryInformationFile", ntdll.NtQueryInformationFile)?;
         Self::prepare_direct_syscall(stubs, "NtSystemDebugControl", ntdll.NtSystemDebugControl)?;
         Self::prepare_direct_syscall(stubs, "NtQueryObject", ntdll.NtQueryObject)?;

@@ -11,7 +11,7 @@ use windows_sys::Win32::System::SystemServices::{
     DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH
 };
 
-use br3k::ipc;
+use br3k::br3k_ipc;
 use br3k::logging;
 use br3k::sysapi::{self, ctx};
 use br3k::vm;
@@ -32,9 +32,9 @@ extern "system" fn main() {
     let pid: u32 = unsafe { (*sysapi::teb()).ClientId.UniqueProcess } as _;
 
     for _ in 0..10 {
-        match ipc::open_pipe(pid) {
+        match br3k_ipc::open_pipe(pid) {
             Ok(pipe_handle) => {
-                match ipc::receive_data(*pipe_handle) {
+                match br3k_ipc::receive_data(*pipe_handle) {
                     Err(error) => log::error!("Unable to read script from pipe: {error}"),
                     Ok(script_data) => {
                         let script = match String::from_utf8(script_data) {

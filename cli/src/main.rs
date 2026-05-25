@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
 
-use br3k::ipc;
+use br3k::br3k_ipc;
 use br3k::logging;
 use br3k::sysapi::{self, ctx};
 use br3k::vm;
@@ -116,7 +116,7 @@ fn main() {
             std::process::exit(1);
         }
 
-        let pipe_handle = match ipc::open_pipe(pid as _) {
+        let pipe_handle = match br3k_ipc::open_pipe(pid as _) {
             Ok(pipe_handle) => pipe_handle,
             Err(error) => {
                 log::error!("Unable to open pipe: {error}");
@@ -124,7 +124,7 @@ fn main() {
             }
         };
 
-        let script_data = match ipc::receive_data(*pipe_handle) {
+        let script_data = match br3k_ipc::receive_data(*pipe_handle) {
             Ok(script_data) => script_data,
             Err(error) => {
                 log::error!("Unable to read script from pipe: {error}");

@@ -20,8 +20,8 @@ if __name__ == "__main__":
     subprocess.Popen([PROCESS_IMAGE, DLL_PATH, "DllMain"], shell=True, stdin=None, stdout=None, stderr=None, close_fds=True)
 
     process = br3k.Process(name="rundll32.exe")
-    ipc = br3k.Ipc(process)
-    ipc.create()
+    br3k_ipc = br3k.Br3kIPC(process)
+    br3k_ipc.create()
 
     script_data = br3k.FileMapping(SCRIPT_FILEPATH)
-    ipc.send_data(script_data.bytes())
+    br3k_ipc.send_data(script_data.bytes())

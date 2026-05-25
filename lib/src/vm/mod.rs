@@ -3,7 +3,7 @@ pub mod py_module;
 mod prelude;
 mod py_com_irundown;
 mod py_fs;
-mod py_ipc;
+mod py_br3k_ipc;
 mod py_pdb;
 mod py_pe;
 mod py_proc;

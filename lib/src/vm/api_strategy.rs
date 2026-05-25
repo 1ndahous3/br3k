@@ -14,7 +14,7 @@ use std::sync::Arc;
 use exe::PtrPE;
 
 use winbase::{ACCESS_MASK, NT_CURRENT_PROCESS};
-use windef::{ntstatus, winbase};
+use windef::{ntioapi, ntstatus, winbase};
 
 use windows::Win32::Foundation::NTSTATUS;
 use windows_sys::Win32::Foundation::{FALSE, HANDLE, HWND, TRUE};
@@ -104,6 +104,114 @@ pub enum ProcessVmWriteStrategy {
 impl fmt::Display for ProcessVmWriteStrategy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum FileDeleteStrategy {
+    NtDeleteFile,
+    SetInformationFile,
+    NtOpenFileDeleteOnClose,
+    NtCreateFileDeleteOnClose,
+}
+
+impl fmt::Display for FileDeleteStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl FileDeleteStrategy {
+    pub fn delete_file(&self, path: &str) -> sysapi::NtResult<()> {
+        match self {
+            FileDeleteStrategy::NtDeleteFile => sysapi::delete_file_by_nt_delete_file(path),
+            FileDeleteStrategy::SetInformationFile => sysapi::delete_file_by_set_information_file(path),
+            FileDeleteStrategy::NtOpenFileDeleteOnClose => sysapi::delete_file_by_nt_open_file_delete_on_close(path),
+            FileDeleteStrategy::NtCreateFileDeleteOnClose => sysapi::delete_file_by_nt_create_file_delete_on_close(path),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum FileOpenStrategy {
+    NtOpenFile,
+    NtCreateFile,
+}
+
+impl fmt::Display for FileOpenStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl FileOpenStrategy {
+    pub fn open_file(&self, path: &str, file_mode: &fs::FsFileMode) -> sysapi::NtResult<UniqueHandle> {
+        let open_options = ntioapi::FILE_NON_DIRECTORY_FILE | ntioapi::FILE_SYNCHRONOUS_IO_NONALERT;
+
+        match self {
+            FileOpenStrategy::NtOpenFile => {
+                sysapi::open_file_by_nt_open_file(path, file_mode.access_rights(), file_mode.share_mode(), open_options)
+            }
+            FileOpenStrategy::NtCreateFile => {
+                sysapi::open_file_by_nt_create_file(path, file_mode.access_rights(), file_mode.share_mode(), open_options)
+            }
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum FileRenameStrategy {
+    Rename,
+    CopyDelete,
+}
+
+impl fmt::Display for FileRenameStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl FileRenameStrategy {
+    pub fn rename_file(&self, path: &str, new_path: &str) -> sysapi::NtResult<()> {
+        match self {
+            FileRenameStrategy::Rename => sysapi::rename_file_by_rename(path, new_path),
+            FileRenameStrategy::CopyDelete => sysapi::rename_file_by_copy_delete(path, new_path),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum FileChangeStrategy {
+    DeleteFile,
+    OpenFile,
+    CreateFileMapping,
+}
+
+impl fmt::Display for FileChangeStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl FileChangeStrategy {
+    pub fn change_file(
+        &self,
+        path: &str,
+        file_delete_strategy: &FileDeleteStrategy,
+        file_open_strategy: &FileOpenStrategy,
+    ) -> sysapi::NtResult<()> {
+        match self {
+            FileChangeStrategy::DeleteFile => file_delete_strategy.delete_file(path),
+            FileChangeStrategy::OpenFile => sysapi::zero_file_by_open_file(
+                path,
+                |path| file_open_strategy.open_file(path, &fs::FsFileMode::Write)
+            ),
+            FileChangeStrategy::CreateFileMapping => sysapi::zero_file_by_file_mapping(path),
+        }
     }
 }
 
@@ -505,6 +613,94 @@ impl ThreadOpenStrategy {
                 log::debug!("Window found, HWND = 0x{:x}", opts.hWnd as usize);
                 sysapi::open_thread(opts.pid, opts.tid, access_mask)
             }
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum ProcessSuspendStrategy {
+    NtSuspendProcess,
+    NtChangeProcessState,
+}
+
+impl fmt::Display for ProcessSuspendStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl ProcessSuspendStrategy {
+    pub fn suspend(&self, process_handle: HANDLE) -> sysapi::NtResult<()> {
+        match self {
+            ProcessSuspendStrategy::NtSuspendProcess => sysapi::suspend_process_by_nt_suspend_process(process_handle),
+            ProcessSuspendStrategy::NtChangeProcessState => sysapi::suspend_process_by_state_change(process_handle),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum ProcessResumeStrategy {
+    NtResumeProcess,
+    NtChangeProcessState,
+}
+
+impl fmt::Display for ProcessResumeStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl ProcessResumeStrategy {
+    pub fn resume(&self, process_handle: HANDLE) -> sysapi::NtResult<()> {
+        match self {
+            ProcessResumeStrategy::NtResumeProcess => sysapi::resume_process_by_nt_resume_process(process_handle),
+            ProcessResumeStrategy::NtChangeProcessState => sysapi::resume_process_by_state_change(process_handle),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum ThreadSuspendStrategy {
+    NtSuspendThread,
+    NtChangeThreadState,
+}
+
+impl fmt::Display for ThreadSuspendStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl ThreadSuspendStrategy {
+    pub fn suspend(&self, thread_handle: HANDLE) -> sysapi::NtResult<()> {
+        match self {
+            ThreadSuspendStrategy::NtSuspendThread => sysapi::suspend_thread_by_nt_suspend_thread(thread_handle),
+            ThreadSuspendStrategy::NtChangeThreadState => sysapi::suspend_thread_by_state_change(thread_handle),
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+pub enum ThreadResumeStrategy {
+    NtResumeThread,
+    NtChangeThreadState,
+}
+
+impl fmt::Display for ThreadResumeStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl ThreadResumeStrategy {
+    pub fn resume(&self, thread_handle: HANDLE) -> sysapi::NtResult<()> {
+        match self {
+            ThreadResumeStrategy::NtResumeThread => sysapi::resume_thread_by_nt_resume_thread(thread_handle),
+            ThreadResumeStrategy::NtChangeThreadState => sysapi::resume_thread_by_state_change(thread_handle),
         }
     }
 }

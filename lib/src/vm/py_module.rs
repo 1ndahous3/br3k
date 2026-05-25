@@ -111,7 +111,7 @@ pub mod br3k {
         py_tx,
         py_pe,
         py_pdb,
-        py_ipc,
+        py_br3k_ipc,
         py_com_irundown
     };
 
@@ -144,7 +144,7 @@ pub mod br3k {
             "BufferView" => py_resource::BufferView::make_static_type(),
             "Process" => py_proc::Process::make_static_type(),
             "Thread" => py_thread::Thread::make_static_type(),
-            "Ipc" => py_ipc::Ipc::make_static_type(),
+            "Br3kIPC" => py_br3k_ipc::Br3kIPC::make_static_type(),
             "FileMapping" => py_fs::FileMapping::make_static_type(),
             "Pe" => py_pe::Pe::make_static_type(),
             "Transaction" => py_tx::Transaction::make_static_type(),
@@ -162,6 +162,14 @@ pub mod br3k {
         register_enum!(vm, module, int_enum, api_strategy::ProcessVmWriteStrategy);
         register_enum!(vm, module, int_enum, api_strategy::ProcessOpenStrategy);
         register_enum!(vm, module, int_enum, api_strategy::ThreadOpenStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ProcessSuspendStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ProcessResumeStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ThreadSuspendStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::ThreadResumeStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::FileDeleteStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::FileOpenStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::FileRenameStrategy);
+        register_enum!(vm, module, int_enum, api_strategy::FileChangeStrategy);
         register_enum!(vm, module, int_enum, fs::FsFileMode);
         register_enum!(vm, module, int_enum, fs::FsSectionMode);
 
@@ -203,6 +211,9 @@ pub mod br3k {
                     "UnmapViewOfSection" => config.unmap_view_of_section = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
                     "AllocateVirtualMemory" => config.allocate_virtual_memory = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
                     "ReadVirtualMemory" => config.read_virtual_memory = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "QueueApcThread" => config.queue_apc_thread = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "SetInformation_Delete" => config.set_information_delete = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
+                    "SetInformation_Rename" => config.set_information_rename = parse_sys_api_dispatch_variant(&api_name, &variant, vm)?,
                     _ => return Err(vm.new_value_error(format!("Unknown system API dispatch target: {api_name}"))),
                 }
             }
@@ -234,6 +245,9 @@ pub mod br3k {
         slog_info!("|     UnmapViewOfSection: {:?}", sys_api_dispatch.unmap_view_of_section);
         slog_info!("|     AllocateVirtualMemory: {:?}", sys_api_dispatch.allocate_virtual_memory);
         slog_info!("|     ReadVirtualMemory: {:?}", sys_api_dispatch.read_virtual_memory);
+        slog_info!("|     QueueApcThread: {:?}", sys_api_dispatch.queue_apc_thread);
+        slog_info!("|     SetInformation_Delete: {:?}", sys_api_dispatch.set_information_delete);
+        slog_info!("|     SetInformation_Rename: {:?}", sys_api_dispatch.set_information_rename);
     }
 
     #[pyfunction]
@@ -317,14 +331,118 @@ pub mod br3k {
     pub struct FsOpenFileArgs {
         #[pyarg(any)]
         filepath: PyStrRef,
+        #[pyarg(named, optional)]
+        file_mode: OptionalArg<u32>,
+        #[pyarg(named, optional)]
+        file_open_strategy: OptionalArg<u32>,
     }
 
     #[pyfunction]
     fn fs_open_file(args: FsOpenFileArgs, vm: &VirtualMachine) -> PyResult<Handle> {
-        let handle = sysapi::open_file(&args.filepath.to_string())
+        let file_mode = args.file_mode
+            .into_option()
+            .map(|v| fs::FsFileMode::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FsFileMode".to_string())))
+            .transpose()?
+            .unwrap_or(fs::FsFileMode::Read);
+        let file_open_strategy = args.file_open_strategy
+            .into_option()
+            .map(|v| api_strategy::FileOpenStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FileOpenStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::FileOpenStrategy::NtOpenFile);
+
+        let handle = file_open_strategy.open_file(&args.filepath.to_string(), &file_mode)
             .map_err(map_to_py_system_error(vm, "Unable to open file"))?;
 
         Ok(Handle { handle })
+    }
+
+    #[derive(FromArgs)]
+    pub struct FsDeleteFileArgs {
+        #[pyarg(any)]
+        filepath: PyStrRef,
+        #[pyarg(named, optional)]
+        file_delete_strategy: OptionalArg<u32>,
+    }
+
+    #[pyfunction]
+    fn fs_delete_file(args: FsDeleteFileArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let file_delete_strategy = args.file_delete_strategy
+            .into_option()
+            .map(|v| api_strategy::FileDeleteStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FileDeleteStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::FileDeleteStrategy::NtDeleteFile);
+
+        file_delete_strategy.delete_file(&args.filepath.to_string())
+            .map_err(map_to_py_system_error(vm, "Unable to delete file"))?;
+
+        Ok(())
+    }
+
+    #[derive(FromArgs)]
+    pub struct FsRenameFileArgs {
+        #[pyarg(any)]
+        filepath: PyStrRef,
+        #[pyarg(any)]
+        new_filepath: PyStrRef,
+        #[pyarg(named, optional)]
+        file_rename_strategy: OptionalArg<u32>,
+    }
+
+    #[pyfunction]
+    fn fs_rename_file(args: FsRenameFileArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let file_rename_strategy = args.file_rename_strategy
+            .into_option()
+            .map(|v| api_strategy::FileRenameStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FileRenameStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::FileRenameStrategy::Rename);
+
+        file_rename_strategy.rename_file(&args.filepath.to_string(), &args.new_filepath.to_string())
+            .map_err(map_to_py_system_error(vm, "Unable to rename file"))?;
+
+        Ok(())
+    }
+
+    #[derive(FromArgs)]
+    pub struct FsChangeFileArgs {
+        #[pyarg(any)]
+        filepath: PyStrRef,
+        #[pyarg(named, optional)]
+        file_change_strategy: OptionalArg<u32>,
+        #[pyarg(named, optional)]
+        file_delete_strategy: OptionalArg<u32>,
+        #[pyarg(named, optional)]
+        file_open_strategy: OptionalArg<u32>,
+    }
+
+    #[pyfunction]
+    fn fs_change_file(args: FsChangeFileArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let file_change_strategy = args.file_change_strategy
+            .into_option()
+            .map(|v| api_strategy::FileChangeStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FileChangeStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::FileChangeStrategy::DeleteFile);
+        let file_delete_strategy = args.file_delete_strategy
+            .into_option()
+            .map(|v| api_strategy::FileDeleteStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FileDeleteStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::FileDeleteStrategy::NtDeleteFile);
+        let file_open_strategy = args.file_open_strategy
+            .into_option()
+            .map(|v| api_strategy::FileOpenStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid FileOpenStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(api_strategy::FileOpenStrategy::NtOpenFile);
+
+        file_change_strategy.change_file(&args.filepath.to_string(), &file_delete_strategy, &file_open_strategy)
+            .map_err(map_to_py_system_error(vm, "Unable to change file"))?;
+
+        Ok(())
     }
 
     #[derive(FromArgs)]
@@ -493,6 +611,14 @@ pub mod br3k {
             .ok_or_else(|| vm.new_system_error("Failed to find RW cave".to_string()))?;
 
         Ok(BufferView { ptr: cave.as_ptr() as _, size: cave.len() as _ })
+    }
+
+    #[pyfunction]
+    fn gadget_inf_loop(vm: &VirtualMachine) -> PyResult<u64> {
+        match shellcode::rop::gadget_inf_loop() {
+            Some(gadget) => Ok(gadget.as_ptr() as _),
+            None => Err(vm.new_system_error("Failed to find infinite loop gadget")),
+        }
     }
 
     #[allow(non_snake_case)]

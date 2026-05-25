@@ -24,11 +24,11 @@ if __name__ == "__main__":
     process.create_user(suspended=True)
     process.init_memory()
 
-    ipc = br3k.Ipc(process)
-    ipc.create()
+    br3k_ipc = br3k.Br3kIPC(process)
+    br3k_ipc.create()
 
     thread = process.main_thread
     thread.resume()
 
     script_data = br3k.FileMapping(SCRIPT_FILEPATH)
-    ipc.send_data(script_data.bytes())
+    br3k_ipc.send_data(script_data.bytes())

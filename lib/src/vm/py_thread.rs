@@ -12,7 +12,7 @@ use vm::api_strategy;
 use vm::py_proc::Process;
 use vm::py_resource::Handle;
 
-use api_strategy::{ThreadOpenArgs, ThreadOpenStrategy};
+use api_strategy::{ThreadOpenArgs, ThreadOpenStrategy, ThreadResumeStrategy, ThreadSuspendStrategy};
 
 #[derive(FromArgs)]
 pub struct ThreadNewArgs {
@@ -50,6 +50,18 @@ pub struct CreateUserApcArgs {
     arg2: OptionalArg<u64>,
     #[pyarg(any, optional)]
     arg3: OptionalArg<u64>,
+}
+
+#[derive(FromArgs)]
+pub struct ThreadSuspendArgs {
+    #[pyarg(named, optional)]
+    thread_suspend_strategy: OptionalArg<u32>,
+}
+
+#[derive(FromArgs)]
+pub struct ThreadResumeArgs {
+    #[pyarg(named, optional)]
+    thread_resume_strategy: OptionalArg<u32>,
 }
 
 #[pyclass(module = false, name = "Thread")]
@@ -170,27 +182,41 @@ impl Thread {
     }
 
     #[pymethod]
-    fn suspend(&self, vm: &VirtualMachine) -> PyResult<()> {
+    fn suspend(&self, args: ThreadSuspendArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut handle = self.handle.borrow_mut();
         let handle = handle.as_mut()
             .ok_or_else(|| vm.new_value_error("Thread handle is not initialized".to_string()))?;
 
-        match sysapi::suspend_thread(*handle.handle) {
-            Ok(()) => Ok(()),
-            Err(error) => Err(to_py_system_error(vm, "Failed to suspend thread", error)),
-        }
+        let strategy = args.thread_suspend_strategy
+            .into_option()
+            .map(|v| ThreadSuspendStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid ThreadSuspendStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(ThreadSuspendStrategy::NtSuspendThread);
+
+        strategy.suspend(*handle.handle)
+            .map_err(map_to_py_system_error(vm, "Failed to suspend thread"))?;
+
+        Ok(())
     }
 
     #[pymethod]
-    fn resume(&self, vm: &VirtualMachine) -> PyResult<()> {
+    fn resume(&self, args: ThreadResumeArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut handle = self.handle.borrow_mut();
         let handle = handle.as_mut()
             .ok_or_else(|| vm.new_value_error("Thread handle is not initialized".to_string()))?;
 
-        match sysapi::resume_thread(*handle.handle) {
-            Ok(()) => Ok(()),
-            Err(error) => Err(to_py_system_error(vm, "Failed to resume thread", error)),
-        }
+        let strategy = args.thread_resume_strategy
+            .into_option()
+            .map(|v| ThreadResumeStrategy::from_repr(v)
+                .ok_or_else(|| vm.new_value_error("Invalid ThreadResumeStrategy".to_string())))
+            .transpose()?
+            .unwrap_or(ThreadResumeStrategy::NtResumeThread);
+
+        strategy.resume(*handle.handle)
+            .map_err(map_to_py_system_error(vm, "Failed to resume thread"))?;
+
+        Ok(())
     }
 
     #[pymethod]

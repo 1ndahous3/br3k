@@ -42,11 +42,11 @@ if __name__ == "__main__":
         ep = br3k.get_proc_address("kernel32.dll", "LoadLibraryA")
         thread.create(ep=ep, arg=arg)
 
-        ipc = br3k.Ipc(process)
-        ipc.create()
+        br3k_ipc = br3k.Br3kIPC(process)
+        br3k_ipc.create()
 
         script_data = br3k.FileMapping(SCRIPT_FILEPATH)
-        ipc.send_data(script_data.bytes())
+        br3k_ipc.send_data(script_data.bytes())
     else:
         ep = process.get_memory_remote_address()
         thread.create(ep=ep)

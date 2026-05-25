@@ -53,6 +53,7 @@ SYS_API_DISPATCH_ALTERNATIVE = {
     "UnmapViewOfSection": "NtUnmapViewOfSectionEx",
     "AllocateVirtualMemory": "NtAllocateVirtualMemoryEx",
     "ReadVirtualMemory": "NtReadVirtualMemoryEx",
+    "QueueApcThread": "NtQueueApcThreadEx",
 }
 
 SYS_API_DISPATCH_CASES = (
@@ -257,11 +258,11 @@ def send_br3k_script(process, payload_type):
     if payload_type != PayloadType.LoadBr3kDll:
         return
 
-    ipc = br3k.Ipc(process)
-    ipc.create()
+    br3k_ipc = br3k.Br3kIPC(process)
+    br3k_ipc.create()
 
     script_data = br3k.FileMapping(BR3K_SCRIPT_PATH)
-    ipc.send_data(script_data.bytes())
+    br3k_ipc.send_data(script_data.bytes())
 
 def get_com_dll():
     com_dll = br3k.get_module_handle(module_name="combase")
