@@ -12,6 +12,14 @@ fn main() {
         ("_MSC_VER", Some("1900")),
     ];
 
+    let clang_warning_args = [
+        "-Wno-macro-redefined",
+        "-Wno-microsoft-enum-forward-reference",
+        "-Wno-microsoft-static-assert",
+        "-Wno-pragma-pack",
+        "-Wno-visibility",
+    ];
+
     let target = std::env::var("TARGET").unwrap();
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     if target_arch == "x86_64" {
@@ -105,6 +113,10 @@ fn main() {
             .derive_copy(true)
             .derive_debug(true)
             .allowlist_recursively(false);
+
+        for arg in &clang_warning_args {
+            builder = builder.clang_arg(*arg);
+        }
 
         for (k, v) in &defines {
             match v {
