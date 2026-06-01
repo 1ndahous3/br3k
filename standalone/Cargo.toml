@@ -1,0 +1,10 @@
+[package]
+name = "br3k-standalone"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+br3k = { path = "../lib" }
+clap = "4.6"
+log = "0.4"
+serde_yaml = "0.9"

@@ -75,14 +75,16 @@ mod tests {
         let dir_path = root.join(dir);
         let files = py_files(&dir_path);
         assert!(!files.is_empty(), "no Python files found in {}", dir_path.display());
+        let expected_header = expected_header.replace("\r\n", "\n");
 
         let failed_files = files
             .iter()
             .filter_map(|path| {
                 let data = fs::read_to_string(path)
                     .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+                let data = data.replace("\r\n", "\n");
 
-                if data.starts_with(expected_header) {
+                if data.starts_with(&expected_header) {
                     None
                 } else {
                     Some(path.strip_prefix(&root).unwrap_or(path).display().to_string())

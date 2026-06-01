@@ -18,6 +18,17 @@ The tool consists of two parts:
 1. **Core**: an `.exe`/`.dll` binary with low-level Windows code and a built-in Python interpreter. At runtime it provides the `br3k` Python module.
 2. **Scripts**: Python scripts that use the `br3k` module API to implement concrete techniques and test scenarios.
 
+### Standalone build
+
+The `br3k-standalone` package builds a binary with one Python script embedded into the executable:
+
+```powershell
+$env:BR3K_EMBED_SCRIPT = "scripts\log_handles.py"
+cargo build --release -p br3k-standalone
+```
+
+The resulting `br3k-standalone.exe` runs the embedded script when started without arguments.
+
 ## Notes
 
 ### br3k is not Frida
