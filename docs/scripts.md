@@ -15,6 +15,7 @@ Test-oriented scenarios live in the `tests` directory and are intended to be lau
 | `IRundown::DoCallback()` injection | `scripts/inject_com_irundown_docallback.py` | Open process (RX) -> read COM state from process memory -> execute code through `IRundown::DoCallback()` | [MDSec](https://www.mdsec.co.uk/2022/04/process-injection-via-component-object-model-com-irundowndocallback/) |
 | APC injection | `scripts/inject_queue_apc.py` | Open process (WX) -> optionally write executable code -> open or find alertable thread -> queue user APC | [IRED Team](https://www.ired.team/offensive-security/code-injection-process-injection/early-bird-apc-queue-code-injection) |
 | Early Bird APC injection | `scripts/inject_queue_apc_early_bird.py` | Create suspended process -> write executable code -> queue user APC in main thread -> resume main thread | [CyberBit](https://www.cyberbit.com/endpoint-security/new-early-bird-code-injection-technique-discovered/), [IRED Team](https://www.ired.team/offensive-security/code-injection-process-injection/early-bird-apc-queue-code-injection) |
+| Thread pool work item injection | `scripts/inject_thread_pool.py` | Open process (WX) -> write executable code -> queue a thread-pool work item | [PoolParty](https://github.com/SafeBreach-Labs/PoolParty) |
 
 ## Other Scripts
 

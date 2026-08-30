@@ -21,7 +21,13 @@ import time
 from enum import IntEnum
 
 import br3k
-from br3k import ProcessOpenStrategy, ProcessVmReadStrategy, ProcessVmWriteStrategy, ThreadOpenStrategy
+from br3k import (
+    ProcessOpenStrategy,
+    ProcessVmReadStrategy,
+    ProcessVmWriteStrategy,
+    ThreadOpenStrategy,
+    ThreadPoolWorkItem,
+)
 
 class ThreadInjectType(IntEnum):
     CreateThread = 1
@@ -29,6 +35,7 @@ class ThreadInjectType(IntEnum):
     QueueApc = 3
     QueueApcEarlyBird = 4
     IRundownDoCallback = 5
+    ThreadPool = 6
 
 class PayloadType(IntEnum):
     LoadBr3kDll = 1
@@ -43,6 +50,14 @@ THREAD_OPEN_INJECT_TYPES = (
 WRITE_PAYLOAD_TYPES = (
     PayloadType.LoadBr3kDll,
     PayloadType.WriteMessageBoxShellcode,
+)
+
+THREAD_POOL_PAYLOAD_TYPES = (
+    PayloadType.WriteMessageBoxShellcode,
+)
+
+THREAD_POOL_PROCESS_VM_WRITE_STRATEGY_EXCLUDE = (
+    ProcessVmWriteStrategy.CreateSectionMapLocalMap,
 )
 
 SYS_API_DISPATCH_ALTERNATIVE = {
@@ -137,6 +152,7 @@ def iter_thread_cases(thread_inject_type):
                         None,
                         process_vm_write_strategy,
                         thread_open_strategy,
+                        None,
                     )
 
 def iter_irundown_cases():
@@ -149,12 +165,33 @@ def iter_irundown_cases():
                 process_vm_read_strategy,
                 None,
                 None,
+                None,
             )
+
+def iter_thread_pool_cases():
+    for payload_type in THREAD_POOL_PAYLOAD_TYPES:
+        for process_open_strategy in process_open_strategy_options():
+            for process_vm_write_strategy in enum_items(
+                ProcessVmWriteStrategy,
+                exclude=THREAD_POOL_PROCESS_VM_WRITE_STRATEGY_EXCLUDE,
+            ):
+                for thread_pool_work_item in enum_items(ThreadPoolWorkItem):
+                    yield (
+                        ThreadInjectType.ThreadPool,
+                        payload_type,
+                        process_open_strategy,
+                        None,
+                        process_vm_write_strategy,
+                        None,
+                        thread_pool_work_item,
+                    )
 
 def iter_cases():
     for thread_inject_type in ThreadInjectType:
         if thread_inject_type == ThreadInjectType.IRundownDoCallback:
             yield from iter_irundown_cases()
+        elif thread_inject_type == ThreadInjectType.ThreadPool:
+            yield from iter_thread_pool_cases()
         else:
             yield from iter_thread_cases(thread_inject_type)
 
@@ -169,6 +206,7 @@ def format_case(
     process_vm_read_strategy,
     process_vm_write_strategy,
     thread_open_strategy,
+    thread_pool_work_item,
 ):
     return (
         f"sys_api_dispatch={sys_api_dispatch_name} / "
@@ -177,7 +215,8 @@ def format_case(
         f"process_vm_read_strategy={enum_case_name(process_vm_read_strategy)} / "
         f"process_vm_write_strategy={enum_case_name(process_vm_write_strategy)} / "
         f"process_open_strategy={enum_case_name(process_open_strategy)} / "
-        f"thread_open_strategy={enum_case_name(thread_open_strategy)}"
+        f"thread_open_strategy={enum_case_name(thread_open_strategy)} / "
+        f"thread_pool_work_item={enum_case_name(thread_pool_work_item)}"
     )
 
 def init_sysapi(sys_api_dispatch):
@@ -347,6 +386,25 @@ def run_thread_case(
     thread_inject(thread_inject_type, thread, ep, arg)
     send_br3k_script(process, payload_type)
 
+def run_thread_pool_case(
+    payload_type,
+    process_open_strategy,
+    process_vm_write_strategy,
+    thread_pool_work_item,
+):
+    process = create_process(
+        ThreadInjectType.ThreadPool,
+        process_open_strategy,
+        None,
+        process_vm_write_strategy,
+        None
+    )
+
+    ep, _ = prepare_payload(process, payload_type)
+
+    thread_pool = br3k.ThreadPool(process)
+    thread_pool.set_ep(work_item_type=thread_pool_work_item, ep=ep)
+
 def run_case(
     thread_inject_type,
     payload_type,
@@ -354,9 +412,17 @@ def run_case(
     process_vm_read_strategy,
     process_vm_write_strategy,
     thread_open_strategy,
+    thread_pool_work_item,
 ):
     if thread_inject_type == ThreadInjectType.IRundownDoCallback:
         run_irundown_case(process_open_strategy, process_vm_read_strategy)
+    elif thread_inject_type == ThreadInjectType.ThreadPool:
+        run_thread_pool_case(
+            payload_type,
+            process_open_strategy,
+            process_vm_write_strategy,
+            thread_pool_work_item
+        )
     else:
         run_thread_case(
             thread_inject_type,
@@ -368,7 +434,7 @@ def run_case(
 
 if __name__ == "__main__":
 
-    print("Script: Test thread injection techniques")
+    print("Script: Test code injection techniques")
     print()
 
     total_count = 0
@@ -388,6 +454,7 @@ if __name__ == "__main__":
                 process_vm_read_strategy,
                 process_vm_write_strategy,
                 thread_open_strategy,
+                thread_pool_work_item,
             ) = case
             case_name = format_case(
                 sys_api_dispatch_name,
@@ -396,7 +463,8 @@ if __name__ == "__main__":
                 process_open_strategy,
                 process_vm_read_strategy,
                 process_vm_write_strategy,
-                thread_open_strategy
+                thread_open_strategy,
+                thread_pool_work_item
             )
 
             total_count += 1
@@ -409,7 +477,8 @@ if __name__ == "__main__":
                     process_open_strategy,
                     process_vm_read_strategy,
                     process_vm_write_strategy,
-                    thread_open_strategy
+                    thread_open_strategy,
+                    thread_pool_work_item
                 )
                 print(f"Case passed: {case_name}")
             except Exception as e:
@@ -421,4 +490,4 @@ if __name__ == "__main__":
     print(f"Cases completed: {total_count - failed_count}/{total_count}")
 
     if failed_count > 0:
-        raise Exception(f"{failed_count} thread injection case(s) failed")
+        raise Exception(f"{failed_count} code injection case(s) failed")

@@ -129,6 +129,15 @@ fn main() {
             }
         }
 
+        builder = match module.0 {
+            "ntioapi" => builder.allowlist_var("IO_COMPLETION_ALL_ACCESS"),
+            "ntobapi" => builder.allowlist_var("DUPLICATE_.*"),
+            "ntpsapi" => builder
+                .allowlist_var("JOB_OBJECT_ALL_ACCESS")
+                .allowlist_var("PS_ATTRIBUTE_.*"),
+            _ => builder,
+        };
+
         let bindings = builder
             .allowlist_file(header_path.to_str().unwrap())
             .generate()

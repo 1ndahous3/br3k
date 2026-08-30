@@ -20,6 +20,11 @@ pub use crate::ntdef::{
     PUNICODE_STRING, PCUNICODE_STRING, PUNICODE_STRING64,
     OBJECT_ATTRIBUTES, POBJECT_ATTRIBUTES, PCOBJECT_ATTRIBUTES
 };
+pub use windows_sys::Wdk::Storage::FileSystem::{FILE_DISPOSITION_DELETE, FILE_DISPOSITION_INFORMATION_EX};
+pub use windows_sys::Win32::System::SystemServices::{
+    TRANSACTION_COMMIT, TRANSACTION_ENLIST, TRANSACTION_PROPAGATE, TRANSACTION_QUERY_INFORMATION,
+    TRANSACTION_RIGHT_RESERVED1, TRANSACTION_ROLLBACK, TRANSACTION_SET_INFORMATION,
+};
 use crate::ntsxs::ACTIVATION_CONTEXT;
 use windows_sys::core::{BOOL, GUID};
 use windows_sys::Win32::Foundation::{NTSTATUS, HANDLE, UNICODE_STRING, LUID};
@@ -117,14 +122,6 @@ pub type PULONG64 = *mut ULONG64;
 pub type PULONG_PTR = *mut ULONG_PTR;
 pub type PSIZE_T = *mut SIZE_T;
 pub type PDWORD = *mut DWORD;
-
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct FILE_DISPOSITION_INFORMATION_EX {
-    pub Flags: ULONG,
-}
-
-pub const FILE_DISPOSITION_DELETE: ULONG = 0x00000001;
 
 pub type LPCWCH = *const WCHAR;
 pub type PCWCH = *const WCHAR;
@@ -244,12 +241,6 @@ pub type CLSID = GUID;
 pub type IID = GUID;
 pub type error_status_t = *mut c_void;
 
-pub const MAX_PATH: usize = 260;
-pub const PS_ATTRIBUTE_NUMBER_MASK: u32 = 65535;
-pub const PS_ATTRIBUTE_THREAD: u32 = 65536;
-pub const PS_ATTRIBUTE_INPUT: u32 = 131072;
-pub const PS_ATTRIBUTE_ADDITIVE: u32 = 262144;
-
 pub const fn ps_attribute_value(number: u32, thread: bool, input: bool, additive: bool) -> u32 {
     (number & crate::ntpsapi::PS_ATTRIBUTE_NUMBER_MASK) |
         if thread { crate::ntpsapi::PS_ATTRIBUTE_THREAD } else { 0 } |
@@ -329,21 +320,9 @@ pub type PPS_APC_ROUTINE = PVOID;
 pub type PIO_APC_ROUTINE = PVOID;
 pub type PUSER_THREAD_START_ROUTINE = PVOID;
 
-pub const DUPLICATE_CLOSE_SOURCE: ULONG = 0x00000001;
-pub const DUPLICATE_SAME_ACCESS: ULONG = 0x00000002;
-pub const DUPLICATE_SAME_ATTRIBUTES: ULONG = 0x00000004;
-
-//
-
-use windows_sys::Win32::Storage::FileSystem::{STANDARD_RIGHTS_READ, STANDARD_RIGHTS_WRITE, STANDARD_RIGHTS_EXECUTE, STANDARD_RIGHTS_REQUIRED, SYNCHRONIZE};
-
-pub const TRANSACTION_QUERY_INFORMATION: u32 = 0x0001;
-pub const TRANSACTION_SET_INFORMATION: u32 = 0x0002;
-pub const TRANSACTION_ENLIST: u32 = 0x0004;
-pub const TRANSACTION_COMMIT: u32 = 0x0008;
-pub const TRANSACTION_ROLLBACK: u32 = 0x0010;
-pub const TRANSACTION_PROPAGATE: u32 = 0x0020;
-pub const TRANSACTION_RIGHT_RESERVED1: u32 = 0x0040;
+use windows_sys::Win32::Storage::FileSystem::{
+    STANDARD_RIGHTS_READ, STANDARD_RIGHTS_WRITE, STANDARD_RIGHTS_EXECUTE, STANDARD_RIGHTS_REQUIRED, SYNCHRONIZE
+};
 
 pub const TRANSACTION_GENERIC_READ: u32 =
         STANDARD_RIGHTS_READ |

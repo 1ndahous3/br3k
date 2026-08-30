@@ -9,6 +9,7 @@ mod py_pe;
 mod py_proc;
 mod py_resource;
 mod py_thread;
+mod py_threadpool;
 mod py_tx;
 
 mod api_strategy;

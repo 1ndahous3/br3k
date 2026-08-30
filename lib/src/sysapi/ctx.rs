@@ -53,6 +53,7 @@ pub struct NtDllApi {
     pub NtMapViewOfSection: Option<ntmmapi::PFN_NtMapViewOfSection>,
     pub NtUnmapViewOfSection: Option<ntmmapi::PFN_NtUnmapViewOfSection>,
     pub NtClose: Option<ntobapi::PFN_NtClose>,
+    pub NtSetEvent: Option<ntexapi::PFN_NtSetEvent>,
     pub NtWaitForSingleObject: Option<ntobapi::PFN_NtWaitForSingleObject>,
     pub NtQueryObject: Option<ntobapi::PFN_NtQueryObject>,
     pub NtDuplicateObject: Option<ntobapi::PFN_NtDuplicateObject>,
@@ -87,7 +88,18 @@ pub struct NtDllApi {
     pub NtQueueApcThreadEx: Option<ntpsapi::PFN_NtQueueApcThreadEx>,
     pub NtQueueApcThreadEx2: Option<ntpsapi::PFN_NtQueueApcThreadEx2>,
     pub NtCreateEvent: Option<ntexapi::PFN_NtCreateEvent>,
+    pub NtSetTimer2: Option<ntexapi::PFN_NtSetTimer2>,
+    pub NtQueryInformationWorkerFactory: Option<ntexapi::PFN_NtQueryInformationWorkerFactory>,
+    pub NtSetInformationWorkerFactory: Option<ntexapi::PFN_NtSetInformationWorkerFactory>,
     pub NtCreateNamedPipeFile: Option<ntioapi::PFN_NtCreateNamedPipeFile>,
+    pub NtSetIoCompletion: Option<ntioapi::PFN_NtSetIoCompletion>,
+    pub NtAssociateWaitCompletionPacket: Option<ntioapi::PFN_NtAssociateWaitCompletionPacket>,
+    pub NtAlpcCreatePort: Option<ntlpcapi::PFN_NtAlpcCreatePort>,
+    pub NtAlpcSetInformation: Option<ntlpcapi::PFN_NtAlpcSetInformation>,
+    pub NtAlpcConnectPort: Option<ntlpcapi::PFN_NtAlpcConnectPort>,
+    pub NtCreateJobObject: Option<ntpsapi::PFN_NtCreateJobObject>,
+    pub NtAssignProcessToJobObject: Option<ntpsapi::PFN_NtAssignProcessToJobObject>,
+    pub NtSetInformationJobObject: Option<ntpsapi::PFN_NtSetInformationJobObject>,
     pub NtSystemDebugControl: Option<ntexapi::PFN_NtSystemDebugControl>,
     pub RtlAdjustPrivilege: Option<ntrtl::PFN_RtlAdjustPrivilege>,
     pub RtlCreateProcessParametersEx: Option<ntrtl::PFN_RtlCreateProcessParametersEx>,
@@ -256,6 +268,7 @@ impl NtDllApi {
                 NtMapViewOfSection: Self::get_proc_address(module, "NtMapViewOfSection"),
                 NtUnmapViewOfSection: Self::get_proc_address(module, "NtUnmapViewOfSection"),
                 NtClose: Self::get_proc_address(module, "NtClose"),
+                NtSetEvent: Self::get_proc_address(module, "NtSetEvent"),
                 NtWaitForSingleObject: Self::get_proc_address(module, "NtWaitForSingleObject"),
                 NtQueryObject: Self::get_proc_address(module, "NtQueryObject"),
                 NtDuplicateObject: Self::get_proc_address(module, "NtDuplicateObject"),
@@ -290,7 +303,18 @@ impl NtDllApi {
                 NtQueueApcThreadEx: Self::get_proc_address(module, "NtQueueApcThreadEx"),
                 NtQueueApcThreadEx2: Self::get_proc_address(module, "NtQueueApcThreadEx2"),
                 NtCreateEvent: Self::get_proc_address(module, "NtCreateEvent"),
+                NtSetTimer2: Self::get_proc_address(module, "NtSetTimer2"),
+                NtQueryInformationWorkerFactory: Self::get_proc_address(module, "NtQueryInformationWorkerFactory"),
+                NtSetInformationWorkerFactory: Self::get_proc_address(module, "NtSetInformationWorkerFactory"),
                 NtCreateNamedPipeFile: Self::get_proc_address(module, "NtCreateNamedPipeFile"),
+                NtSetIoCompletion: Self::get_proc_address(module, "NtSetIoCompletion"),
+                NtAssociateWaitCompletionPacket: Self::get_proc_address(module, "NtAssociateWaitCompletionPacket"),
+                NtAlpcCreatePort: Self::get_proc_address(module, "NtAlpcCreatePort"),
+                NtAlpcSetInformation: Self::get_proc_address(module, "NtAlpcSetInformation"),
+                NtAlpcConnectPort: Self::get_proc_address(module, "NtAlpcConnectPort"),
+                NtCreateJobObject: Self::get_proc_address(module, "NtCreateJobObject"),
+                NtAssignProcessToJobObject: Self::get_proc_address(module, "NtAssignProcessToJobObject"),
+                NtSetInformationJobObject: Self::get_proc_address(module, "NtSetInformationJobObject"),
                 NtSystemDebugControl: Self::get_proc_address(module, "NtSystemDebugControl"),
                 RtlAdjustPrivilege: Self::get_proc_address(module, "RtlAdjustPrivilege"),
                 RtlCreateProcessParametersEx: Self::get_proc_address(module, "RtlCreateProcessParametersEx"),
@@ -463,7 +487,19 @@ impl SysApiCtx {
         Self::prepare_direct_syscall(stubs, "NtQueueApcThreadEx", ntdll.NtQueueApcThreadEx)?;
         Self::prepare_direct_syscall(stubs, "NtQueueApcThreadEx2", ntdll.NtQueueApcThreadEx2)?;
         Self::prepare_direct_syscall(stubs, "NtCreateEvent", ntdll.NtCreateEvent)?;
+        Self::prepare_direct_syscall(stubs, "NtSetEvent", ntdll.NtSetEvent)?;
+        Self::prepare_direct_syscall(stubs, "NtSetTimer2", ntdll.NtSetTimer2)?;
+        Self::prepare_direct_syscall(stubs, "NtQueryInformationWorkerFactory", ntdll.NtQueryInformationWorkerFactory)?;
+        Self::prepare_direct_syscall(stubs, "NtSetInformationWorkerFactory", ntdll.NtSetInformationWorkerFactory)?;
         Self::prepare_direct_syscall(stubs, "NtCreateNamedPipeFile", ntdll.NtCreateNamedPipeFile)?;
+        Self::prepare_direct_syscall(stubs, "NtSetIoCompletion", ntdll.NtSetIoCompletion)?;
+        Self::prepare_direct_syscall(stubs, "NtAssociateWaitCompletionPacket", ntdll.NtAssociateWaitCompletionPacket)?;
+        Self::prepare_direct_syscall(stubs, "NtAlpcCreatePort", ntdll.NtAlpcCreatePort)?;
+        Self::prepare_direct_syscall(stubs, "NtAlpcSetInformation", ntdll.NtAlpcSetInformation)?;
+        Self::prepare_direct_syscall(stubs, "NtAlpcConnectPort", ntdll.NtAlpcConnectPort)?;
+        Self::prepare_direct_syscall(stubs, "NtCreateJobObject", ntdll.NtCreateJobObject)?;
+        Self::prepare_direct_syscall(stubs, "NtAssignProcessToJobObject", ntdll.NtAssignProcessToJobObject)?;
+        Self::prepare_direct_syscall(stubs, "NtSetInformationJobObject", ntdll.NtSetInformationJobObject)?;
         Self::prepare_direct_syscall(stubs, "NtOpenFile", ntdll.NtOpenFile)?;
         Self::prepare_direct_syscall(stubs, "NtCreateFile", ntdll.NtCreateFile)?;
         Self::prepare_direct_syscall(stubs, "NtDeleteFile", ntdll.NtDeleteFile)?;

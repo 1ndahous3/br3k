@@ -112,7 +112,8 @@ pub mod br3k {
         py_pe,
         py_pdb,
         py_br3k_ipc,
-        py_com_irundown
+        py_com_irundown,
+        py_threadpool
     };
 
     use crate::vm::api_strategy;
@@ -144,6 +145,7 @@ pub mod br3k {
             "BufferView" => py_resource::BufferView::make_static_type(),
             "Process" => py_proc::Process::make_static_type(),
             "Thread" => py_thread::Thread::make_static_type(),
+            "ThreadPool" => py_threadpool::ThreadPool::make_static_type(),
             "Br3kIPC" => py_br3k_ipc::Br3kIPC::make_static_type(),
             "FileMapping" => py_fs::FileMapping::make_static_type(),
             "Pe" => py_pe::Pe::make_static_type(),
@@ -152,6 +154,7 @@ pub mod br3k {
             "PEB" => py_proc::CPeb::make_static_type(),
             "PRTL_USER_PROCESS_PARAMETERS" => py_proc::CPUserProcessParameters::make_static_type(),
             "PROCESS_BASIC_INFORMATION" => py_proc::CProcessBasicInformation::make_static_type(),
+            "WORKER_FACTORY_BASIC_INFORMATION" => py_threadpool::CWorkerFactoryBasicInformation::make_static_type(),
             "ComIRundown" => py_com_irundown::ComIRundown::make_static_type(),
         });
 
@@ -170,6 +173,7 @@ pub mod br3k {
         register_enum!(vm, module, int_enum, api_strategy::FileOpenStrategy);
         register_enum!(vm, module, int_enum, api_strategy::FileRenameStrategy);
         register_enum!(vm, module, int_enum, api_strategy::FileChangeStrategy);
+        register_enum!(vm, module, int_enum, py_threadpool::ThreadPoolWorkItem);
         register_enum!(vm, module, int_enum, fs::FsFileMode);
         register_enum!(vm, module, int_enum, fs::FsSectionMode);
 

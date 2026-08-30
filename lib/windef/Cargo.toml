@@ -22,6 +22,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Memory",
     "Win32_UI_WindowsAndMessaging",
+    "Wdk_Storage_FileSystem",
 ]}
 
 [build-dependencies]

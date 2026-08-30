@@ -34,11 +34,12 @@ use scopeguard::ScopeGuard;
 
 use windows::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows::Win32::System::Environment::GetCurrentDirectoryW;
-use windows_sys::Win32::Foundation::{HANDLE, HWND, FALSE};
+use windows_sys::Win32::Foundation::{HANDLE, HWND, FALSE, MAX_PATH};
 use windows_sys::Win32::System::Diagnostics::Debug::{CONTEXT, WOW64_CONTEXT};
 use windows_sys::Win32::System::Threading::{
     EVENT_ALL_ACCESS, PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS,
 };
+use windows_sys::Win32::System::JobObjects::JOBOBJECT_ASSOCIATE_COMPLETION_PORT;
 use windows_sys::Win32::System::LibraryLoader::LoadLibraryA;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
@@ -160,6 +161,37 @@ pub fn duplicate_handle(
     source_handle: HANDLE,
     source_process_handle: HANDLE
 ) -> NtResult<UniqueHandle> {
+    duplicate_handle_ex(
+        target_process_handle,
+        source_handle,
+        source_process_handle,
+        0,
+        ntobapi::DUPLICATE_SAME_ACCESS,
+    )
+}
+
+pub fn duplicate_handle_with_access(
+    target_process_handle: HANDLE,
+    source_handle: HANDLE,
+    source_process_handle: HANDLE,
+    desired_access: winbase::ACCESS_MASK,
+) -> NtResult<UniqueHandle> {
+    duplicate_handle_ex(
+        target_process_handle,
+        source_handle,
+        source_process_handle,
+        desired_access,
+        0,
+    )
+}
+
+fn duplicate_handle_ex(
+    target_process_handle: HANDLE,
+    source_handle: HANDLE,
+    source_process_handle: HANDLE,
+    desired_access: winbase::ACCESS_MASK,
+    options: ULONG,
+) -> NtResult<UniqueHandle> {
     unsafe {
         let target_handle: HANDLE = ptr::null_mut();
 
@@ -169,9 +201,9 @@ pub fn duplicate_handle(
             source_handle,
             target_process_handle,
             addr_of!(target_handle) as _,
+            desired_access,
             0,
-            0,
-            winbase::DUPLICATE_SAME_ACCESS,
+            options,
         ));
 
         if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(target_handle)) }
@@ -234,7 +266,7 @@ pub fn create_process_parameters(name: &str) -> NtResult<UniqueProcessParameters
         let nt_name = U16CString::from_str(nt_name).unwrap();
         let nt_name = to_unicode_string(&nt_name);
 
-        let mut current_directory = [0u16; winbase::MAX_PATH];
+        let mut current_directory = [0u16; MAX_PATH as usize];
         GetCurrentDirectoryW(Some(&mut current_directory));
         let current_directory = to_unicode_string(&current_directory);
 
@@ -982,14 +1014,17 @@ pub fn allocate_virtual_memory(
     allocation_type: ULONG,
 ) -> NtResult<PVOID> {
     unsafe {
+        let mut base_address = base_address;
+        let mut region_size = size;
+
         let status = match api_ctx::sys_api_dispatch().allocate_virtual_memory {
             AllocateVirtualMemory::NtAllocateVirtualMemory => {
                 let nt_allocate_virtual_memory = require_sys_api(api_ctx::ntdll().NtAllocateVirtualMemory, "NtAllocateVirtualMemory")?;
                 NTSTATUS(nt_allocate_virtual_memory(
                     process_handle,
-                    addr_of!(base_address) as _,
+                    addr_of_mut!(base_address) as _,
                     0,
-                    addr_of!(size) as _,
+                    addr_of_mut!(region_size) as _,
                     allocation_type,
                     protect,
                 ))
@@ -998,8 +1033,8 @@ pub fn allocate_virtual_memory(
                 let nt_allocate_virtual_memory_ex = require_sys_api(api_ctx::ntdll().NtAllocateVirtualMemoryEx, "NtAllocateVirtualMemoryEx")?;
                 NTSTATUS(nt_allocate_virtual_memory_ex(
                     process_handle,
-                    addr_of!(base_address) as _,
-                    addr_of!(size) as _,
+                    addr_of_mut!(base_address) as _,
+                    addr_of_mut!(region_size) as _,
                     allocation_type,
                     protect,
                     ptr::null_mut(),
@@ -1369,6 +1404,290 @@ pub fn create_event() -> NtResult<UniqueHandle> {
     }
 }
 
+pub fn set_event(event_handle: HANDLE) -> NtResult<()> {
+    unsafe {
+        let mut previous_state: winbase::LONG = 0;
+        let nt_set_event = require_sys_api(api_ctx::ntdll().NtSetEvent, "NtSetEvent")?;
+        let status = NTSTATUS(nt_set_event(event_handle, addr_of_mut!(previous_state) as _));
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn set_timer2(timer_handle: HANDLE, due_time: i64) -> NtResult<()> {
+    unsafe {
+        let mut due_time = ntwin::LARGE_INTEGER { bindgen_union_field: due_time as _, ..Default::default() };
+        let mut parameters = ntexapi::T2_SET_PARAMETERS::default();
+
+        let nt_set_timer2 = require_sys_api(api_ctx::ntdll().NtSetTimer2, "NtSetTimer2")?;
+        let status = NTSTATUS(nt_set_timer2(
+            timer_handle,
+            addr_of_mut!(due_time) as _,
+            ptr::null_mut(),
+            addr_of_mut!(parameters) as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn get_worker_factory_basic_info(worker_factory_handle: HANDLE) -> NtResult<ntexapi::WORKER_FACTORY_BASIC_INFORMATION> {
+    unsafe {
+        let mut worker_factory_info = ntexapi::WORKER_FACTORY_BASIC_INFORMATION::default();
+        let nt_query_information_worker_factory = require_sys_api(
+            api_ctx::ntdll().NtQueryInformationWorkerFactory,
+            "NtQueryInformationWorkerFactory"
+        )?;
+        let status = NTSTATUS(nt_query_information_worker_factory(
+            worker_factory_handle,
+            ntexapi::WORKERFACTORYINFOCLASS::WorkerFactoryBasicInformation,
+            addr_of_mut!(worker_factory_info) as _,
+            size_of::<ntexapi::WORKER_FACTORY_BASIC_INFORMATION>() as _,
+            ptr::null_mut(),
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(worker_factory_info) }
+    }
+}
+
+pub fn set_worker_factory_thread_minimum(worker_factory_handle: HANDLE, thread_minimum: u32) -> NtResult<()> {
+    unsafe {
+        let nt_set_information_worker_factory = require_sys_api(
+            api_ctx::ntdll().NtSetInformationWorkerFactory,
+            "NtSetInformationWorkerFactory"
+        )?;
+        let status = NTSTATUS(nt_set_information_worker_factory(
+            worker_factory_handle,
+            ntexapi::WORKERFACTORYINFOCLASS::WorkerFactoryThreadMinimum,
+            addr_of!(thread_minimum) as _,
+            size_of::<u32>() as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn set_io_completion(
+    io_completion_handle: HANDLE,
+    key_context: PVOID,
+    apc_context: PVOID,
+    io_status: windows_sys::Win32::Foundation::NTSTATUS,
+    io_status_information: usize,
+) -> NtResult<()> {
+    unsafe {
+        let nt_set_io_completion = require_sys_api(api_ctx::ntdll().NtSetIoCompletion, "NtSetIoCompletion")?;
+        let status = NTSTATUS(nt_set_io_completion(
+            io_completion_handle,
+            key_context,
+            apc_context,
+            io_status,
+            io_status_information,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn associate_wait_completion_packet(
+    wait_completion_packet_handle: HANDLE,
+    io_completion_handle: HANDLE,
+    target_object_handle: HANDLE,
+    key_context: PVOID,
+    apc_context: PVOID,
+    io_status: windows_sys::Win32::Foundation::NTSTATUS,
+    io_status_information: usize,
+) -> NtResult<bool> {
+    unsafe {
+        let mut already_signaled = false;
+        let nt_associate_wait_completion_packet = require_sys_api(
+            api_ctx::ntdll().NtAssociateWaitCompletionPacket,
+            "NtAssociateWaitCompletionPacket"
+        )?;
+        let status = NTSTATUS(nt_associate_wait_completion_packet(
+            wait_completion_packet_handle,
+            io_completion_handle,
+            target_object_handle,
+            key_context,
+            apc_context,
+            io_status,
+            io_status_information,
+            addr_of_mut!(already_signaled) as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(already_signaled) }
+    }
+}
+
+pub fn set_file_completion_information(
+    file_handle: HANDLE,
+    io_completion_handle: HANDLE,
+    completion_key: PVOID,
+) -> NtResult<()> {
+    unsafe {
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let file_information = ntioapi::FILE_COMPLETION_INFORMATION {
+            Port: io_completion_handle,
+            Key: completion_key,
+        };
+
+        let nt_set_information_file = require_sys_api(api_ctx::ntdll().NtSetInformationFile, "NtSetInformationFile")?;
+        let status = NTSTATUS(nt_set_information_file(
+            file_handle,
+            addr_of!(io_status_block) as _,
+            addr_of!(file_information) as _,
+            size_of::<ntioapi::FILE_COMPLETION_INFORMATION>() as _,
+            ntioapi::FILE_INFORMATION_CLASS::FileReplaceCompletionInformation,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn create_alpc_port(name: Option<&str>, flags: u32, max_message_length: u32) -> NtResult<UniqueHandle> {
+    unsafe {
+        let mut port_handle: HANDLE = ptr::null_mut();
+        let nt_name = name.map(|name| U16CString::from_str(name).unwrap());
+        let nt_name = nt_name.as_ref().map(to_unicode_string);
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: nt_name.as_ref().map_or(ptr::null_mut(), |name| addr_of!(*name) as _),
+            Attributes: if nt_name.is_some() { ntdef::OBJ_CASE_INSENSITIVE } else { 0 },
+            ..Default::default()
+        };
+        let mut port_attributes = ntlpcapi::ALPC_PORT_ATTRIBUTES {
+            Flags: flags,
+            MaxMessageLength: max_message_length as _,
+            ..Default::default()
+        };
+
+        let nt_alpc_create_port = require_sys_api(api_ctx::ntdll().NtAlpcCreatePort, "NtAlpcCreatePort")?;
+        let status = NTSTATUS(nt_alpc_create_port(
+            addr_of_mut!(port_handle) as _,
+            addr_of!(object_attributes) as _,
+            addr_of_mut!(port_attributes) as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(port_handle)) }
+    }
+}
+
+pub fn set_alpc_completion_port(
+    alpc_port_handle: HANDLE,
+    io_completion_handle: HANDLE,
+    completion_key: PVOID,
+) -> NtResult<()> {
+    unsafe {
+        let mut completion_port = ntlpcapi::ALPC_PORT_ASSOCIATE_COMPLETION_PORT {
+            CompletionKey: completion_key,
+            CompletionPort: io_completion_handle,
+        };
+
+        let nt_alpc_set_information = require_sys_api(api_ctx::ntdll().NtAlpcSetInformation, "NtAlpcSetInformation")?;
+        let status = NTSTATUS(nt_alpc_set_information(
+            alpc_port_handle,
+            ntlpcapi::ALPC_PORT_INFORMATION_CLASS::AlpcAssociateCompletionPortInformation,
+            addr_of_mut!(completion_port) as _,
+            size_of::<ntlpcapi::ALPC_PORT_ASSOCIATE_COMPLETION_PORT>() as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn connect_alpc_port(name: &str, message_size: usize, timeout: i64) -> NtResult<()> {
+    unsafe {
+        let nt_name = U16CString::from_str(name).unwrap();
+        let nt_name = to_unicode_string(&nt_name);
+        let mut client_port_handle: HANDLE = ptr::null_mut();
+        let mut port_attributes = ntlpcapi::ALPC_PORT_ATTRIBUTES {
+            MaxMessageLength: message_size as _,
+            ..Default::default()
+        };
+        let mut connection_message = vec![0u8; message_size];
+        let mut buffer_length = connection_message.len();
+        let mut timeout = ntwin::LARGE_INTEGER { bindgen_union_field: timeout as _, ..Default::default() };
+
+        let message = connection_message.as_mut_ptr() as *mut ntlpcapi::PORT_MESSAGE;
+        let data_length = message_size.saturating_sub(size_of::<ntlpcapi::PORT_MESSAGE>()) as u32;
+        (*message).u1.bindgen_union_field = ((message_size as u32) << 16) | data_length;
+
+        let nt_alpc_connect_port = require_sys_api(api_ctx::ntdll().NtAlpcConnectPort, "NtAlpcConnectPort")?;
+        let status = NTSTATUS(nt_alpc_connect_port(
+            addr_of_mut!(client_port_handle) as _,
+            addr_of!(nt_name) as _,
+            ptr::null_mut(),
+            addr_of_mut!(port_attributes) as _,
+            0,
+            ptr::null_mut(),
+            message,
+            addr_of_mut!(buffer_length) as _,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            addr_of_mut!(timeout) as _,
+        ));
+        let _client_port_handle = (!client_port_handle.is_null()).then(|| wrap_handle(client_port_handle));
+
+        if status.0 == ntstatus::STATUS_TIMEOUT {
+            Ok(())
+        } else if !status.is_ok() {
+            Err(status.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub fn create_job_object() -> NtResult<UniqueHandle> {
+    unsafe {
+        let mut job_handle: HANDLE = ptr::null_mut();
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ..Default::default()
+        };
+
+        let nt_create_job_object = require_sys_api(api_ctx::ntdll().NtCreateJobObject, "NtCreateJobObject")?;
+        let status = NTSTATUS(nt_create_job_object(
+            addr_of_mut!(job_handle) as _,
+            ntpsapi::JOB_OBJECT_ALL_ACCESS,
+            addr_of!(object_attributes) as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(job_handle)) }
+    }
+}
+
+pub fn set_job_completion_port(
+    job_handle: HANDLE,
+    io_completion_handle: HANDLE,
+    completion_key: PVOID,
+) -> NtResult<()> {
+    unsafe {
+        let mut job_completion_port = JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
+            CompletionKey: completion_key,
+            CompletionPort: io_completion_handle,
+        };
+
+        let nt_set_information_job_object = require_sys_api(api_ctx::ntdll().NtSetInformationJobObject, "NtSetInformationJobObject")?;
+        let status = NTSTATUS(nt_set_information_job_object(
+            job_handle,
+            ntpsapi::JobObjectAssociateCompletionPortInformation as _,
+            addr_of_mut!(job_completion_port) as _,
+            size_of::<JOBOBJECT_ASSOCIATE_COMPLETION_PORT>() as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
+pub fn assign_process_to_job_object(job_handle: HANDLE, process_handle: HANDLE) -> NtResult<()> {
+    unsafe {
+        let nt_assign_process_to_job_object = require_sys_api(api_ctx::ntdll().NtAssignProcessToJobObject, "NtAssignProcessToJobObject")?;
+        let status = NTSTATUS(nt_assign_process_to_job_object(job_handle, process_handle));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(()) }
+    }
+}
+
 pub fn create_named_pipe(name: &str, sd: PVOID) -> NtResult<UniqueHandle> {
     unsafe {
         let nt_name = format!("\\Device\\NamedPipe\\{name}");
@@ -1507,6 +1826,53 @@ pub fn open_file_by_nt_create_file(
         };
 
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
+        let mut file_handle: HANDLE = ptr::null_mut();
+
+        let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
+        let status = NTSTATUS(nt_create_file(
+            addr_of_mut!(file_handle) as _,
+            access_mask,
+            addr_of!(object_attributes) as _,
+            addr_of!(io_status_block) as _,
+            ptr::null_mut(),
+            FILE_ATTRIBUTE_NORMAL,
+            share_access,
+            ntioapi::FILE_OPEN,
+            create_options,
+            ptr::null_mut(),
+            0,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(wrap_handle(file_handle)) }
+    }
+}
+
+pub fn create_file_by_nt_create_file_with_options(
+    path: &str,
+    access_mask: u32,
+    share_access: u32,
+    create_disposition: u32,
+    create_options: u32,
+    allocation_size: Option<usize>,
+) -> NtResult<UniqueHandle> {
+    unsafe {
+        let nt_path = format!("\\??\\{path}");
+        let nt_path = U16CString::from_str(nt_path).unwrap();
+        let nt_path = to_unicode_string(&nt_path);
+
+        let object_attributes = winbase::OBJECT_ATTRIBUTES {
+            Length: size_of::<winbase::OBJECT_ATTRIBUTES>() as _,
+            ObjectName: addr_of!(nt_path) as _,
+            Attributes: ntdef::OBJ_CASE_INSENSITIVE,
+            ..Default::default()
+        };
+
+        let allocation_size = allocation_size
+            .map(|size| ntwin::LARGE_INTEGER { bindgen_union_field: size as _, ..Default::default() });
+        let allocation_size_ptr = allocation_size
+            .as_ref()
+            .map_or(ptr::null(), |allocation_size| addr_of!(*allocation_size)) as _;
+        let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
         let file_handle: HANDLE = ptr::null_mut();
 
         let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
@@ -1515,10 +1881,10 @@ pub fn open_file_by_nt_create_file(
             access_mask,
             addr_of!(object_attributes) as _,
             addr_of!(io_status_block) as _,
-            ptr::null_mut(),
+            allocation_size_ptr,
             FILE_ATTRIBUTE_NORMAL,
             share_access,
-            ntioapi::FILE_OPEN,
+            create_disposition,
             create_options,
             ptr::null_mut(),
             0,
@@ -1868,6 +2234,39 @@ pub fn write_file(file_handle: HANDLE, data: PVOID, size: usize) -> NtResult<boo
     }
 }
 
+pub fn write_file_at(file_handle: HANDLE, data: PVOID, size: usize, byte_offset: i64) -> NtResult<bool> {
+    unsafe {
+        let nt_write_file = require_sys_api(api_ctx::ntdll().NtWriteFile, "NtWriteFile")?;
+        let io_status_block = Box::into_raw(Box::new(ntioapi::IO_STATUS_BLOCK::default()));
+        let byte_offset = Box::into_raw(Box::new(ntwin::LARGE_INTEGER {
+            bindgen_union_field: byte_offset as _,
+            ..Default::default()
+        }));
+
+        let status = NTSTATUS(nt_write_file(
+            file_handle,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            io_status_block as _,
+            data,
+            size as _,
+            byte_offset as _,
+            ptr::null_mut(),
+        ));
+
+        if status.0 == ntstatus::STATUS_PENDING {
+            return Ok(false);
+        }
+
+        let information = (*io_status_block).Information;
+        drop(Box::from_raw(io_status_block));
+        drop(Box::from_raw(byte_offset));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(information == size) }
+    }
+}
+
 pub fn read_file(file_handle: HANDLE, data: PVOID, size: usize) -> NtResult<bool> {
     unsafe {
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
@@ -2030,6 +2429,77 @@ pub fn get_process_handles(pid: u32) -> NtResult<Vec<HANDLE>> {
         }
 
         Ok(res)
+    }
+}
+
+pub fn get_process_handle_snapshot(process_handle: HANDLE) -> NtResult<Vec<HANDLE>> {
+    unsafe {
+        let mut data_size: ULONG = 0x1000;
+        let mut data = vec![0u8; data_size as usize];
+        let nt_query_information_process = require_sys_api(api_ctx::ntdll().NtQueryInformationProcess, "NtQueryInformationProcess")?;
+
+        loop {
+            let status = NTSTATUS(nt_query_information_process(
+                process_handle,
+                ntpsapi::PROCESSINFOCLASS::ProcessHandleInformation,
+                data.as_mut_ptr() as _,
+                data.len() as _,
+                addr_of_mut!(data_size) as _,
+            ));
+
+            if status.is_ok() {
+                break;
+            }
+
+            if status.0 == ntstatus::STATUS_INFO_LENGTH_MISMATCH || status.0 == ntstatus::STATUS_BUFFER_OVERFLOW {
+                data.resize(data_size as usize + size_of::<ntpsapi::PROCESS_HANDLE_TABLE_ENTRY_INFO>() * 16, 0);
+                continue;
+            }
+
+            return Err(status.into());
+        }
+
+        let snapshot = data.as_ptr() as ntpsapi::PPROCESS_HANDLE_SNAPSHOT_INFORMATION;
+        let handles = slice::from_raw_parts((*snapshot).Handles.as_ptr(), (*snapshot).NumberOfHandles as usize);
+        let handle_values = handles.iter()
+            .map(|handle| handle.HandleValue)
+            .collect();
+
+        Ok(handle_values)
+    }
+}
+
+pub fn get_handle_type(handle: HANDLE) -> NtResult<String> {
+    unsafe {
+        let mut data_size: ULONG = 0;
+        let mut data = Vec::<u8>::new();
+        let nt_query_object = require_sys_api(api_ctx::ntdll().NtQueryObject, "NtQueryObject")?;
+
+        loop {
+            let status = NTSTATUS(nt_query_object(
+                handle,
+                ntobapi::OBJECT_INFORMATION_CLASS::ObjectTypeInformation,
+                data.as_mut_ptr() as _,
+                data.len() as _,
+                addr_of_mut!(data_size) as _,
+            ));
+
+            if status.is_ok() {
+                break;
+            }
+
+            if status.0 == ntstatus::STATUS_INFO_LENGTH_MISMATCH {
+                data.resize(data_size as usize, 0);
+                continue;
+            }
+
+            return Err(status.into());
+        }
+
+        let info = data.as_ptr() as ntobapi::POBJECT_TYPE_INFORMATION;
+        let type_name = (*info).TypeName.to_u16cstring();
+
+        Ok(type_name.to_string_lossy().to_string())
     }
 }
 
