@@ -4,4 +4,8 @@ members = [
     "lib",
     "cli",
     "dll",
+    "tests/fixtures",
+    "tests/host",
+    "tools/python-api",
+    "tools/python-api-macros",
 ]

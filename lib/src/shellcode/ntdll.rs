@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 
-use crate::pe_module;
+use crate::pe::module;
 
 pub fn gadget_KiUserCallForwarder() -> Option<&'static [u8]> {
-    pe_module::find_code_in_module("ntdll.dll", &[
+    module::find_code("ntdll.dll", &[
         0x48, 0x83, 0xEC, 0x48,                   // sub     rsp, 48h
         0x48, 0x89, 0x4C, 0x24, 0x20,             // mov     [rsp+48h+var_28], rcx
         0x48, 0x89, 0x54, 0x24, 0x28,             // mov     [rsp+48h+var_20], rdx

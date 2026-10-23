@@ -2,8 +2,9 @@
 
 **br3k** is a mini-framework for Windows pentesting, designed to implement non-standard scenarios and combine interesting methods.
 
-It provides many options to vary the pentest flow: selecting different strategies, choosing the system API backend, and configuring dispatch for specific low-level functions.
-Some features are documented in [core](docs/core.md) notes.
+It provides many options to vary the pentest flow: selecting different strategies, choosing the system API backend, and configuring dispatch for specific low-level functions. Some features are documented in [core](docs/core.md) notes.
+
+The [Python API reference](docs/api/index.md) covers all `br3k` namespaces, with signatures, source docstrings, strategy enums, and compatibility aliases. [Editor stubs](stubs/br3k/__init__.pyi) are generated from the same Rust declarations with `cargo api`.
 
 The repository includes many well-known pentest techniques (process injection, payload delivery between targets) and other scripts (see [scripts](docs/scripts.md) notes).
 

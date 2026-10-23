@@ -1,3 +1,6 @@
+pub use br3k_python_api_macros::py_api;
+pub use crate::vm::adapters::{PyEnumValue, PyListOf};
+
 pub use rustpython_vm::{
     VirtualMachine, Interpreter,
     pyclass, pymodule,

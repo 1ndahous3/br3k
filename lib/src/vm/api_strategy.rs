@@ -63,10 +63,15 @@ pub enum ProcessMemoryError {
 
 #[repr(u32)]
 #[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Independent source for process-memory reads; configure before `Process.init_memory()`.
 pub enum ProcessVmReadStrategy {
+    /// Read target virtual addresses through the configured ReadVirtualMemory dispatch.
     ReadVirtualMemory,
+    /// Read section-backed target storage through ReadVirtualMemory.
     CreateSectionMap,
+    /// Copy from a shared local view created by the matching write strategy; not an arbitrary remote reader.
     CreateSectionMapLocalMap,
+    /// Capture a live kernel dump and read the selected process from that snapshot; requires privileges and symbols.
     LiveDumpParse,
 }
 
@@ -95,9 +100,13 @@ pub enum ProcessMemoryRead {
 
 #[repr(u32)]
 #[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Allocation/mapping and write mechanism for the process memory context.
 pub enum ProcessVmWriteStrategy {
+    /// Allocate target memory and write it with WriteVirtualMemory.
     AllocateInAddr,
+    /// Map a new section in the target and write it with WriteVirtualMemory.
     CreateSectionMap,
+    /// Map one section in both processes and copy bytes through the local view.
     CreateSectionMapLocalMap,
 }
 
@@ -109,10 +118,15 @@ impl fmt::Display for ProcessVmWriteStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Native file-deletion mechanism. Deletion timing still follows Windows handle/share rules.
 pub enum FileDeleteStrategy {
+    /// Delete by name with NtDeleteFile; the default file-delete strategy.
     NtDeleteFile,
+    /// Set disposition using the configured SetInformation_Delete dispatch.
     SetInformationFile,
+    /// Open with NtOpenFile and FILE_DELETE_ON_CLOSE, then close the handle.
     NtOpenFileDeleteOnClose,
+    /// Open with NtCreateFile and FILE_DELETE_ON_CLOSE, then close the handle.
     NtCreateFileDeleteOnClose,
 }
 
@@ -135,8 +149,11 @@ impl FileDeleteStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// API used to open an existing file with the selected FileMode access/share flags.
 pub enum FileOpenStrategy {
+    /// Open an existing file through NtOpenFile; the default.
     NtOpenFile,
+    /// Open an existing file through NtCreateFile with FILE_OPEN.
     NtCreateFile,
 }
 
@@ -163,8 +180,11 @@ impl FileOpenStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// File rename or non-atomic copy/delete operation.
 pub enum FileRenameStrategy {
+    /// Set rename information using the configured SetInformation_Rename dispatch.
     Rename,
+    /// Copy the content to the destination, then delete the original; not atomic.
     CopyDelete,
 }
 
@@ -185,9 +205,13 @@ impl FileRenameStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Destructive file-change operation; zeroing is not a secure-erasure guarantee.
 pub enum FileChangeStrategy {
+    /// Delete using the separately selected FileDeleteStrategy; the default.
     DeleteFile,
+    /// Open for writing using FileOpenStrategy and overwrite content with zeros.
     OpenFile,
+    /// Map the file for writing and zero the mapped bytes.
     CreateFileMapping,
 }
 
@@ -509,8 +533,11 @@ impl ProcessMemory {
 
 #[repr(u32)]
 #[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// How to acquire a process handle for the selected PID.
 pub enum ProcessOpenStrategy {
+    /// Open directly by PID through NtOpenProcess.
     OpenProcess,
+    /// Find a window belonging to the PID and obtain its process handle through NtUserGetWindowProcessHandle.
     OpenProcessByHwnd,
 }
 
@@ -571,9 +598,13 @@ impl ProcessOpenStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// How Thread.open() chooses and opens a target thread.
 pub enum ThreadOpenStrategy {
+    /// Open the explicitly supplied TID.
     ThreadOpenByTid,
+    /// Obtain a thread through NtGetNextThread on the opened process.
     ThreadOpenAnyNext,
+    /// Find a thread owning a window for the selected PID; requires a suitable GUI window.
     ThreadOpenAnyByHwnd, // maybe only shell hwnd will be valid for the current process
 }
 
@@ -619,8 +650,11 @@ impl ThreadOpenStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Mechanism for suspending an opened process.
 pub enum ProcessSuspendStrategy {
+    /// Use NtSuspendProcess; the default.
     NtSuspendProcess,
+    /// Create a process-state-change object and request suspension through NtChangeProcessState.
     NtChangeProcessState,
 }
 
@@ -641,8 +675,11 @@ impl ProcessSuspendStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Mechanism for resuming an opened process.
 pub enum ProcessResumeStrategy {
+    /// Use NtResumeProcess; the default.
     NtResumeProcess,
+    /// Create a process-state-change object and request resume through NtChangeProcessState.
     NtChangeProcessState,
 }
 
@@ -663,8 +700,11 @@ impl ProcessResumeStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Mechanism for suspending an opened thread.
 pub enum ThreadSuspendStrategy {
+    /// Use NtSuspendThread; the default.
     NtSuspendThread,
+    /// Create a thread-state-change object and request suspension through NtChangeThreadState.
     NtChangeThreadState,
 }
 
@@ -685,8 +725,11 @@ impl ThreadSuspendStrategy {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, VariantArray, FromRepr, IntoStaticStr, EnumIter)]
+/// Mechanism for resuming an opened thread.
 pub enum ThreadResumeStrategy {
+    /// Use NtResumeThread; the default.
     NtResumeThread,
+    /// Create a thread-state-change object and request resume through NtChangeThreadState.
     NtChangeThreadState,
 }
 

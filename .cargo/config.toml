@@ -1,3 +1,6 @@
+[alias]
+api = "run --release -p br3k-python-api --"
+
 [env]
 PHNT_PATH = { value = "../deps/phnt" }
 

@@ -52,18 +52,30 @@ pub struct CreateUserApcArgs {
     arg3: OptionalArg<u64>,
 }
 
+#[py_api]
 #[derive(FromArgs)]
 pub struct ThreadSuspendArgs {
+    /// Defaults to NtSuspendThread.
+    #[pyi(ty = "br3k.proc.ThreadSuspendStrategy | int")]
     #[pyarg(named, optional)]
     thread_suspend_strategy: OptionalArg<u32>,
 }
 
+#[py_api]
 #[derive(FromArgs)]
 pub struct ThreadResumeArgs {
+    /// Defaults to NtResumeThread.
+    #[pyi(ty = "br3k.proc.ThreadResumeStrategy | int")]
     #[pyarg(named, optional)]
     thread_resume_strategy: OptionalArg<u32>,
 }
 
+/// A thread associated with a `br3k.proc.Process`.
+///
+/// Construction only stores the process and optional TID or handle. Call `open()`
+/// or `create()` to acquire a handle, unless one was supplied. Native addresses
+/// refer to the target process. Context and callback operations require matching
+/// architecture and calling conventions; they do not validate executable code.
 #[pyclass(module = false, name = "Thread")]
 #[derive(Debug, PyPayload)]
 pub struct Thread {
@@ -75,6 +87,7 @@ pub struct Thread {
 impl Constructor for Thread {
     type Args = ThreadNewArgs;
 
+    /// Store a process and optional integer TID or owning handle without opening a thread.
     fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
         Ok(Self {
             process: args.process,
@@ -86,6 +99,10 @@ impl Constructor for Thread {
 
 #[pyclass(with(Constructor))]
 impl Thread {
+    /// Change a suspended thread's entry point to `ep`.
+    ///
+    /// Set `new_thread=True` for initial startup-context handling, or `False` to
+    /// replace the current instruction pointer. Does not suspend or resume the thread.
     #[pymethod]
     fn set_ep(&self, args: SetEpArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut handle = self.handle.borrow_mut();
@@ -103,6 +120,10 @@ impl Thread {
         Ok(())
     }
 
+    /// Create a thread at target address `ep`, using the configured system API dispatch.
+    ///
+    /// `arg` defaults to a null pointer. Requires an opened process; retains the
+    /// returned thread handle. Creation does not imply that the callback completed.
     #[pymethod]
     fn create(&self, args: CreateArgs, vm: &VirtualMachine) -> PyResult<()> {
         let process_handle = self.process.process_handle.borrow();
@@ -123,6 +144,10 @@ impl Thread {
         Ok(())
     }
 
+    /// Open a thread using the parent process's `ThreadOpenStrategy`.
+    ///
+    /// The TID strategy requires `tid`; other strategies use the opened process or
+    /// its PID/window. An omitted strategy raises `ValueError`.
     #[pymethod]
     fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
         let mut thread_open_strategy = self.process.thread_open_strategy.borrow_mut();
@@ -166,6 +191,9 @@ impl Thread {
     }
 
     // TODO: rework with thread open strategy
+    /// Search the opened process for an alertable thread and retain its handle.
+    ///
+    /// This is a snapshot-based selection; a thread may leave its alertable state.
     #[pymethod]
     fn open_alertable(&self, vm: &VirtualMachine) -> PyResult<()> {
         let process_handle = self.process.process_handle.borrow();
@@ -181,6 +209,7 @@ impl Thread {
         Ok(())
     }
 
+    /// Suspend the opened thread. Defaults to `ThreadSuspendStrategy.NtSuspendThread`.
     #[pymethod]
     fn suspend(&self, args: ThreadSuspendArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut handle = self.handle.borrow_mut();
@@ -200,6 +229,7 @@ impl Thread {
         Ok(())
     }
 
+    /// Resume the opened thread. Defaults to `ThreadResumeStrategy.NtResumeThread`.
     #[pymethod]
     fn resume(&self, args: ThreadResumeArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut handle = self.handle.borrow_mut();
@@ -219,6 +249,10 @@ impl Thread {
         Ok(())
     }
 
+    /// Queue a user APC at target address `ep` on the opened thread.
+    ///
+    /// The three optional pointer-sized arguments default to zero. Uses the system
+    /// API `QueueApcThread` dispatch; successful queueing does not guarantee delivery.
     #[pymethod]
     fn queue_user_apc(&self, args: CreateUserApcArgs, vm: &VirtualMachine) -> PyResult<()> {
         let mut handle = self.handle.borrow_mut();

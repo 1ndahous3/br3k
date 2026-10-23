@@ -45,3 +45,19 @@ impl ToU16CString for UNICODE_STRING {
 pub fn to_u16cstring<T: ToU16CString>(s: &T) -> U16CString {
     s.to_u16cstring()
 }
+
+pub fn unicode_string_buffer_to_u16cstring(buffer: &[u8]) -> Option<U16CString> {
+    if buffer.len() < size_of::<UNICODE_STRING>() {
+        return None;
+    }
+
+    let unicode_string = unsafe {
+        ptr::read_unaligned(buffer.as_ptr() as *const UNICODE_STRING)
+    };
+
+    if unicode_string.Length == 0 || unicode_string.Buffer.is_null() {
+        return None;
+    }
+
+    Some(to_u16cstring(&unicode_string))
+}

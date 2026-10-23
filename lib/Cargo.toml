@@ -3,6 +3,7 @@ name = "br3k"
 edition = "2024"
 
 [dependencies]
+br3k-python-api-macros = { path = "../tools/python-api-macros" }
 rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", tag = "0.5.0", default-features = false, features = [
     "compiler",
     "freeze-stdlib"
@@ -21,7 +22,6 @@ widestring = "1.2"
 windef = { path = "windef" }
 windows-sys = { version = "0.61", features = [
     "Win32_System_LibraryLoader",
-    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Com",
     "Win32_Security_Authorization"
 ] }
@@ -38,6 +38,7 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 base64 = "0.22"
 chrono = "0.4"
 scopeguard = "1.2"
+serde_yaml = "0.9"
 
 [build-dependencies]
 chrono = "0.4"

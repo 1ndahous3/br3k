@@ -2,7 +2,7 @@ pub mod lhiuct;
 pub mod ntdll;
 pub mod rop;
 
-use crate::pe_module;
+use crate::pe::module;
 
 use std::slice;
 
@@ -39,9 +39,9 @@ pub fn messageboxw() -> Vec<u8> {
 }
 
 pub fn rw_cave() -> Option<&'static [u8]> {
-    let handle = pe_module::get_module_handle(c"ntdll.dll")?;
+    let handle = module::handle(c"ntdll.dll")?;
 
-    let data_section = pe_module::get_module_data_section(handle);
+    let data_section = module::data_section(handle);
     let end_of_section = data_section.as_ptr().wrapping_add(data_section.len());
 
     unsafe { Some(slice::from_raw_parts(end_of_section, end_of_section.align_offset(0x1000))) }

@@ -28,12 +28,12 @@
 
 #![allow(dead_code)]
 
-use crate::pe_module;
+use crate::pe::module;
 
 use super::rop;
 
 pub fn gadget_pop_values_and_jmp() -> Option<&'static [u8]> {
-    pe_module::find_code_in_module(
+    module::find_code(
         "ntdll.dll",
         &[
             0x58,            // pop rax
@@ -49,7 +49,7 @@ pub fn gadget_pop_values_and_jmp() -> Option<&'static [u8]> {
 }
 
 pub fn gadget_setup_reg_values_and_ret() -> Option<&'static [u8]> {
-    pe_module::find_code_in_module(
+    module::find_code(
         "ntdll.dll",
         &[
             0x5A,        // pop rdx
@@ -94,7 +94,7 @@ pub fn pop_values_and_ret8(count: usize) -> Option<&'static [u8]> {
     }
     code.push(0xC3); // ret
 
-    pe_module::find_code_in_module("ntdll.dll", &code)
+    module::find_code("ntdll.dll", &code)
 }
 
 pub fn gadget_clean_stack(count: usize, extra_imm64: &mut usize) -> Option<&'static [u8]> {

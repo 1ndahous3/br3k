@@ -31,6 +31,11 @@ static IID_IRundown: GUID = GUID {
 
 const OLE32_SECRET_CONTEXT_ERR: &str = "Failed to read process CProcessSecret::s_guidOle32Secret";
 
+/// A low-level COM IRundown callback context for an opened process.
+///
+/// Requires an initialized process-memory read strategy and build-matched COM
+/// symbol RVAs and layout offsets. Call `read_ipid_entries()` before `execute()`.
+/// The constructor only stores addresses; it does not validate symbol provenance.
 #[pyclass(module = false, name = "ComIRundown")]
 #[derive(Debug, PyPayload)]
 pub struct ComIRundown {
@@ -48,16 +53,22 @@ pub struct ComIRundown {
 
 #[derive(FromArgs)]
 pub struct ComIRundownNewArgs {
+    /// Opened process with an initialized memory reader.
     #[pyarg(any)]
     process: PyRef<Process>,
+    /// Absolute target virtual address of the COM module containing these symbols.
     #[pyarg(any)]
     ole32_address: usize,
+    /// RVA of CProcessSecret::s_guidOle32Secret in the matching COM build.
     #[pyarg(any)]
     ole32_secret_rva: usize,
+    /// RVA of the COM IPID allocator pointer in the matching module.
     #[pyarg(any)]
     ole32_palloc_rva: usize,
+    /// RVA of g_pMTAEmptyCtx in the matching module.
     #[pyarg(any)]
     ole32_emptyctx_rva: usize,
+    /// Byte offset of the OXID field within an IPID entry, from matching symbols.
     #[pyarg(any)]
     moxid_offset: usize,
 }
@@ -65,6 +76,7 @@ pub struct ComIRundownNewArgs {
 impl Constructor for ComIRundown {
     type Args = ComIRundownNewArgs;
 
+    /// Store the process, COM module base, symbol RVAs, and IPID-entry OXID field offset.
     fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
         Ok(Self {
             process: args.process,
@@ -139,6 +151,7 @@ fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> Result<*mut IRundown
 
 #[pyclass(with(Constructor))]
 impl ComIRundown {
+    /// Read COM allocator/IPID entries from target memory and replace the cached entry list.
     #[pymethod]
     fn read_ipid_entries(&self, vm: &VirtualMachine) -> PyResult<()> {
         unsafe {
@@ -237,6 +250,11 @@ impl ComIRundown {
         }
     }
 
+    /// Try `IRundown::DoCallback` with target entry point `ep` and optional `arg1` (default zero).
+    ///
+    /// Returns `True` on a successful callback and `False` if no entry succeeds.
+    /// Requires previously read IPID entries and an initialized read context;
+    /// connection, memory, and COM failures may raise `SystemError`.
     #[pymethod]
     fn execute(&self, args: ExecuteArgs, vm: &VirtualMachine) -> PyResult<bool> {
         unsafe {

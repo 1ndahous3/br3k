@@ -41,14 +41,13 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::System::JobObjects::JOBOBJECT_ASSOCIATE_COMPLETION_PORT;
 use windows_sys::Win32::System::LibraryLoader::LoadLibraryA;
-use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
-};
 
 use windows_sys::Win32::System::Memory::{
-    MEM_COMMIT, MEM_RESERVE, PAGE_GUARD,
-    PAGE_PROTECTION_FLAGS, PAGE_READWRITE, PAGE_EXECUTE_READWRITE, SEC_COMMIT, SEC_IMAGE,
-    SECTION_FLAGS, SECTION_MAP_EXECUTE, SECTION_MAP_READ, SECTION_MAP_WRITE, SECTION_ALL_ACCESS
+    MEM_COMMIT, MEM_IMAGE, MEM_MAPPED, MEM_PRIVATE, MEM_RESERVE, MEMORY_BASIC_INFORMATION,
+    PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_GUARD,
+    PAGE_NOCACHE, PAGE_PROTECTION_FLAGS, PAGE_READWRITE, PAGE_WRITECOMBINE, SEC_COMMIT,
+    SEC_IMAGE, SECTION_FLAGS, SECTION_MAP_EXECUTE, SECTION_MAP_READ, SECTION_MAP_WRITE,
+    SECTION_ALL_ACCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     DELETE,
@@ -63,7 +62,214 @@ use winbase::{ULONG, NT_CURRENT_PROCESS};
 
 pub type NtResult<T> = Result<T, NtStatusError>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryRegion {
+    pub base_address: u64,
+    pub allocation_base: u64,
+    pub allocation_protect: u32,
+    pub region_size: usize,
+    pub state: u32,
+    pub protect: u32,
+    pub memory_type: u32,
+    pub mapped_path: Option<String>,
+}
+
+impl MemoryRegion {
+    pub fn end_address(&self) -> u64 {
+        self.base_address.saturating_add(self.region_size as u64)
+    }
+
+    pub fn is_committed(&self) -> bool {
+        self.state == MEM_COMMIT
+    }
+
+    pub fn is_executable(&self) -> bool {
+        is_executable_protection(self.protect)
+    }
+
+    pub fn is_writable_executable(&self) -> bool {
+        is_writable_executable_protection(self.protect)
+    }
+
+    pub fn is_guarded(&self) -> bool {
+        self.protect & PAGE_GUARD != 0
+    }
+
+    pub fn is_image(&self) -> bool {
+        self.memory_type == MEM_IMAGE
+    }
+
+    pub fn is_mapped(&self) -> bool {
+        self.memory_type == MEM_MAPPED
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.memory_type == MEM_PRIVATE
+    }
+}
+
+impl From<MEMORY_BASIC_INFORMATION> for MemoryRegion {
+    fn from(info: MEMORY_BASIC_INFORMATION) -> Self {
+        Self {
+            base_address: info.BaseAddress as u64,
+            allocation_base: info.AllocationBase as u64,
+            allocation_protect: info.AllocationProtect,
+            region_size: info.RegionSize,
+            state: info.State,
+            protect: info.Protect,
+            memory_type: info.Type,
+            mapped_path: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkingSetPage {
+    pub address: u64,
+    pub flags: usize,
+}
+
+impl WorkingSetPage {
+    pub fn is_valid(&self) -> bool {
+        self.flags & 1 != 0
+    }
+
+    pub fn is_shared(&self) -> bool {
+        self.flags & (1 << 15) != 0
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.is_valid() && !self.is_shared()
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.flags & (1 << 22) != 0
+    }
+
+    pub fn is_large_page(&self) -> bool {
+        self.flags & (1 << 23) != 0
+    }
+
+    pub fn is_bad(&self) -> bool {
+        self.flags & (1 << 31) != 0
+    }
+
+    pub fn share_count(&self) -> u8 {
+        ((self.flags >> 1) & 0x7) as u8
+    }
+
+    pub fn protection(&self) -> u16 {
+        ((self.flags >> 4) & 0x7ff) as u16
+    }
+
+    pub fn node(&self) -> u16 {
+        ((self.flags >> 16) & 0x3f) as u16
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkingSetRegionSummary {
+    pub region: MemoryRegion,
+    pub page_size: usize,
+    pub page_count: usize,
+    pub valid_page_count: usize,
+    pub shared_page_count: usize,
+    pub private_page_count: usize,
+    pub invalid_page_count: usize,
+    pub bad_page_count: usize,
+}
+
+impl WorkingSetRegionSummary {
+    fn new(region: MemoryRegion, page_size: usize, page_count: usize) -> Self {
+        Self {
+            region,
+            page_size,
+            page_count,
+            valid_page_count: 0,
+            shared_page_count: 0,
+            private_page_count: 0,
+            invalid_page_count: 0,
+            bad_page_count: 0,
+        }
+    }
+
+    fn push_page(&mut self, page: WorkingSetPage) {
+        if page.is_valid() {
+            self.valid_page_count += 1;
+
+            if page.is_shared() {
+                self.shared_page_count += 1;
+            } else {
+                self.private_page_count += 1;
+            }
+        } else {
+            self.invalid_page_count += 1;
+        }
+
+        if page.is_bad() {
+            self.bad_page_count += 1;
+        }
+    }
+
+    pub fn has_private_pages(&self) -> bool {
+        self.private_page_count != 0
+    }
+}
+
+const MAX_MEMORY_REGIONS: usize = 1_000_000;
+const SYSTEM_PROCESS_INFORMATION_INITIAL_SIZE: usize = 0x10000;
+const SYSTEM_PROCESS_INFORMATION_MAX_SIZE: usize = 0x10000000;
+const WORKING_SET_QUERY_CHUNK_PAGES: usize = 4096;
+
 pub type UniqueHandle = ScopeGuard<HANDLE, fn(HANDLE)>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemProcessThreadInfo {
+    pub thread_id: u32,
+    pub system_start_address: u64,
+    pub win32_start_address: Option<u64>,
+    pub teb_address: Option<u64>,
+    pub stack_base: Option<u64>,
+    pub stack_limit: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemProcessInfo {
+    pub process_id: u32,
+    pub image_name: Option<String>,
+    pub threads: Vec<SystemProcessThreadInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessThreadInfo {
+    pub process_id: u32,
+    pub thread_id: u32,
+    pub system_start_address: u64,
+    pub win32_start_address: Option<u64>,
+    pub teb_address: Option<u64>,
+    pub stack_base: Option<u64>,
+    pub stack_limit: Option<u64>,
+}
+
+impl ProcessThreadInfo {
+    pub fn start_address(&self) -> u64 {
+        self.win32_start_address
+            .filter(|address| *address != 0)
+            .unwrap_or(self.system_start_address)
+    }
+
+    pub fn has_stack_bounds(&self) -> bool {
+        self.stack_limit
+            .zip(self.stack_base)
+            .is_some_and(|(limit, base)| limit != 0 && limit < base)
+    }
+
+    pub fn stack_contains(&self, address: u64) -> bool {
+        self.stack_limit
+            .zip(self.stack_base)
+            .is_some_and(|(limit, base)| address >= limit && address < base)
+    }
+}
 
 pub fn ntstatus_decode(status: NTSTATUS) -> String {
     format!(
@@ -143,6 +349,36 @@ fn require_sys_api<T: Copy>(api: Option<T>, operation: &'static str) -> NtResult
 
         NtStatusError::new(operation, NTSTATUS(status))
     })
+}
+
+fn is_memory_query_end(error: NtStatusError) -> bool {
+    matches!(
+        error.status.0,
+        ntstatus::STATUS_INVALID_PARAMETER | ntstatus::STATUS_ACCESS_VIOLATION
+    )
+}
+
+fn is_executable_protection(protect: u32) -> bool {
+    let protect = protect & !(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
+
+    matches!(
+        protect,
+        PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY
+    )
+}
+
+fn is_writable_executable_protection(protect: u32) -> bool {
+    let protect = protect & !(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
+
+    matches!(protect, PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+}
+
+fn page_count(size: usize, page_size: usize) -> usize {
+    if page_size == 0 {
+        return 0;
+    }
+
+    size.saturating_add(page_size - 1) / page_size
 }
 
 pub fn close_handle(handle: HANDLE) -> NtResult<()> {
@@ -304,11 +540,17 @@ fn wrap_process_parameters(process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAM
 }
 
 // ProcessHandle, ThreadHandle
-pub fn create_user_process(name: &str, suspended: bool) -> NtResult<(UniqueHandle, UniqueHandle)> {
+pub fn create_user_process(name: &str, suspended: bool, command_line: Option<&str>) -> NtResult<(UniqueHandle, UniqueHandle)> {
     unsafe {
         let nt_name = format!("\\??\\{name}");
-        let nt_name = U16CString::from_str(nt_name).unwrap();
+        let invalid_parameter = || NtStatusError::from(NTSTATUS(ntstatus::STATUS_INVALID_PARAMETER));
+        let nt_name = U16CString::from_str(nt_name).map_err(|_| invalid_parameter())?;
+        let command_line = command_line.map(U16CString::from_str).transpose().map_err(|_| invalid_parameter())?;
+        if nt_name.len() >= u16::MAX as usize / 2 || command_line.as_ref().is_some_and(|value| value.len() >= u16::MAX as usize / 2) {
+            return Err(invalid_parameter());
+        }
         let nt_name = to_unicode_string(&nt_name);
+        let command_line = command_line.as_ref().map(to_unicode_string);
 
         let process_parameters: ntpebteb::PRTL_USER_PROCESS_PARAMETERS = ptr::null_mut();
         let status = NTSTATUS(api_ctx::ntdll().RtlCreateProcessParametersEx.unwrap()(
@@ -316,7 +558,7 @@ pub fn create_user_process(name: &str, suspended: bool) -> NtResult<(UniqueHandl
             addr_of!(nt_name) as _,
             ptr::null_mut(),
             ptr::null_mut(),
-            ptr::null_mut(),
+            command_line.as_ref().map_or(ptr::null_mut(), |value| addr_of!(*value) as _),
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
@@ -328,6 +570,7 @@ pub fn create_user_process(name: &str, suspended: bool) -> NtResult<(UniqueHandl
         if !status.is_ok() {
             return Err(status.into());
         }
+        let process_parameters = wrap_process_parameters(process_parameters);
 
         let create_info = ntpsapi::PS_CREATE_INFO {
             Size: size_of::<ntpsapi::PS_CREATE_INFO>(),
@@ -357,12 +600,10 @@ pub fn create_user_process(name: &str, suspended: bool) -> NtResult<(UniqueHandl
             ptr::null_mut(),
             0,
             if suspended { ntpsapi::THREAD_CREATE_FLAGS_CREATE_SUSPENDED } else { ntpsapi::THREAD_CREATE_FLAGS_NONE },
-            process_parameters as _,
+            *process_parameters as _,
             addr_of!(create_info) as _,
             addr_of!(attribute_list) as _,
         ));
-
-        destroy_process_parameters(process_parameters);
 
         if !status.is_ok() {
             if status.0 == ntstatus::STATUS_OBJECT_PATH_INVALID {
@@ -453,75 +694,206 @@ pub fn get_process_wow64_info(process_handle: HANDLE) -> NtResult<bool> {
     }
 }
 
-pub fn find_process(name: &str) -> NtResult<u32> {
+fn query_system_process_information(
+    info_class: ntexapi::SYSTEM_INFORMATION_CLASS,
+) -> NtResult<Vec<u8>> {
     unsafe {
-        let entry = PROCESSENTRY32W {
-            dwSize: size_of::<PROCESSENTRY32W>() as _,
-            ..Default::default()
-        };
+        let nt_query_system_information = require_sys_api(api_ctx::ntdll().NtQuerySystemInformation, "NtQuerySystemInformation")?;
+        let mut size = SYSTEM_PROCESS_INFORMATION_INITIAL_SIZE;
 
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot.is_null() {
-            return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL).into());
-        }
-
-        if Process32FirstW(snapshot, addr_of!(entry) as _) == 0 {
-            return Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND).into());
-        }
-
-        let mut pid = 0;
         loop {
-            if Process32NextW(snapshot, addr_of!(entry) as _) == 0 {
-                break;
+            let mut data = vec![0u8; size];
+            let mut return_length: ULONG = 0;
+            let status = NTSTATUS(nt_query_system_information(
+                info_class,
+                data.as_mut_ptr() as _,
+                data.len() as _,
+                addr_of_mut!(return_length) as _,
+            ));
+
+            if status.is_ok() {
+                return Ok(data);
             }
 
-            let exe_name_u = U16CString::from_ptr_str(entry.szExeFile.as_ptr());
-            let exe_name = exe_name_u.to_string_lossy();
-
-            if !name.eq_ignore_ascii_case(&exe_name) {
-                continue;
+            if !matches!(
+                status.0,
+                ntstatus::STATUS_INFO_LENGTH_MISMATCH |
+                ntstatus::STATUS_BUFFER_OVERFLOW |
+                ntstatus::STATUS_BUFFER_TOO_SMALL
+            ) {
+                return Err(NtStatusError::new("NtQuerySystemInformation", status));
             }
 
-            if pid != 0 {
-                return Err(NTSTATUS(ntstatus::STATUS_TOO_MANY_NAMES).into());
+            let next_size = (return_length as usize)
+                .max(size.saturating_mul(2))
+                .saturating_add(0x1000);
+
+            if next_size <= size || next_size > SYSTEM_PROCESS_INFORMATION_MAX_SIZE {
+                return Err(NtStatusError::new("NtQuerySystemInformation", status));
             }
 
-            pid = entry.th32ProcessID;
+            size = next_size;
         }
-
-        if pid == 0 { Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND).into()) } else { Ok(pid) }
     }
 }
 
-pub fn get_processes_pid_name() -> NtResult<HashMap<u32, String>> {
-    unsafe {
-        let entry = PROCESSENTRY32W {
-            dwSize: size_of::<PROCESSENTRY32W>() as _,
-            ..Default::default()
+pub fn system_processes() -> NtResult<Vec<SystemProcessInfo>> {
+    match system_processes_by_class(ntexapi::SYSTEM_INFORMATION_CLASS::SystemExtendedProcessInformation, true) {
+        Ok(processes) => Ok(processes),
+        Err(error) if matches!(
+            error.status.0,
+            ntstatus::STATUS_INVALID_INFO_CLASS | ntstatus::STATUS_NOT_IMPLEMENTED
+        ) => system_processes_by_class(ntexapi::SYSTEM_INFORMATION_CLASS::SystemProcessInformation, false),
+        Err(error) => Err(error),
+    }
+}
+
+fn system_processes_by_class(
+    info_class: ntexapi::SYSTEM_INFORMATION_CLASS,
+    extended_threads: bool,
+) -> NtResult<Vec<SystemProcessInfo>> {
+    let data = query_system_process_information(info_class)?;
+    let mut processes = Vec::new();
+    let mut offset = 0usize;
+    let min_entry_size = offset_of!(ntexapi::SYSTEM_PROCESS_INFORMATION, Threads);
+
+    loop {
+        if offset.checked_add(min_entry_size).is_none_or(|end| end > data.len()) {
+            return Err(NtStatusError::new("NtQuerySystemInformation", NTSTATUS(ntstatus::STATUS_INFO_LENGTH_MISMATCH)));
+        }
+
+        let info = unsafe { &*(data.as_ptr().add(offset) as *const ntexapi::SYSTEM_PROCESS_INFORMATION) };
+        let entry_end = if info.NextEntryOffset == 0 {
+            data.len()
+        } else {
+            offset
+                .checked_add(info.NextEntryOffset as usize)
+                .ok_or_else(|| NtStatusError::new("NtQuerySystemInformation", NTSTATUS(ntstatus::STATUS_INTEGER_OVERFLOW)))?
         };
 
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot.is_null() {
-            return Err(NTSTATUS(ntstatus::STATUS_UNSUCCESSFUL).into());
+        if entry_end <= offset || entry_end > data.len() {
+            return Err(NtStatusError::new("NtQuerySystemInformation", NTSTATUS(ntstatus::STATUS_INFO_LENGTH_MISMATCH)));
         }
 
-        if Process32FirstW(snapshot, addr_of!(entry) as _) == 0 {
-            return Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND).into());
+        let thread_count = info.NumberOfThreads as usize;
+        let thread_size = if extended_threads {
+            size_of::<ntexapi::SYSTEM_EXTENDED_THREAD_INFORMATION>()
+        } else {
+            size_of::<ntexapi::SYSTEM_THREAD_INFORMATION>()
+        };
+        let thread_bytes = thread_count
+            .checked_mul(thread_size)
+            .ok_or_else(|| NtStatusError::new("NtQuerySystemInformation", NTSTATUS(ntstatus::STATUS_INTEGER_OVERFLOW)))?;
+        let thread_start = offset + offset_of!(ntexapi::SYSTEM_PROCESS_INFORMATION, Threads);
+
+        if thread_start.checked_add(thread_bytes).is_none_or(|end| end > entry_end) {
+            return Err(NtStatusError::new("NtQuerySystemInformation", NTSTATUS(ntstatus::STATUS_INFO_LENGTH_MISMATCH)));
         }
 
-        let mut res = HashMap::<u32, String>::new();
+        let threads = if extended_threads {
+            extended_process_threads(unsafe { data.as_ptr().add(thread_start) }, thread_count)
+        } else {
+            basic_process_threads(unsafe { data.as_ptr().add(thread_start) }, thread_count)
+        };
 
-        loop {
-            if Process32NextW(snapshot, addr_of!(entry) as _) == 0 {
-                break;
-            }
+        processes.push(SystemProcessInfo {
+            process_id: info.UniqueProcessId as usize as u32,
+            image_name: system_process_image_name(info),
+            threads,
+        });
 
-            let exe_name_u = U16CString::from_ptr_str(entry.szExeFile.as_ptr());
-            res.entry(entry.th32ProcessID).insert_entry(exe_name_u.to_string_lossy());
+        if info.NextEntryOffset == 0 {
+            return Ok(processes);
         }
 
-        Ok(res)
+        offset = entry_end;
     }
+}
+
+fn basic_process_threads(
+    thread_start: *const u8,
+    thread_count: usize,
+) -> Vec<SystemProcessThreadInfo> {
+    let threads = unsafe {
+        slice::from_raw_parts(thread_start as *const ntexapi::SYSTEM_THREAD_INFORMATION, thread_count)
+    };
+
+    threads
+        .iter()
+        .map(|thread| SystemProcessThreadInfo {
+            thread_id: thread.ClientId.UniqueThread as usize as u32,
+            system_start_address: thread.StartAddress as usize as u64,
+            win32_start_address: None,
+            teb_address: None,
+            stack_base: None,
+            stack_limit: None,
+        })
+        .collect()
+}
+
+fn extended_process_threads(
+    thread_start: *const u8,
+    thread_count: usize,
+) -> Vec<SystemProcessThreadInfo> {
+    let threads = unsafe {
+        slice::from_raw_parts(thread_start as *const ntexapi::SYSTEM_EXTENDED_THREAD_INFORMATION, thread_count)
+    };
+
+    threads
+        .iter()
+        .map(|thread| {
+            let thread_info = unsafe { thread.a1.ThreadInfo.as_ref() };
+
+            SystemProcessThreadInfo {
+                thread_id: thread_info.ClientId.UniqueThread as usize as u32,
+                system_start_address: thread_info.StartAddress as usize as u64,
+                win32_start_address: nonzero_address(thread.Win32StartAddress as usize as u64),
+                teb_address: nonzero_address(thread.TebBase as usize as u64),
+                stack_base: nonzero_address(thread.StackBase as u64),
+                stack_limit: nonzero_address(thread.StackLimit as u64),
+            }
+        })
+        .collect()
+}
+
+fn nonzero_address(address: u64) -> Option<u64> {
+    (address != 0).then_some(address)
+}
+
+fn system_process_image_name(info: &ntexapi::SYSTEM_PROCESS_INFORMATION) -> Option<String> {
+    if info.ImageName.Length == 0 || info.ImageName.Buffer.is_null() {
+        return None;
+    }
+
+    Some(to_u16cstring(&info.ImageName).to_string_lossy())
+}
+
+pub fn find_process(name: &str) -> NtResult<u32> {
+    let mut pid = 0;
+    for process in system_processes()? {
+        let Some(image_name) = process.image_name else {
+            continue;
+        };
+
+        if !name.eq_ignore_ascii_case(&image_name) {
+            continue;
+        }
+
+        if pid != 0 {
+            return Err(NTSTATUS(ntstatus::STATUS_TOO_MANY_NAMES).into());
+        }
+
+        pid = process.process_id;
+    }
+
+    if pid == 0 { Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND).into()) } else { Ok(pid) }
+}
+
+pub fn get_processes_pid_name() -> NtResult<HashMap<u32, String>> {
+    Ok(system_processes()?
+        .into_iter()
+        .filter_map(|process| process.image_name.map(|name| (process.process_id, name)))
+        .collect())
 }
 
 pub fn open_process_by_hwnd(hwnd: HWND, access_mask: winbase::ACCESS_MASK) -> NtResult<UniqueHandle> {
@@ -680,21 +1052,54 @@ pub fn open_thread(pid: u32, tid: u32, access_mask: winbase::ACCESS_MASK) -> NtR
     }
 }
 
-fn create_thread_stack(process_handle: HANDLE, initial_teb: ntpsapi::PINITIAL_TEB) -> NtResult<()> {
+pub fn query_thread_win32_start_address(thread_handle: HANDLE) -> NtResult<u64> {
     unsafe {
-        let sys_info = ntexapi::SYSTEM_BASIC_INFORMATION { ..Default::default() };
+        let mut start_address: PVOID = ptr::null_mut();
 
-        let nt_query_system_information = require_sys_api(api_ctx::ntdll().NtQuerySystemInformation, "NtQuerySystemInformation")?;
-        let status = NTSTATUS(nt_query_system_information(
-            ntexapi::SYSTEM_INFORMATION_CLASS::SystemBasicInformation,
-            addr_of!(sys_info) as _,
-            size_of::<ntexapi::SYSTEM_BASIC_INFORMATION>() as _,
+        let nt_query_information_thread = require_sys_api(api_ctx::ntdll().NtQueryInformationThread, "NtQueryInformationThread")?;
+        let status = NTSTATUS(nt_query_information_thread(
+            thread_handle,
+            ntpsapi::THREADINFOCLASS::ThreadQuerySetWin32StartAddress,
+            addr_of_mut!(start_address) as _,
+            size_of::<PVOID>() as _,
             ptr::null_mut(),
         ));
 
-        if !status.is_ok() {
-            return Err(status.into());
-        }
+        status
+            .is_ok()
+            .then_some(start_address as usize as u64)
+            .ok_or_else(|| NtStatusError::new("NtQueryInformationThread", status))
+    }
+}
+
+pub fn query_process_threads(process_id: u32) -> NtResult<Vec<ProcessThreadInfo>> {
+    let Some(process) = system_processes()?
+        .into_iter()
+        .find(|process| process.process_id == process_id)
+    else {
+        return Err(NTSTATUS(ntstatus::STATUS_NOT_FOUND).into());
+    };
+
+    Ok(process
+        .threads
+        .into_iter()
+        .map(|thread| {
+            ProcessThreadInfo {
+                process_id,
+                thread_id: thread.thread_id,
+                system_start_address: thread.system_start_address,
+                win32_start_address: thread.win32_start_address,
+                teb_address: thread.teb_address,
+                stack_base: thread.stack_base,
+                stack_limit: thread.stack_limit,
+            }
+        })
+        .collect())
+}
+
+fn create_thread_stack(process_handle: HANDLE, initial_teb: ntpsapi::PINITIAL_TEB) -> NtResult<()> {
+    unsafe {
+        let sys_info = system_basic_information()?;
 
         //
         // if stack is in the current process, then default to
@@ -1219,6 +1624,199 @@ pub fn flush_instruction_cache(process_handle: HANDLE, base_address: PVOID, leng
 
         if !status.is_ok() { Err(status.into()) } else { Ok(()) }
     }
+}
+
+pub fn query_virtual_memory(process_handle: HANDLE, base_address: PVOID) -> NtResult<MemoryRegion> {
+    unsafe {
+        let mut basic_info = MEMORY_BASIC_INFORMATION::default();
+        let mut return_length: usize = 0;
+
+        let nt_query_virtual_memory = require_sys_api(api_ctx::ntdll().NtQueryVirtualMemory, "NtQueryVirtualMemory")?;
+        let status = NTSTATUS(nt_query_virtual_memory(
+            process_handle,
+            base_address,
+            ntmmapi::MEMORY_INFORMATION_CLASS::MemoryBasicInformation,
+            addr_of_mut!(basic_info) as _,
+            size_of::<MEMORY_BASIC_INFORMATION>(),
+            addr_of_mut!(return_length) as _,
+        ));
+
+        if !status.is_ok() { Err(status.into()) } else { Ok(basic_info.into()) }
+    }
+}
+
+pub fn query_virtual_memory_mapped_path(process_handle: HANDLE, base_address: PVOID) -> NtResult<Option<String>> {
+    unsafe {
+        let mut buffer = vec![0u8; 0x10000];
+        let mut return_length: usize = 0;
+
+        let nt_query_virtual_memory = require_sys_api(api_ctx::ntdll().NtQueryVirtualMemory, "NtQueryVirtualMemory")?;
+        let status = NTSTATUS(nt_query_virtual_memory(
+            process_handle,
+            base_address,
+            ntmmapi::MEMORY_INFORMATION_CLASS::MemoryMappedFilenameInformation,
+            buffer.as_mut_ptr() as _,
+            buffer.len(),
+            addr_of_mut!(return_length) as _,
+        ));
+
+        if status.0 == ntstatus::STATUS_OBJECT_NAME_NOT_FOUND
+            || status.0 == ntstatus::STATUS_NOT_MAPPED_VIEW
+            || status.0 == ntstatus::STATUS_NOT_MAPPED_DATA
+            || status.0 == ntstatus::STATUS_ACCESS_DENIED
+            || status.0 == ntstatus::STATUS_INVALID_ADDRESS
+        {
+            return Ok(None);
+        }
+
+        if !status.is_ok() {
+            return Err(status.into());
+        }
+
+        Ok(unicode_string_buffer_to_u16cstring(&buffer)
+            .and_then(|name| name.to_string().ok()))
+    }
+}
+
+pub fn enumerate_memory_regions(process_handle: HANDLE) -> NtResult<Vec<MemoryRegion>> {
+    let mut regions = Vec::new();
+    let mut address = 0usize;
+
+    for _ in 0..MAX_MEMORY_REGIONS {
+        let mut region = match query_virtual_memory(process_handle, address as _) {
+            Ok(region) => region,
+            Err(error) if is_memory_query_end(error) => return Ok(regions),
+            Err(error) => return Err(error.with_operation("NtQueryVirtualMemory")),
+        };
+        region.mapped_path = query_virtual_memory_mapped_path(process_handle, region.base_address as _)
+            .unwrap_or(None);
+
+        let base_address = region.base_address as usize;
+        let Some(next_address) = base_address.checked_add(region.region_size) else {
+            regions.push(region);
+            return Ok(regions);
+        };
+
+        if next_address <= address || region.region_size == 0 {
+            regions.push(region);
+            return Ok(regions);
+        }
+
+        regions.push(region);
+        address = next_address;
+    }
+
+    Ok(regions)
+}
+
+pub fn system_basic_information() -> NtResult<ntexapi::SYSTEM_BASIC_INFORMATION> {
+    unsafe {
+        let mut sys_info = ntexapi::SYSTEM_BASIC_INFORMATION { ..Default::default() };
+
+        let nt_query_system_information = require_sys_api(api_ctx::ntdll().NtQuerySystemInformation, "NtQuerySystemInformation")?;
+        let status = NTSTATUS(nt_query_system_information(
+            ntexapi::SYSTEM_INFORMATION_CLASS::SystemBasicInformation,
+            addr_of_mut!(sys_info) as _,
+            size_of::<ntexapi::SYSTEM_BASIC_INFORMATION>() as _,
+            ptr::null_mut(),
+        ));
+
+        status
+            .is_ok()
+            .then_some(sys_info)
+            .ok_or_else(|| NtStatusError::new("NtQuerySystemInformation", status))
+    }
+}
+
+pub fn system_page_size() -> NtResult<usize> {
+    Ok(system_basic_information()?.PageSize as usize)
+}
+
+pub fn query_working_set_pages(process_handle: HANDLE, addresses: &[u64]) -> NtResult<Vec<WorkingSetPage>> {
+    if addresses.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let buffer_size = addresses
+        .len()
+        .checked_mul(size_of::<ntmmapi::MEMORY_WORKING_SET_EX_INFORMATION>())
+        .ok_or_else(|| NtStatusError::new("NtQueryVirtualMemory", NTSTATUS(ntstatus::STATUS_INTEGER_OVERFLOW)))?;
+
+    let mut entries = addresses
+        .iter()
+        .map(|address| ntmmapi::MEMORY_WORKING_SET_EX_INFORMATION {
+            VirtualAddress: *address as usize as _,
+            VirtualAttributes: Default::default(),
+        })
+        .collect::<Vec<_>>();
+
+    unsafe {
+        let mut return_length: usize = 0;
+        let nt_query_virtual_memory = require_sys_api(api_ctx::ntdll().NtQueryVirtualMemory, "NtQueryVirtualMemory")?;
+        let status = NTSTATUS(nt_query_virtual_memory(
+            process_handle,
+            ptr::null_mut(),
+            ntmmapi::MEMORY_INFORMATION_CLASS::MemoryWorkingSetExInformation,
+            entries.as_mut_ptr() as _,
+            buffer_size,
+            addr_of_mut!(return_length) as _,
+        ));
+
+        if !status.is_ok() { return Err(NtStatusError::new("NtQueryVirtualMemory", status)); }
+    }
+
+    let pages = entries
+        .into_iter()
+        .zip(addresses.iter().copied())
+        .map(|(entry, address)| WorkingSetPage {
+            address,
+            flags: unsafe { *entry.VirtualAttributes.Flags.as_ref() },
+        })
+        .collect();
+
+    Ok(pages)
+}
+
+pub fn query_working_set_region(process_handle: HANDLE, region: &MemoryRegion) -> NtResult<WorkingSetRegionSummary> {
+    let page_size = system_page_size()?;
+    let queried_pages = region.is_committed()
+        .then_some(page_count(region.region_size, page_size))
+        .unwrap_or(0);
+    let mut summary = WorkingSetRegionSummary::new(region.clone(), page_size, queried_pages);
+
+    if !region.is_committed() || region.region_size == 0 {
+        return Ok(summary);
+    }
+
+    let mut offset = 0usize;
+    while offset < region.region_size {
+        let remaining_pages = page_count(region.region_size - offset, page_size);
+        let chunk_pages = remaining_pages.min(WORKING_SET_QUERY_CHUNK_PAGES);
+        let addresses = (0..chunk_pages)
+            .filter_map(|page| {
+                let page_offset = offset.checked_add(page.checked_mul(page_size)?)?;
+                Some(region.base_address.saturating_add(page_offset as u64))
+            })
+            .collect::<Vec<_>>();
+
+        for page in query_working_set_pages(process_handle, &addresses)? {
+            summary.push_page(page);
+        }
+
+        let chunk_size = chunk_pages
+            .checked_mul(page_size)
+            .ok_or_else(|| NtStatusError::new("NtQueryVirtualMemory", NTSTATUS(ntstatus::STATUS_INTEGER_OVERFLOW)))?;
+        offset = offset.saturating_add(chunk_size);
+    }
+
+    Ok(summary)
+}
+
+pub fn query_working_set_regions(process_handle: HANDLE, regions: &[MemoryRegion]) -> NtResult<Vec<WorkingSetRegionSummary>> {
+    regions
+        .iter()
+        .map(|region| query_working_set_region(process_handle, region))
+        .collect()
 }
 
 pub fn write_virtual_memory<T>(buffer: T, base_address: PVOID, process_handle: HANDLE) -> NtResult<()>

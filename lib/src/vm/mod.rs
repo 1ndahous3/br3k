@@ -1,9 +1,11 @@
 pub mod py_module;
 
 mod prelude;
+mod adapters;
 mod py_com_irundown;
 mod py_fs;
 mod py_br3k_ipc;
+mod py_mem;
 mod py_pdb;
 mod py_pe;
 mod py_proc;
@@ -13,6 +15,7 @@ mod py_threadpool;
 mod py_tx;
 
 mod api_strategy;
+mod config;
 
 // (s)cript logging
 
@@ -56,6 +59,10 @@ macro_rules! slog_trace {
 use prelude::*;
 use py_module::br3k;
 
+pub use config::{
+    read_script_config, script_var_log_value, script_var_to_py_object, script_vars_to_py_object,
+};
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::result::Result;
@@ -66,6 +73,8 @@ pub enum ScriptVarType {
     Number(u32),
     Boolean(bool),
     None,
+    List(Vec<ScriptVarType>),
+    Object(HashMap<String, ScriptVarType>),
 }
 
 pub type ScriptVars = HashMap<String, ScriptVarType>;
@@ -154,25 +163,8 @@ impl Vm {
 
             if let Some(script_vars) = script_vars {
                 for var in script_vars {
-
-                    let value = match var.1 {
-                        ScriptVarType::String(str) => {
-                            log::info!("custom script variable: {}={}", var.0, str);
-                            vm.ctx.new_str(str.as_ref()).into()
-                        },
-                        ScriptVarType::Number(num) => {
-                            log::info!("custom script variable: {}={}", var.0, num);
-                            vm.ctx.new_int(*num).into()
-                        },
-                        ScriptVarType::Boolean(bool) => {
-                            log::info!("custom script variable: {}={}", var.0, bool);
-                            vm.ctx.new_bool(*bool).into()
-                        },
-                        ScriptVarType::None => {
-                            log::info!("custom script variable: {}=None", var.0);
-                            vm.ctx.none().into()
-                        }
-                    };
+                    log::info!("custom script variable: {}={}", var.0, script_var_log_value(var.1));
+                    let value = script_var_to_py_object(var.0.as_str(), var.1, vm)?;
 
                     scope.globals.set_item(var.0.as_str(), value, vm).map_err(|exc| {
                         vm.print_exception(exc);

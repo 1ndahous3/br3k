@@ -1,0 +1,13 @@
+[package]
+name = "br3k-python-api-macros"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+br3k-python-api = { path = "../python-api" }
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"

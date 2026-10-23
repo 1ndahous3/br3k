@@ -1,0 +1,14 @@
+[package]
+name = "br3k-test-fixtures"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "pe-target"
+path = "src/pe_target.rs"
+test = false
+bench = false
+
+[dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_LibraryLoader"] }

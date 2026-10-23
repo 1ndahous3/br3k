@@ -22,9 +22,13 @@ use crate::sysapi::UniqueHandle;
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
+/// File access and sharing flags, not creation or truncation policy.
 pub enum FsFileMode {
+    /// FILE_GENERIC_READ access and FILE_SHARE_READ sharing.
     Read,
+    /// FILE_GENERIC_WRITE access and FILE_SHARE_WRITE sharing.
     Write,
+    /// Combined generic read/write access and read/write sharing.
     ReadWrite,
 }
 
@@ -54,11 +58,17 @@ impl FsFileMode {
 
 #[repr(u32)]
 #[derive(Debug, Clone, VariantArray, FromRepr, IntoStaticStr)]
+/// Access rights requested on a section handle, separate from mapped page protection.
 pub enum FsSectionMode {
+    /// SECTION_MAP_READ.
     Read,
+    /// SECTION_MAP_WRITE.
     Write,
+    /// SECTION_MAP_EXECUTE.
     Execute,
+    /// SECTION_MAP_READ and SECTION_MAP_WRITE.
     ReadWrite,
+    /// SECTION_MAP_WRITE and SECTION_MAP_EXECUTE.
     WriteExecute,
 }
 

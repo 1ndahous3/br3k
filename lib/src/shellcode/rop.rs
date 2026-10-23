@@ -2,7 +2,7 @@
 
 use crate::prelude::*;
 
-use crate::pe_module;
+use crate::pe::module;
 
 use super::SYSTEM_DLLS;
 
@@ -14,7 +14,7 @@ pub type PFN_StdCallFunc2Args = unsafe extern "system" fn(PVOID, PVOID);
 pub type PFN_StdCallFunc3Args = unsafe extern "system" fn(PVOID, PVOID, PVOID);
 
 pub fn gadget_inf_loop() -> Option<&'static [u8]> {
-    pe_module::find_code_in_module(
+    module::find_code(
         "ntdll.dll",
         &[
             0xEB, 0xFE // JMP -2
@@ -23,11 +23,11 @@ pub fn gadget_inf_loop() -> Option<&'static [u8]> {
 }
 
 pub fn gadget_ret() -> Option<&'static [u8]> {
-    pe_module::find_code_in_module("ntdll.dll", &[0xC3])
+    module::find_code("ntdll.dll", &[0xC3])
 }
 
 pub fn gadget_pop_value_and_ret() -> Option<&'static [u8]> {
-    pe_module::find_code_in_module(
+    module::find_code(
         "ntdll.dll",
         &[
             0x58, // pop rax
@@ -68,9 +68,9 @@ pub fn gadget_pop_values_and_ret(count: usize) -> Option<&'static [u8]> {
 
         for dll_name in SYSTEM_DLLS {
             let dll_name = CString::new(dll_name).unwrap();
-            let handle = pe_module::get_module_handle(dll_name.as_ref()).unwrap();
+            let handle = module::handle(dll_name.as_ref()).unwrap();
 
-            let code_section = pe_module::get_module_text_section(handle);
+            let code_section = module::text_section(handle);
 
             let mut ret = find_ret(code_section);
 

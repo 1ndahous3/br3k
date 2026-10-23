@@ -2,6 +2,10 @@ use crate::vm::prelude::*;
 
 use crate::sysapi;
 
+/// An owning native handle returned by br3k operations.
+///
+/// The handle closes when its last owning reference is released. Obtain instances
+/// from APIs such as `br3k.fs.open_file`; this class has no Python constructor.
 #[pyclass(module = false, name = "Handle")]
 #[derive(Debug, PyPayload)]
 pub struct Handle {
@@ -11,6 +15,10 @@ pub struct Handle {
 #[pyclass]
 impl Handle {}
 
+/// A non-owning view of Python bytes as a local address and byte length.
+///
+/// Keep the original bytes object alive for every use of the view. The view does
+/// not retain its owner, copy the data, or make the storage writable.
 #[pyclass(module = false, name = "BufferView")]
 #[derive(Debug, PyPayload)]
 pub struct BufferView {
@@ -18,9 +26,12 @@ pub struct BufferView {
     pub size: u64,
 }
 
+#[py_api]
 impl Constructor for BufferView {
     type Args = PyObjectRef;
 
+    /// Borrow the storage of a `bytes` object; other objects raise `TypeError`.
+    #[pyi(params(obj_ref = "bytes"))]
     fn py_new(_cls: &Py<PyType>, obj_ref: Self::Args, vm: &VirtualMachine) -> PyResult<Self> {
         if let Ok(b) = &obj_ref.downcast::<PyBytes>() {
             return Ok(Self {
@@ -36,11 +47,13 @@ impl Constructor for BufferView {
 // because Python does not have a class for non-owning flat buffers (PyMemoryView is too abstract)
 #[pyclass(with(Constructor))]
 impl BufferView {
+    /// Local virtual address of the first byte. Valid only while the backing storage remains alive.
     #[pygetset]
     fn ptr(&self) -> u64 {
         self.ptr
     }
 
+    /// Length of the borrowed storage in bytes.
     #[pygetset]
     fn size(&self) -> u64 {
         self.size

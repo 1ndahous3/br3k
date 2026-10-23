@@ -25,6 +25,11 @@ pub struct SendDataArgs {
     data: Vec<u8>,
 }
 
+/// The process-specific br3k named-pipe channel, not a general IPC abstraction.
+///
+/// The process PID selects the pipe name. Constructing the wrapper does not
+/// connect it: call `create()` for the server side or `open()` for an existing
+/// pipe, then `send_data()`. Native failures raise `SystemError`.
 #[pyclass(module = false, name = "Br3kIPC")]
 #[derive(Debug, PyPayload)]
 pub struct Br3kIPC {
@@ -35,6 +40,7 @@ pub struct Br3kIPC {
 impl Constructor for Br3kIPC {
     type Args = Br3kIPCNewArgs;
 
+    /// Associate the channel with a process without opening or creating its pipe.
     fn py_new(_cls: &Py<PyType>, args: Self::Args, _vm: &VirtualMachine) -> PyResult<Self> {
         Ok(Self {
             process: args.process,
@@ -45,6 +51,7 @@ impl Constructor for Br3kIPC {
 
 #[pyclass(with(Constructor))]
 impl Br3kIPC {
+    /// Create the server-side pipe named for the associated process PID.
     #[pymethod]
     pub fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
         let pid = *self.process.pid.borrow();
@@ -57,6 +64,10 @@ impl Br3kIPC {
         Ok(())
     }
 
+    /// Send byte values to the pipe.
+    ///
+    /// Retries a listening pipe up to ten times with one-second waits for a client.
+    /// Other errors, or an absent client after the retries, raise `SystemError`.
     #[pymethod]
     pub fn send_data(&self, args: SendDataArgs, vm: &VirtualMachine) -> PyResult<()> {
         let pipe_handle = self.pipe_handle.borrow();
@@ -79,6 +90,7 @@ impl Br3kIPC {
         Err(vm.new_system_error("Unable to write data to the pipe: the client is not connected."))
     }
 
+    /// Open the existing pipe named for the associated process PID.
     #[pymethod]
     pub fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
         let pipe_handle = br3k_ipc::open_pipe(*self.process.pid.borrow())
