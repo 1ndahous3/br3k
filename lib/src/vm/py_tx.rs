@@ -38,21 +38,21 @@ impl Constructor for Transaction {
 impl Transaction {
     /// Create the named native transaction and retain its handle.
     #[pymethod]
-    fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let name = self.name.borrow();
+    fn create(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let name = zelf.name.borrow();
 
         let handle = sysapi::create_transaction(&name)
             .map_err(map_to_py_system_error(vm, "Unable to create transaction"))?;
 
-        self.handle.replace(handle);
+        zelf.handle.replace(handle);
 
         Ok(())
     }
 
     /// Roll back the created transaction. Does not clear the thread's current transaction.
     #[pymethod]
-    fn rollback(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let handle = self.handle.borrow();
+    fn rollback(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let handle = zelf.handle.borrow();
 
         sysapi::rollback_transaction(**handle)
             .map_err(map_to_py_system_error(vm, "Unable to rollback transaction"))?;
@@ -62,8 +62,8 @@ impl Transaction {
 
     /// Make this transaction current on the calling thread.
     #[pymethod]
-    fn set(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let handle = self.handle.borrow();
+    fn set(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let handle = zelf.handle.borrow();
 
         sysapi::set_transaction(**handle)
             .map_err(map_to_py_system_error(vm, "Unable to set transaction"))?;
@@ -73,7 +73,7 @@ impl Transaction {
 
     /// Clear the calling thread's current transaction; does not roll it back.
     #[pymethod]
-    fn unset(&self, vm: &VirtualMachine) -> PyResult<()> {
+    fn unset(_zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
         sysapi::set_transaction(ptr::null_mut())
             .map_err(map_to_py_system_error(vm, "Unable to unset transaction"))?;
 

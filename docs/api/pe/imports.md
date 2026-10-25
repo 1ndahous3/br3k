@@ -241,7 +241,7 @@ Observed target virtual address stored in the slot.
 
 ### AddressTableRange
 
-[Source](../../../lib/src/vm/py_pe/import_records.rs#L88)
+[Source](../../../lib/src/vm/py_pe/import_records.rs#L48)
 
 A candidate contiguous IAT range in image-relative coordinates.
 
@@ -277,7 +277,7 @@ Number of candidate import entries in the range.
 
 ### AddressTableRangeScore
 
-[Source](../../../lib/src/vm/py_pe/import_records.rs#L118)
+[Source](../../../lib/src/vm/py_pe/import_records.rs#L66)
 
 Candidate IAT range ranked using anchors and recovered-entry evidence.
 
@@ -1360,29 +1360,9 @@ Rebuild imports on a file-layout image using a matching target pointer size. mod
 
 ### Evidence
 
-[Source](../../../lib/src/vm/py_pe/import_records.rs#L298)
+[Source](../../../lib/src/vm/py_pe/import_records.rs#L170)
 
 Provenance for a recovered import. Confidence is a heuristic score, not a probability.
-
-#### kind
-
-```python
-kind: br3k.pe.imports.EvidenceKind
-```
-
-Read-only property.
-
-Typed evidence or issue category.
-
-#### resolution
-
-```python
-resolution: br3k.pe.imports.ResolutionKind
-```
-
-Read-only property.
-
-Method used to resolve the target from the evidence.
 
 #### confidence
 
@@ -1434,6 +1414,26 @@ Read-only property.
 
 Image-relative address of the IAT or associated IAT slot.
 
+#### kind
+
+```python
+kind: br3k.pe.imports.EvidenceKind
+```
+
+Read-only property.
+
+Typed evidence or issue category.
+
+#### resolution
+
+```python
+resolution: br3k.pe.imports.ResolutionKind
+```
+
+Read-only property.
+
+Method used to resolve the target from the evidence.
+
 #### summary
 
 ```python
@@ -1459,7 +1459,7 @@ Origin of evidence supporting a recovered import.
 
 ### Function
 
-[Source](../../../lib/src/vm/py_pe/import_records.rs#L213)
+[Source](../../../lib/src/vm/py_pe/import_records.rs#L117)
 
 One modeled import, including target identity and accumulated recovery evidence.
 
@@ -1615,29 +1615,9 @@ Read-only bound-import view over the same image.
 
 ### Issue
 
-[Source](../../../lib/src/vm/py_pe/import_records.rs#L379)
+[Source](../../../lib/src/vm/py_pe/import_records.rs#L231)
 
 Typed inconsistency in an import model, optionally relating adjacent entries.
-
-#### kind
-
-```python
-kind: br3k.pe.imports.IssueKind
-```
-
-Read-only property.
-
-Typed evidence or issue category.
-
-#### severity
-
-```python
-severity: br3k.pe.imports.IssueSeverity
-```
-
-Read-only property.
-
-Typed severity of the model inconsistency.
 
 #### rva
 
@@ -1708,6 +1688,26 @@ next_module_name: str | None
 Read-only property.
 
 Module name of the adjacent or conflicting entry, when relevant.
+
+#### kind
+
+```python
+kind: br3k.pe.imports.IssueKind
+```
+
+Read-only property.
+
+Typed evidence or issue category.
+
+#### severity
+
+```python
+severity: br3k.pe.imports.IssueSeverity
+```
+
+Read-only property.
+
+Typed severity of the model inconsistency.
 
 ### IssueKind
 
@@ -1909,7 +1909,7 @@ Return current structural issues, optionally checking targets against symbols. T
 
 ### Module
 
-[Source](../../../lib/src/vm/py_pe/import_records.rs#L169)
+[Source](../../../lib/src/vm/py_pe/import_records.rs#L93)
 
 One module group in an editable/recovered import model, with thunk and validity counts.
 

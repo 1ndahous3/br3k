@@ -21,22 +21,22 @@ pub struct Directory { pub(crate) image: RawPeImage, pub(crate) index: usize }
 impl Directory {
     /// Return this directory's metadata; specialized summaries are used where available.
     #[pymethod]
-    fn info(&self, vm: &VirtualMachine) -> PyResult<Either<
+    fn info(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Either<
         PyRef<PeDataDirectory>,
         Either<PyRef<PeLoadConfigInfo>, PyRef<PeDotNetDirectoryInfo>>,
     >> {
         use crate::pe::format::*;
-        if matches!(self.index, PE_DIRECTORY_ENTRY_LOAD_CONFIG | PE_DIRECTORY_ENTRY_COM_DESCRIPTOR) {
-            let summary = super::diagnostics::PeMetadataSummary::from_summary(self.image.inspect().map_err(map_to_py_value_error(vm, "Unable to inspect loader metadata"))?.clone());
-            return Ok(Either::B(if self.index == PE_DIRECTORY_ENTRY_LOAD_CONFIG { Either::A(summary.load_config(vm)) } else { Either::B(summary.dotnet(vm)) }));
+        if matches!(zelf.index, PE_DIRECTORY_ENTRY_LOAD_CONFIG | PE_DIRECTORY_ENTRY_COM_DESCRIPTOR) {
+            let summary = super::diagnostics::PeMetadataSummary::from_summary(zelf.image.inspect().map_err(map_to_py_value_error(vm, "Unable to inspect loader metadata"))?.clone());
+            return Ok(Either::B(if zelf.index == PE_DIRECTORY_ENTRY_LOAD_CONFIG { Either::A(summary.load_config(vm)) } else { Either::B(summary.dotnet(vm)) }));
         }
-        Ok(Either::A(data_directory_to_py(self.image.data_directory(self.index).map_err(map_to_py_value_error(vm, "Unable to read directory"))?, vm)))
+        Ok(Either::A(data_directory_to_py(zelf.image.data_directory(zelf.index).map_err(map_to_py_value_error(vm, "Unable to read directory"))?, vm)))
     }
     /// Perform bounded structural validation. The typed status distinguishes absent,
     /// invalid, unsupported, file-only, and validated data; it is not loader verification.
     #[pymethod]
-    fn check(&self, vm: &VirtualMachine) -> PyResult<DirectoryCheck> {
-        Ok(DirectoryCheck { check: self.image.check_directory(self.index).map_err(map_to_py_value_error(vm, "Unable to validate directory"))? })
+    fn check(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<DirectoryCheck> {
+        Ok(DirectoryCheck { check: zelf.image.check_directory(zelf.index).map_err(map_to_py_value_error(vm, "Unable to validate directory"))? })
     }
 }
 
@@ -48,13 +48,13 @@ pub struct DirectoryCheck { check: crate::pe::headers::DirectoryCheck }
 impl DirectoryCheck {
     /// PE data-directory index.
     #[pygetset]
-    fn index(&self) -> usize { self.check.index }
+    fn index(zelf: &Py<Self>) -> usize { zelf.check.index }
     /// Typed validation outcome; absence and unsupported data are distinct from invalid data.
     #[pygetset]
-    fn status(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::headers::CheckStatus>> { PyEnumValue::new(self.check.status, vm) }
+    fn status(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::headers::CheckStatus>> { PyEnumValue::new(zelf.check.status, vm) }
     /// Explanation of the validation outcome, when available.
     #[pygetset]
-    fn message(&self) -> Option<String> { self.check.message.clone() }
+    fn message(zelf: &Py<Self>) -> Option<String> { zelf.check.message.clone() }
 }
 
 /// File-only certificate/overlay metadata, explicitly unavailable for mapped captures.
@@ -65,15 +65,15 @@ pub struct Security { pub(crate) image: RawPeImage }
 impl Security {
     /// Return certificate-directory metadata. Mapped images report file-only data as unavailable.
     #[pymethod]
-    fn info(&self, vm: &VirtualMachine) -> PyResult<PyRef<super::diagnostics::PeSecurityDirectoryInfo>> {
-        let summary = super::diagnostics::PeMetadataSummary::from_summary(self.image.inspect().map_err(map_to_py_value_error(vm, "Unable to inspect security metadata"))?.clone());
+    fn info(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyRef<super::diagnostics::PeSecurityDirectoryInfo>> {
+        let summary = super::diagnostics::PeMetadataSummary::from_summary(zelf.image.inspect().map_err(map_to_py_value_error(vm, "Unable to inspect security metadata"))?.clone());
         Ok(summary.security(vm))
     }
     /// Return the bytes-after-sections range for a file image, or None if absent. Mapped images raise ValueError.
     #[pymethod]
-    fn overlay(&self, vm: &VirtualMachine) -> PyResult<Option<PyRef<super::image_resources::PeOverlayRange>>> {
-        self.image.require_layout(Layout::File).map_err(map_to_py_value_error(vm, "Overlay is file-only"))?;
-        let range = self.image.overlay_range().map_err(map_to_py_value_error(vm, "Unable to read overlay"))?;
+    fn overlay(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Option<PyRef<super::image_resources::PeOverlayRange>>> {
+        zelf.image.require_layout(Layout::File).map_err(map_to_py_value_error(vm, "Overlay is file-only"))?;
+        let range = zelf.image.overlay_range().map_err(map_to_py_value_error(vm, "Unable to read overlay"))?;
         Ok(range.map(|range| super::image_resources::overlay_range_to_py(range, vm)))
     }
 }
@@ -87,48 +87,48 @@ pub struct Headers { pub(crate) image: RawPeImage }
 impl Headers {
     /// IMAGE_FILE_MACHINE_* value from the COFF header.
     #[pygetset]
-    fn machine(&self) -> u16 { self.image.machine() }
+    fn machine(zelf: &Py<Self>) -> u16 { zelf.image.machine() }
 
     /// Raw COFF TimeDateStamp value. It is not necessarily a trustworthy build time.
     #[pygetset]
-    fn time_date_stamp(&self, vm: &VirtualMachine) -> PyResult<u32> {
-        self.image.clone().time_date_stamp().map_err(map_to_py_value_error(vm, "Unable to read PE timestamp"))
+    fn time_date_stamp(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u32> {
+        zelf.image.clone().time_date_stamp().map_err(map_to_py_value_error(vm, "Unable to read PE timestamp"))
     }
 
     /// Target pointer width in bytes, independent of the Python host's width.
     #[pygetset]
-    fn pointer_size(&self, _vm: &VirtualMachine) -> PyResult<usize> {
-        Ok(self.image.clone().pointer_size())
+    fn pointer_size(zelf: &Py<Self>, _vm: &VirtualMachine) -> PyResult<usize> {
+        Ok(zelf.image.clone().pointer_size())
     }
 
     /// Preferred ImageBase from the headers, not necessarily the captured load address.
     #[pygetset]
-    fn preferred_base(&self, vm: &VirtualMachine) -> PyResult<u64> {
-        self.image.clone()
+    fn preferred_base(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u64> {
+        zelf.image.clone()
             .image_base()
             .map_err(map_to_py_system_error(vm, "Unable to read PE image base"))
     }
 
     /// SizeOfImage from the optional header, in bytes.
     #[pygetset]
-    fn image_size(&self, vm: &VirtualMachine) -> PyResult<u32> {
-        self.image.clone()
+    fn image_size(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u32> {
+        zelf.image.clone()
             .image_size()
             .map_err(map_to_py_system_error(vm, "Unable to read PE image size"))
     }
 
     /// AddressOfEntryPoint from the optional header, as an RVA.
     #[pygetset]
-    fn entry_point(&self, vm: &VirtualMachine) -> PyResult<u32> {
-        self.image.clone()
+    fn entry_point(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u32> {
+        zelf.image.clone()
             .entry_point()
             .map_err(map_to_py_system_error(vm, "Unable to read PE entry point"))
     }
 
     /// Return metadata for a PE data-directory index.
     #[pymethod]
-    fn directory(&self, args: DataDirectoryArgs, vm: &VirtualMachine) -> PyResult<PyRef<super::image_resources::PeDataDirectory>> {
-        let directory = self.image.clone()
+    fn directory(zelf: &Py<Self>, args: DataDirectoryArgs, vm: &VirtualMachine) -> PyResult<PyRef<super::image_resources::PeDataDirectory>> {
+        let directory = zelf.image.clone()
             .data_directory(args.index)
             .map_err(map_to_py_system_error(vm, "Unable to read PE data directory"))?;
 
@@ -147,8 +147,8 @@ impl Imports {
     /// Rank IAT-shaped ranges in a captured mapped image against supplied symbols.
     /// Missing section bytes raise an error instead of implying an empty clean scan.
     #[pymethod]
-    fn scan(&self, args: ScanImportsArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportAddressTableRangeScore>>> {
-        let analyzer = crate::pe::imports::analysis::Analyzer { image: &self.image, symbols: args.symbols.map() };
+    fn scan(zelf: &Py<Self>, args: ScanImportsArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportAddressTableRangeScore>>> {
+        let analyzer = crate::pe::imports::analysis::Analyzer { image: &zelf.image, symbols: args.symbols.map() };
         let ranges = analyzer.scan(crate::pe::imports::analysis::ScanOptions {
             min_entries: args.min_entries.unwrap_or(2), anchors: args.anchors.present().unwrap_or_default(),
             trace_depth: args.trace_depth.present(), ..Default::default()
@@ -158,16 +158,16 @@ impl Imports {
 
     /// Recover one explicit mapped IAT span into a target-sized editable model.
     #[pymethod]
-    fn recover_range(&self, rva: u32, size: usize, symbols: PyRef<super::PeExportMap>, vm: &VirtualMachine) -> PyResult<super::PeImportBuilder> {
-        let analyzer = crate::pe::imports::analysis::Analyzer { image: &self.image, symbols: symbols.map() };
+    fn recover_range(zelf: &Py<Self>, rva: u32, size: usize, symbols: PyRef<super::PeExportMap>, vm: &VirtualMachine) -> PyResult<super::PeImportBuilder> {
+        let analyzer = crate::pe::imports::analysis::Analyzer { image: &zelf.image, symbols: symbols.map() };
         let model = analyzer.recover_range(rva, size, crate::pe::imports::RecoverIatOptions { keep_unresolved: true, ..Default::default() })
             .map_err(map_to_py_value_error(vm, "Unable to recover import range"))?;
-        Ok(super::PeImportBuilder::from_model(model, self.image.pointer_size()))
+        Ok(super::PeImportBuilder::from_model(model, zelf.image.pointer_size()))
     }
     /// Parse normal import descriptors and their declared functions.
     #[pymethod]
-    fn entries(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_directory::PeImportDescriptor>>> {
-        let descriptors = self.image.clone()
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_directory::PeImportDescriptor>>> {
+        let descriptors = zelf.image.clone()
             .import_entries()
             .map_err(map_to_py_system_error(vm, "Unable to read PE imports"))?;
 
@@ -176,10 +176,10 @@ impl Imports {
 
     /// Read-only delay-import view over the same image.
     #[pygetset]
-    fn delay(&self) -> DelayImports { DelayImports { image: self.image.clone() } }
+    fn delay(zelf: &Py<Self>) -> DelayImports { DelayImports { image: zelf.image.clone() } }
     /// Read-only bound-import view over the same image.
     #[pygetset]
-    fn bound(&self) -> BoundImports { BoundImports { image: self.image.clone() } }
+    fn bound(zelf: &Py<Self>) -> BoundImports { BoundImports { image: zelf.image.clone() } }
 }
 
 #[derive(FromArgs)]
@@ -199,8 +199,8 @@ pub struct DelayImports { pub(crate) image: RawPeImage }
 impl DelayImports {
     /// Parse delay-import descriptors and their function tables.
     #[pymethod]
-    fn entries(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::delay_imports::PeDelayImportDescriptor>>> {
-        let descriptors = self.image.clone()
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::delay_imports::PeDelayImportDescriptor>>> {
+        let descriptors = zelf.image.clone()
             .delay_entries()
             .map_err(map_to_py_system_error(vm, "Unable to read PE delay imports"))?;
 
@@ -209,8 +209,8 @@ impl DelayImports {
 
     /// Analyze recoverable delay-import state, optionally using a validated matching reference image.
     #[pymethod]
-    fn recover(&self, args: RecoverDelayImportsArgs, vm: &VirtualMachine) -> PyResult<PeDelayImportRecovery> {
-        let image = self.image.clone();
+    fn recover(zelf: &Py<Self>, args: RecoverDelayImportsArgs, vm: &VirtualMachine) -> PyResult<PeDelayImportRecovery> {
+        let image = zelf.image.clone();
         let recovery = match args.reference.present() {
             Some(source) => {
                 image.validate_reference(&source.image).map_err(map_to_py_value_error(vm, "Invalid delay import reference"))?;
@@ -232,8 +232,8 @@ pub struct BoundImports { pub(crate) image: RawPeImage }
 impl BoundImports {
     /// Parse bound-import descriptors and forwarder metadata.
     #[pymethod]
-    fn entries(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::bound_imports::PeBoundImportDescriptor>>> {
-        let descriptors = self.image.clone()
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::bound_imports::PeBoundImportDescriptor>>> {
+        let descriptors = zelf.image.clone()
             .bound_entries()
             .map_err(map_to_py_system_error(vm, "Unable to read PE bound imports"))?;
         Ok(bound_import_descriptors_to_py(descriptors, vm))
@@ -241,8 +241,8 @@ impl BoundImports {
 
     /// Check bound-import timestamps and module expectations against the supplied export map.
     #[pymethod]
-    fn check(&self, args: BoundImportChecksArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::bound_imports::PeBoundImportCheck>>> {
-        let checks = self.image.clone().check_bound_entries(args.export_map.map())
+    fn check(zelf: &Py<Self>, args: BoundImportChecksArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::bound_imports::PeBoundImportCheck>>> {
+        let checks = zelf.image.clone().check_bound_entries(args.export_map.map())
             .map_err(map_to_py_value_error(vm, "Unable to check bound imports"))?;
         Ok(bound_import_checks_to_py(&checks, vm))
     }
@@ -258,8 +258,8 @@ pub struct Resources { pub(crate) image: RawPeImage }
 impl Resources {
     /// Return a structural summary of the resource directory.
     #[pymethod]
-    fn info(&self, vm: &VirtualMachine) -> PyResult<PyRef<super::image_resources::PeResourceDirectoryInfo>> {
-        let info = self.image.clone()
+    fn info(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyRef<super::image_resources::PeResourceDirectoryInfo>> {
+        let info = zelf.image.clone()
             .resource_info()
             .map_err(map_to_py_system_error(vm, "Unable to read PE resource directory info"))?;
 
@@ -268,8 +268,8 @@ impl Resources {
 
     /// Return resource data leaves with typed paths and payload locations.
     #[pymethod]
-    fn entries(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::image_resources::PeResourceDataEntry>>> {
-        let entries = self.image.clone()
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::image_resources::PeResourceDataEntry>>> {
+        let entries = zelf.image.clone()
             .resources()
             .map_err(map_to_py_system_error(vm, "Unable to read PE resource data entries"))?
             .into_iter()
@@ -290,8 +290,8 @@ pub struct Relocations { pub(crate) image: RawPeImage }
 impl Relocations {
     /// Parse base-relocation blocks and entries.
     #[pymethod]
-    fn entries(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::relocations::PeBaseRelocationBlock>>> {
-        let blocks = self.image.clone()
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::relocations::PeBaseRelocationBlock>>> {
+        let blocks = zelf.image.clone()
             .relocation_entries()
             .map_err(map_to_py_system_error(vm, "Unable to read PE base relocations"))?;
 
@@ -300,8 +300,8 @@ impl Relocations {
 
     /// Find heuristic relocation candidates. Candidate addresses are not proof of original relocation records.
     #[pymethod]
-    fn discover(&self, vm: &VirtualMachine) -> PyResult<PyRef<super::relocations::PeRelocationDiscovery>> {
-        let discovery = self.image.clone()
+    fn discover(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyRef<super::relocations::PeRelocationDiscovery>> {
+        let discovery = zelf.image.clone()
             .discover_relocations()
             .map_err(map_to_py_system_error(vm, "Unable to discover PE relocation candidates"))?;
 
@@ -310,8 +310,8 @@ impl Relocations {
 
     /// Encode a base-relocation table for the supplied RVAs using this image's architecture. Does not insert it into the image.
     #[pymethod]
-    fn build_table(&self, args: BuildRelocationTableArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
-        let table = self.image.clone()
+    fn build_table(zelf: &Py<Self>, args: BuildRelocationTableArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
+        let table = zelf.image.clone()
             .build_relocation_table(&args.rvas)
             .map_err(map_to_py_system_error(vm, "Unable to build PE relocation table"))?;
 
@@ -329,8 +329,8 @@ pub struct Tls { pub(crate) image: RawPeImage }
 impl Tls {
     /// Parse the TLS directory and callbacks, or return None when absent. No callbacks are executed.
     #[pymethod]
-    fn directory(&self, vm: &VirtualMachine) -> PyResult<Option<PyRef<super::tls::PeTlsDirectory>>> {
-        let directory = self.image.clone()
+    fn directory(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Option<PyRef<super::tls::PeTlsDirectory>>> {
+        let directory = zelf.image.clone()
             .tls()
             .map_err(map_to_py_system_error(vm, "Unable to read PE TLS directory"))?;
 
@@ -349,16 +349,16 @@ impl Code {
     /// Scan executable mapped sections for bounded supported API-reference patterns.
     /// Decoding follows the image machine; no target instructions are executed.
     #[pymethod]
-    fn scan(&self, args: ScanArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::code_refs::PeImportCodeReference>>> {
-        self.image.require_layout(Layout::Mapped).map_err(map_to_py_value_error(vm, "Code analysis"))?;
-        self.image.validate_contents().map_err(map_to_py_value_error(vm, "Code analysis coverage"))?;
+    fn scan(zelf: &Py<Self>, args: ScanArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::code_refs::PeImportCodeReference>>> {
+        zelf.image.require_layout(Layout::Mapped).map_err(map_to_py_value_error(vm, "Code analysis"))?;
+        zelf.image.validate_contents().map_err(map_to_py_value_error(vm, "Code analysis coverage"))?;
         let exports = export_tables(&args.symbols);
-        let image_base = Some(self.image.address_base().map_err(map_to_py_value_error(vm, "Code address base"))?);
+        let image_base = Some(zelf.image.address_base().map_err(map_to_py_value_error(vm, "Code address base"))?);
         let mut address_resolve_options = address_resolve_options(args.nearest, args.forwarders);
         address_resolve_options.api_set_map = Some(args.symbols.map().api_set_map().clone());
         let references = if args.trace_mapped_thunks.unwrap_or(false) {
             crate::pe::imports::scan_mapped_export_code_references_with_traced_thunks(
-                self.image.data(),
+                zelf.image.data(),
                 image_base,
                 address_resolve_options,
                 &exports,
@@ -366,7 +366,7 @@ impl Code {
             )
         } else {
             crate::pe::imports::scan_mapped_export_code_references_with_options(
-                self.image.data(),
+                zelf.image.data(),
                 image_base,
                 address_resolve_options,
                 &exports,
@@ -382,16 +382,16 @@ impl Code {
 
     /// Scan only the supplied RVA range; symbols supply target addresses and API-set context.
     #[pymethod]
-    fn scan_range(&self, args: RangeArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::code_refs::PeImportCodeReference>>> {
-        self.image.require_layout(Layout::Mapped).map_err(map_to_py_value_error(vm, "Code analysis"))?;
-        self.image.validate_contents().map_err(map_to_py_value_error(vm, "Code analysis coverage"))?;
+    fn scan_range(zelf: &Py<Self>, args: RangeArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::code_refs::PeImportCodeReference>>> {
+        zelf.image.require_layout(Layout::Mapped).map_err(map_to_py_value_error(vm, "Code analysis"))?;
+        zelf.image.validate_contents().map_err(map_to_py_value_error(vm, "Code analysis coverage"))?;
         let exports = export_tables(&args.symbols);
-        let image_base = Some(self.image.address_base().map_err(map_to_py_value_error(vm, "Code address base"))?);
+        let image_base = Some(zelf.image.address_base().map_err(map_to_py_value_error(vm, "Code address base"))?);
         let mut address_resolve_options = address_resolve_options(args.nearest, args.forwarders);
         address_resolve_options.api_set_map = Some(args.symbols.map().api_set_map().clone());
         let references = if args.trace_mapped_thunks.unwrap_or(false) {
             crate::pe::imports::scan_mapped_export_code_references_in_range_with_traced_thunks(
-                self.image.data(),
+                zelf.image.data(),
                 image_base,
                 args.rva,
                 args.size,
@@ -401,7 +401,7 @@ impl Code {
             )
         } else {
             crate::pe::imports::scan_mapped_export_code_references_in_range_with_options(
-                self.image.data(),
+                zelf.image.data(),
                 image_base,
                 args.rva,
                 args.size,
@@ -421,11 +421,11 @@ impl Code {
     /// max_blocks and max_bytes limit work; unsupported patterns are not a complete
     /// deobfuscation result. The returned trace records references and work performed.
     #[pymethod]
-    fn trace(&self, args: TraceArgs, vm: &VirtualMachine) -> PyResult<PyRef<super::code_refs::PeImportCodeTrace>> {
-        self.image.require_layout(Layout::Mapped).map_err(map_to_py_value_error(vm, "Code analysis"))?;
-        self.image.validate_contents().map_err(map_to_py_value_error(vm, "Code analysis coverage"))?;
+    fn trace(zelf: &Py<Self>, args: TraceArgs, vm: &VirtualMachine) -> PyResult<PyRef<super::code_refs::PeImportCodeTrace>> {
+        zelf.image.require_layout(Layout::Mapped).map_err(map_to_py_value_error(vm, "Code analysis"))?;
+        zelf.image.validate_contents().map_err(map_to_py_value_error(vm, "Code analysis coverage"))?;
         let exports = export_tables(&args.symbols);
-        let image_base = Some(self.image.address_base().map_err(map_to_py_value_error(vm, "Code address base"))?);
+        let image_base = Some(zelf.image.address_base().map_err(map_to_py_value_error(vm, "Code address base"))?);
         let mut address_resolve_options = address_resolve_options(args.nearest, args.forwarders);
         address_resolve_options.api_set_map = Some(args.symbols.map().api_set_map().clone());
         let trace_options = ImportCodeTraceOptions {
@@ -436,7 +436,7 @@ impl Code {
         };
         let trace = if args.trace_mapped_thunks.unwrap_or(false) {
             crate::pe::imports::trace_mapped_export_code_references_with_traced_thunks(
-                self.image.data(),
+                zelf.image.data(),
                 image_base,
                 trace_options,
                 address_resolve_options,
@@ -445,7 +445,7 @@ impl Code {
             )
         } else {
             crate::pe::imports::trace_mapped_export_code_references(
-                self.image.data(),
+                zelf.image.data(),
                 image_base,
                 trace_options,
                 address_resolve_options,

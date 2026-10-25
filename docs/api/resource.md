@@ -28,14 +28,6 @@ A non-owning view of Python bytes as a local address and byte length.
 
 Keep the original bytes object alive for every use of the view. The view does not retain its owner, copy the data, or make the storage writable.
 
-#### __init__
-
-```python
-__init__(self, obj_ref: bytes, /) -> None
-```
-
-Borrow the storage of a `bytes` object; other objects raise `TypeError`.
-
 #### ptr
 
 ```python
@@ -55,6 +47,14 @@ size: int
 Read-only property.
 
 Length of the borrowed storage in bytes.
+
+#### __init__
+
+```python
+__init__(self, obj_ref: bytes, /) -> None
+```
+
+Borrow the storage of a `bytes` object; other objects raise `TypeError`.
 
 ### Handle
 

@@ -49,8 +49,8 @@ pub struct GetFieldOffsetArgs {
 impl Pdb {
     /// Resolve an exact symbol name to an image-relative virtual address.
     #[pymethod]
-    fn get_symbol_rva(&self, args: GetSymbolRvaArgs, vm: &VirtualMachine) -> PyResult<usize> {
-        let mut pdb = self.pdb.borrow_mut();
+    fn get_symbol_rva(zelf: &Py<Self>, args: GetSymbolRvaArgs, vm: &VirtualMachine) -> PyResult<usize> {
+        let mut pdb = zelf.pdb.borrow_mut();
 
         let rva = pdb.get_symbol_rva(&args.name.to_string())
             .map_err(map_to_py_value_error(vm, "Failed to get symbol RVA"))?;
@@ -60,8 +60,8 @@ impl Pdb {
 
     /// Return the byte offset of `field_name` within the named structure or class.
     #[pymethod]
-    fn get_field_offset(&self, args: GetFieldOffsetArgs, vm: &VirtualMachine) -> PyResult<usize> {
-        let mut pdb = self.pdb.borrow_mut();
+    fn get_field_offset(zelf: &Py<Self>, args: GetFieldOffsetArgs, vm: &VirtualMachine) -> PyResult<usize> {
+        let mut pdb = zelf.pdb.borrow_mut();
 
         let rva = pdb
             .get_field_offset(&args.struct_name.to_string(), &args.field_name.to_string())

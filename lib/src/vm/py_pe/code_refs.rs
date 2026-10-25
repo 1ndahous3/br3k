@@ -65,13 +65,27 @@ pub struct TraceArgs {
 #[pyclass(module = "br3k.pe.code", name = "Reference")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeImportCodeReference {
+    /// RVA of the instruction or code pattern containing the reference.
+    #[pymember]
     reference_rva: u32,
     kind: ImportCodeReferenceKind,
+    /// Target virtual address obtained from the recognized pattern before export matching.
+    #[pymember]
     target_address: u64,
+    /// Virtual address of the export selected by resolution.
+    #[pymember]
     export_address: u64,
-    iat_rva: Option<u32>,
-    module_name: String,
-    name: Option<String>,
+    /// RVA of the associated IAT slot, or None for a reference without an identified slot.
+    #[pymember]
+    iat_rva: Option<PyRef<PyInt>>,
+    /// Module name associated with the resolved export.
+    #[pymember]
+    module_name: PyStrRef,
+    /// Export name when available; ordinal-only exports return None.
+    #[pymember]
+    name: Option<PyStrRef>,
+    /// Resolved export ordinal.
+    #[pymember]
     ordinal: u32,
 }
 
@@ -83,103 +97,51 @@ impl PeImportCodeReference {
             kind: self.kind,
             target_address: self.target_address,
             export_address: self.export_address,
-            iat_rva: self.iat_rva,
-            module_name: self.module_name.clone(),
-            name: self.name.clone(),
+            iat_rva: self.iat_rva.as_ref().map(|value| value.as_u32_mask()),
+            module_name: self.module_name.to_string(),
+            name: self.name.as_ref().map(ToString::to_string),
             ordinal: self.ordinal,
         }
     }
 
-    /// RVA of the instruction or code pattern containing the reference.
-    #[pygetset]
-    fn reference_rva(&self) -> u32 {
-        self.reference_rva
-    }
-
     /// Architecture-specific kind of recognized API-reference pattern.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::imports::ImportCodeReferenceKind>> {
-        PyEnumValue::new(self.kind, vm)
-    }
-
-    /// Target virtual address obtained from the recognized pattern before export matching.
-    #[pygetset]
-    fn target_address(&self) -> u64 {
-        self.target_address
-    }
-
-    /// Virtual address of the export selected by resolution.
-    #[pygetset]
-    fn export_address(&self) -> u64 {
-        self.export_address
-    }
-
-    /// RVA of the associated IAT slot, or None for a reference without an identified slot.
-    #[pygetset]
-    fn iat_rva(&self) -> Option<u32> {
-        self.iat_rva
-    }
-
-    /// Module name associated with the resolved export.
-    #[pygetset]
-    fn module_name(&self) -> String {
-        self.module_name.clone()
-    }
-
-    /// Export name when available; ordinal-only exports return None.
-    #[pygetset]
-    fn name(&self) -> Option<String> {
-        self.name.clone()
-    }
-
-    /// Resolved export ordinal.
-    #[pygetset]
-    fn ordinal(&self) -> u32 {
-        self.ordinal
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::imports::ImportCodeReferenceKind>> {
+        PyEnumValue::new(zelf.kind, vm)
     }
 
     /// Whether this reference carries an identified IAT slot RVA.
     #[pygetset]
-    fn uses_iat(&self) -> bool {
-        self.iat_rva.is_some()
+    fn uses_iat(zelf: &Py<Self>) -> bool {
+        zelf.iat_rva.is_some()
     }
 
     /// Whether the recognized branch kind has a supported rewrite form. Placement and range checks may still reject a build.
     #[pygetset]
-    fn patchable_direct_branch(&self) -> bool {
-        self.kind.is_patchable_direct_branch()
+    fn patchable_direct_branch(zelf: &Py<Self>) -> bool {
+        zelf.kind.is_patchable_direct_branch()
     }
 }
 
 /// API references and work counters from a bounded static code trace. Not a runtime execution trace.
+#[py_api]
 #[pyclass(module = "br3k.pe.code", name = "Trace")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeImportCodeTrace {
-    references: PyListOf<PyRef<PeImportCodeReference>>,
-    visited_blocks: usize,
-    scanned_bytes: usize,
+    /// API-reference records collected by the trace.
+    #[pyi(ty = "list[br3k.pe.code.Reference]")]
+    #[pymember]
+    references: PyListRef,
+    /// Number of code blocks visited before traversal ended or reached its limits.
+    #[pymember]
+    visited_blocks: PyRef<PyInt>,
+    /// Number of bytes examined during bounded traversal.
+    #[pymember]
+    scanned_bytes: PyRef<PyInt>,
 }
 
 #[pyclass]
-impl PeImportCodeTrace {
-    /// API-reference records collected by the trace.
-    #[pygetset]
-    fn references(&self) -> PyListOf<PyRef<PeImportCodeReference>> {
-        self.references.clone()
-    }
-
-    /// Number of code blocks visited before traversal ended or reached its limits.
-    #[pygetset]
-    fn visited_blocks(&self) -> usize {
-        self.visited_blocks
-    }
-
-    /// Number of bytes examined during bounded traversal.
-    #[pygetset]
-    fn scanned_bytes(&self) -> usize {
-        self.scanned_bytes
-    }
-}
+impl PeImportCodeTrace {}
 
 pub(crate) fn export_tables(symbols: &PeExportMap) -> Vec<&ExportTable> {
     symbols.map().tables().collect()
@@ -211,9 +173,9 @@ pub(crate) fn import_code_reference_to_py(
         kind: reference.kind,
         target_address: reference.target_address,
         export_address: reference.export_address,
-        iat_rva: reference.iat_rva,
-        module_name: reference.module_name,
-        name: reference.name,
+        iat_rva: reference.iat_rva.map(|value| vm.ctx.new_int(value)),
+        module_name: vm.ctx.new_str(reference.module_name),
+        name: reference.name.map(|value| vm.ctx.new_str(value)),
         ordinal: reference.ordinal,
     }
     .into_ref(&vm.ctx)
@@ -227,9 +189,9 @@ pub(crate) fn import_code_trace_to_py(trace: ImportCodeTrace, vm: &VirtualMachin
         .collect::<Vec<_>>();
 
     PeImportCodeTrace {
-        references: PyListOf::new(references, vm),
-        visited_blocks: trace.visited_blocks,
-        scanned_bytes: trace.scanned_bytes,
+        references: PyListOf::new(references, vm).into(),
+        visited_blocks: vm.ctx.new_int(trace.visited_blocks),
+        scanned_bytes: vm.ctx.new_int(trace.scanned_bytes),
     }
     .into_ref(&vm.ctx)
 }

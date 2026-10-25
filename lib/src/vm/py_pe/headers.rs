@@ -32,21 +32,21 @@ pub struct PeDirectoryRecovery {
 impl PeDirectoryRecovery {
     /// PE data-directory index.
     #[pygetset]
-    fn index(&self) -> usize { self.data.index }
+    fn index(zelf: &Py<Self>) -> usize { zelf.data.index }
 
     /// Directory address and size associated with this salvage attempt.
     #[pygetset]
-    fn directory(&self, vm: &VirtualMachine) -> PyRef<super::image_resources::PeDataDirectory> { data_directory_to_py(self.data.directory, vm) }
+    fn directory(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<super::image_resources::PeDataDirectory> { data_directory_to_py(zelf.data.directory, vm) }
 
     /// Typed restoration outcome, including unsupported, invalid, file-only, and overlapping data.
     #[pygetset]
-    fn status(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::headers::DirectoryRecoveryStatus>> {
-        PyEnumValue::new(self.data.status, vm)
+    fn status(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::headers::DirectoryRecoveryStatus>> {
+        PyEnumValue::new(zelf.data.status, vm)
     }
 
     /// Explanation of an unsuccessful restoration, or None when no error was recorded.
     #[pygetset]
-    fn error(&self) -> Option<String> { self.data.error.clone() }
+    fn error(zelf: &Py<Self>) -> Option<String> { zelf.data.error.clone() }
 }
 
 pub fn synthesize_from_regions(args: SynthesizeFromRegionsArgs, vm: &VirtualMachine) -> PyResult<PyRef<super::format::PeSyntheticImage>> {

@@ -65,8 +65,14 @@ pub struct CandidateByBaseArgs {
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeScanFinding {
     kind: FindingKind,
+    /// Absolute target virtual address of the finding or artifact.
+    #[pymember]
     address: u64,
+    /// Range length in bytes.
+    #[pymember]
     size: u64,
+    /// Heuristic evidence score; higher values indicate stronger matching evidence.
+    #[pymember]
     score: i32,
     reason: String,
     region: Option<MemoryRegion>,
@@ -77,38 +83,20 @@ pub struct PeScanFinding {
 impl PeScanFinding {
     /// Typed category for programmatic filtering.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::vm::py_pe::types::FindingKind>> {
-        PyEnumValue::new(self.kind, vm)
-    }
-
-    /// Absolute target virtual address of the finding or artifact.
-    #[pygetset]
-    fn address(&self) -> u64 {
-        self.address
-    }
-
-    /// Range length in bytes.
-    #[pygetset]
-    fn size(&self) -> u64 {
-        self.size
-    }
-
-    /// Heuristic evidence score; higher values indicate stronger matching evidence.
-    #[pygetset]
-    fn score(&self) -> i32 {
-        self.score
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::vm::py_pe::types::FindingKind>> {
+        PyEnumValue::new(zelf.kind, vm)
     }
 
     /// Display explanation of the finding.
     #[pygetset]
-    fn reason(&self) -> String {
-        self.reason.clone()
+    fn reason(zelf: &Py<Self>) -> String {
+        zelf.reason.clone()
     }
 
     /// Associated memory-region snapshot, when available.
     #[pygetset]
-    fn region(&self, vm: &VirtualMachine) -> Option<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        match &self.region {
+    fn region(zelf: &Py<Self>, vm: &VirtualMachine) -> Option<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        match &zelf.region {
             Some(region) => Some(CProcessMemoryRegion { data: region.clone() }.into_ref(&vm.ctx)),
             None => None,
         }
@@ -116,8 +104,8 @@ impl PeScanFinding {
 
     /// Associated hidden-image candidate, when applicable.
     #[pygetset]
-    fn candidate(&self, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleCandidate>> {
-        match &self.candidate {
+    fn candidate(zelf: &Py<Self>, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleCandidate>> {
+        match &zelf.candidate {
             Some(candidate) => Some(candidate.clone().into_ref(&vm.ctx)),
             None => None,
         }
@@ -128,26 +116,22 @@ impl PeScanFinding {
 #[pyclass(module = "br3k.pe.analysis", name = "MemoryRange")]
 #[derive(Clone, Copy, Debug, PyPayload)]
 pub struct PeMemoryRange {
+    /// Inclusive start virtual address.
+    #[pymember]
     start: u64,
+    /// Exclusive end virtual address.
+    #[pymember]
     end: u64,
 }
 
 #[pyclass]
 impl PeMemoryRange {
-    /// Inclusive start virtual address.
-    #[pygetset]
-    fn start(&self) -> u64 {
-        self.start
-    }
-
-    /// Exclusive end virtual address.
-    #[pygetset]
-    fn end(&self) -> u64 {
-        self.end
-    }
-
     /// Range length in bytes.
-    #[pygetset]
+    #[pygetset(name = "size")]
+    fn py_size(zelf: &Py<Self>) -> u64 {
+        zelf.size()
+    }
+
     fn size(&self) -> u64 {
         self.end.saturating_sub(self.start)
     }
@@ -160,9 +144,13 @@ impl PeMemoryRange {
 #[pyclass(module = "br3k.pe.analysis", name = "HiddenModuleScanOptions")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeHiddenModuleScanOptions {
+    /// Minimum score used by visible_candidates(); default 5.
+    #[pymember]
     min_score: i32,
     max_allocation_scan_bytes: usize,
     max_artifacts_per_candidate: usize,
+    /// Whether reporting bypasses the minimum-score filter.
+    #[pymember]
     show_all_executable_regions: bool,
 }
 
@@ -203,29 +191,18 @@ impl Constructor for PeHiddenModuleScanOptions {
 
 #[pyclass(with(Constructor))]
 impl PeHiddenModuleScanOptions {
-    /// Minimum score used by visible_candidates(); default 5.
-    #[pygetset]
-    fn min_score(&self) -> i32 {
-        self.min_score
-    }
-
     /// Maximum bytes inspected per allocation; default 64 MiB.
     #[pygetset]
-    fn max_allocation_scan_bytes(&self) -> usize {
-        self.max_allocation_scan_bytes
+    fn max_allocation_scan_bytes(zelf: &Py<Self>) -> usize {
+        zelf.max_allocation_scan_bytes
     }
 
     /// Maximum retained header artifacts per candidate; default 24.
     #[pygetset]
-    fn max_artifacts_per_candidate(&self) -> usize {
-        self.max_artifacts_per_candidate
+    fn max_artifacts_per_candidate(zelf: &Py<Self>) -> usize {
+        zelf.max_artifacts_per_candidate
     }
 
-    /// Whether reporting bypasses the minimum-score filter.
-    #[pygetset]
-    fn show_all_executable_regions(&self) -> bool {
-        self.show_all_executable_regions
-    }
 }
 
 /// Typed evidence explaining a candidate's score, optionally linked to a header artifact.
@@ -240,21 +217,25 @@ pub struct PeHiddenModuleReason {
 impl PeHiddenModuleReason {
     /// Typed category for programmatic filtering.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::vm::py_pe::types::HiddenModuleReasonKind>> {
-        PyEnumValue::new(self.kind, vm)
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::vm::py_pe::types::HiddenModuleReasonKind>> {
+        PyEnumValue::new(zelf.kind, vm)
     }
 
     /// Header evidence supporting this reason, or None for region-only evidence.
     #[pygetset]
-    fn artifact(&self, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleArtifact>> {
-        match &self.artifact {
+    fn artifact(zelf: &Py<Self>, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleArtifact>> {
+        match &zelf.artifact {
             Some(artifact) => Some(artifact.clone().into_ref(&vm.ctx)),
             None => None,
         }
     }
 
     /// Format the typed reason and any artifact context for display.
-    #[pymethod]
+    #[pymethod(name = "text")]
+    fn py_text(zelf: &Py<Self>) -> String {
+        zelf.text()
+    }
+
     fn text(&self) -> String {
         match self.kind {
             HiddenModuleReasonKind::OutsidePebModuleList => "allocation is not covered by the PEB module list".to_string(),
@@ -278,8 +259,14 @@ impl PeHiddenModuleReason {
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeHiddenModuleArtifact {
     kind: HeaderArtifactKind,
+    /// Absolute target virtual address of the finding or artifact.
+    #[pymember]
     address: u64,
+    /// Byte offset of the artifact from the candidate allocation base.
+    #[pymember]
     offset: u64,
+    /// Heuristic evidence score; higher values indicate stronger matching evidence.
+    #[pymember]
     score: i32,
     sections: Vec<SectionInfo>,
     coverage_count: usize,
@@ -316,72 +303,58 @@ impl Constructor for PeHiddenModuleArtifact {
 impl PeHiddenModuleArtifact {
     /// Typed category for programmatic filtering.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::format::HeaderArtifactKind>> {
-        PyEnumValue::new(self.kind, vm)
-    }
-
-    /// Absolute target virtual address of the finding or artifact.
-    #[pygetset]
-    fn address(&self) -> u64 {
-        self.address
-    }
-
-    /// Byte offset of the artifact from the candidate allocation base.
-    #[pygetset]
-    fn offset(&self) -> u64 {
-        self.offset
-    }
-
-    /// Heuristic evidence score; higher values indicate stronger matching evidence.
-    #[pygetset]
-    fn score(&self) -> i32 {
-        self.score
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::format::HeaderArtifactKind>> {
+        PyEnumValue::new(zelf.kind, vm)
     }
 
     /// Section records inferred from the artifact.
     #[pygetset]
-    fn sections(&self, vm: &VirtualMachine) -> PyListOf<PyRef<super::sections::PeSection>> {
-        sections_to_py(&self.sections, vm)
+    fn sections(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<super::sections::PeSection>> {
+        sections_to_py(&zelf.sections, vm)
     }
 
     /// Number of inferred section records.
     #[pygetset]
-    fn section_count(&self) -> usize {
-        self.sections.len()
+    fn section_count(zelf: &Py<Self>) -> usize {
+        zelf.sections.len()
     }
 
     /// Number of inferred section starts covered by observed allocation regions.
     #[pygetset]
-    fn coverage_count(&self) -> usize {
-        self.coverage_count
+    fn coverage_count(zelf: &Py<Self>) -> usize {
+        zelf.coverage_count
     }
 
     /// Detected architecture name, or None when unknown.
     #[pygetset]
-    fn machine(&self) -> Option<String> {
-        self.machine.clone()
+    fn machine(zelf: &Py<Self>) -> Option<String> {
+        zelf.machine.clone()
     }
 
     /// Detected DLL flag, or None when the file header was unavailable.
     #[pygetset]
-    fn is_dll(&self) -> Option<bool> {
-        self.is_dll
+    fn is_dll(zelf: &Py<Self>) -> Option<bool> {
+        zelf.is_dll
     }
 
     /// Detected section-table byte offset within the allocation, when known.
     #[pygetset]
-    fn section_table_offset(&self) -> Option<u64> {
-        self.section_table_offset
+    fn section_table_offset(zelf: &Py<Self>) -> Option<u64> {
+        zelf.section_table_offset
     }
 
     /// Detected DOS-header e_lfanew value, when available.
     #[pygetset]
-    fn e_lfanew(&self) -> Option<u32> {
-        self.e_lfanew
+    fn e_lfanew(zelf: &Py<Self>) -> Option<u32> {
+        zelf.e_lfanew
     }
 
     /// Return a typed HeaderArtifact reason referring to this artifact.
-    #[pymethod]
+    #[pymethod(name = "reason")]
+    fn py_reason(zelf: &Py<Self>) -> PeHiddenModuleReason {
+        zelf.reason()
+    }
+
     fn reason(&self) -> PeHiddenModuleReason {
         PeHiddenModuleReason {
             kind: HiddenModuleReasonKind::HeaderArtifact,
@@ -391,14 +364,14 @@ impl PeHiddenModuleArtifact {
 
     /// Describe the artifact kind and allocation-relative location.
     #[pymethod]
-    fn reason_text(&self) -> String {
-        self.reason_text_value()
+    fn reason_text(zelf: &Py<Self>) -> String {
+        zelf.reason_text_value()
     }
 
     /// Format inferred section names and extents for display.
     #[pymethod]
-    fn section_summary(&self) -> String {
-        self.sections
+    fn section_summary(zelf: &Py<Self>) -> String {
+        zelf.sections
             .iter()
             .map(format::section_summary)
             .collect::<Vec<_>>()
@@ -424,11 +397,15 @@ impl PeHiddenModuleArtifact {
 #[pyclass(module = "br3k.pe.analysis", name = "HiddenModuleCandidate")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeHiddenModuleCandidate {
+    /// Absolute base address used to group the candidate allocation.
+    #[pymember]
     allocation_base: u64,
     regions: Vec<MemoryRegion>,
     orphan_exec_regions: Vec<MemoryRegion>,
     read_errors: Vec<String>,
     artifacts: Vec<PeHiddenModuleArtifact>,
+    /// Heuristic evidence score; higher values indicate stronger matching evidence.
+    #[pymember]
     score: i32,
     reasons: Vec<PeHiddenModuleReason>,
 }
@@ -454,64 +431,60 @@ impl PeHiddenModuleCandidate {
 
 #[pyclass]
 impl PeHiddenModuleCandidate {
-    /// Absolute base address used to group the candidate allocation.
-    #[pygetset]
-    fn allocation_base(&self) -> u64 {
-        self.allocation_base
-    }
-
     /// Memory regions retained in this snapshot.
     #[pygetset]
-    fn regions(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.regions, vm)
+    fn regions(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.regions, vm)
     }
 
     /// Candidate executable regions not covered by loader-listed modules.
     #[pygetset]
-    fn orphan_exec_regions(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.orphan_exec_regions, vm)
+    fn orphan_exec_regions(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.orphan_exec_regions, vm)
     }
 
     /// Errors encountered while inspecting candidate memory.
     #[pygetset]
-    fn read_errors(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        string_list_to_py(&self.read_errors, vm)
+    fn read_errors(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        string_list_to_py(&zelf.read_errors, vm)
     }
 
     /// Ranked PE-shaped artifacts found in the allocation.
     #[pygetset]
-    fn artifacts(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleArtifact>> {
-        hidden_artifacts_to_py(&self.artifacts, vm)
-    }
-
-    /// Heuristic evidence score; higher values indicate stronger matching evidence.
-    #[pygetset]
-    fn score(&self) -> i32 {
-        self.score
+    fn artifacts(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleArtifact>> {
+        hidden_artifacts_to_py(&zelf.artifacts, vm)
     }
 
     /// Typed evidence contributing to the candidate score.
     #[pygetset]
-    fn reasons(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleReason>> {
-        hidden_reasons_to_py(&self.reasons, vm)
+    fn reasons(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleReason>> {
+        hidden_reasons_to_py(&zelf.reasons, vm)
     }
 
     /// Return the half-open extent covering the candidate regions.
-    #[pymethod]
+    #[pymethod(name = "span")]
+    fn py_span(zelf: &Py<Self>) -> PeMemoryRange {
+        zelf.span()
+    }
+
     fn span(&self) -> PeMemoryRange {
         allocation_span(&self.regions)
     }
 
     /// Return the candidate's full region-span length in bytes.
-    #[pymethod]
+    #[pymethod(name = "span_size")]
+    fn py_span_size(zelf: &Py<Self>) -> u64 {
+        zelf.span_size()
+    }
+
     fn span_size(&self) -> u64 {
         self.span().size()
     }
 
     /// Return the first ranked artifact, or None when no header evidence was found.
     #[pymethod]
-    fn best_artifact(&self, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleArtifact>> {
-        match self.artifacts.first() {
+    fn best_artifact(zelf: &Py<Self>, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleArtifact>> {
+        match zelf.artifacts.first() {
             Some(artifact) => Some(artifact.clone().into_ref(&vm.ctx)),
             None => None,
         }
@@ -521,8 +494,8 @@ impl PeHiddenModuleCandidate {
     ///
     /// This is a recovery hint; overflow raises ValueError.
     #[pymethod]
-    fn guessed_image_size(&self, vm: &VirtualMachine) -> PyResult<u32> {
-        self.guessed_image_size_value()
+    fn guessed_image_size(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u32> {
+        zelf.guessed_image_size_value()
             .map_err(map_to_py_value_error(vm, "Unable to guess hidden module image size"))
     }
 }
@@ -545,38 +518,38 @@ pub struct PeHiddenModuleScanResult {
 impl PeHiddenModuleScanResult {
     /// Loader-module snapshot used to identify regions outside known images.
     #[pygetset]
-    fn modules(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessModule>> {
-        process_modules_to_py(&self.modules, vm)
+    fn modules(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessModule>> {
+        process_modules_to_py(&zelf.modules, vm)
     }
 
     /// Memory regions retained in this snapshot.
     #[pygetset]
-    fn regions(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.regions, vm)
+    fn regions(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.regions, vm)
     }
 
     /// Regions classified as committed.
     #[pygetset]
-    fn committed(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.committed, vm)
+    fn committed(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.committed, vm)
     }
 
     /// Executable regions retained by the scan.
     #[pygetset]
-    fn executable(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.executable, vm)
+    fn executable(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.executable, vm)
     }
 
     /// Executable regions outside loader-listed module coverage.
     #[pygetset]
-    fn orphan_executable(&self, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.orphan_executable, vm)
+    fn orphan_executable(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<crate::vm::py_proc::CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.orphan_executable, vm)
     }
 
     /// Allocation bases selected for candidate inspection.
     #[pygetset]
-    fn candidate_allocations(&self, vm: &VirtualMachine) -> PyListOf<PyRef<rustpython_vm::builtins::PyInt>> {
-        let allocations = self.candidate_allocations
+    fn candidate_allocations(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<rustpython_vm::builtins::PyInt>> {
+        let allocations = zelf.candidate_allocations
             .iter()
             .map(|value| vm.ctx.new_int(*value))
             .collect::<Vec<_>>();
@@ -586,23 +559,23 @@ impl PeHiddenModuleScanResult {
 
     /// All retained candidates, before the reporting score filter.
     #[pygetset]
-    fn candidates(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleCandidate>> {
-        hidden_candidates_to_py(&self.candidates, vm)
+    fn candidates(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleCandidate>> {
+        hidden_candidates_to_py(&zelf.candidates, vm)
     }
 
     /// Options used to produce this scan.
     #[pygetset]
-    fn options(&self, vm: &VirtualMachine) -> PyRef<PeHiddenModuleScanOptions> {
-        self.options.clone().into_ref(&vm.ctx)
+    fn options(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeHiddenModuleScanOptions> {
+        zelf.options.clone().into_ref(&vm.ctx)
     }
 
     /// Return candidates meeting min_score, or all candidates when show_all_executable_regions is enabled.
     #[pymethod]
-    fn visible_candidates(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleCandidate>> {
-        let candidates = self.candidates
+    fn visible_candidates(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeHiddenModuleCandidate>> {
+        let candidates = zelf.candidates
             .iter()
             .filter(|candidate| {
-                candidate.score >= self.options.min_score || self.options.show_all_executable_regions
+                candidate.score >= zelf.options.min_score || zelf.options.show_all_executable_regions
             })
             .cloned()
             .map(|candidate| candidate.into_ref(&vm.ctx))
@@ -613,8 +586,8 @@ impl PeHiddenModuleScanResult {
 
     /// Find a candidate by exact allocation base; return None when absent.
     #[pymethod]
-    fn candidate_by_base(&self, args: CandidateByBaseArgs, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleCandidate>> {
-        match self.candidates
+    fn candidate_by_base(zelf: &Py<Self>, args: CandidateByBaseArgs, vm: &VirtualMachine) -> Option<PyRef<PeHiddenModuleCandidate>> {
+        match zelf.candidates
             .iter()
             .find(|candidate| candidate.allocation_base == args.base_address) {
             Some(candidate) => Some(candidate.clone().into_ref(&vm.ctx)),
@@ -624,8 +597,8 @@ impl PeHiddenModuleScanResult {
 
     /// Build reportable findings from this scan's evidence and reporting options.
     #[pymethod]
-    fn findings(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeScanFinding>> {
-        scan_findings_to_py(&scan_findings(self), vm)
+    fn findings(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeScanFinding>> {
+        scan_findings_to_py(&scan_findings(zelf), vm)
     }
 }
 

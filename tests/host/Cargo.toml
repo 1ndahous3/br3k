@@ -10,6 +10,6 @@ path = "suite.rs"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+serde_norway = "0.9"
 tempfile = "3.27"
 windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }

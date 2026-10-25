@@ -618,27 +618,9 @@ Classification of a process-memory scan finding.
 
 ### HiddenModuleArtifact
 
-[Source](../../../lib/src/vm/py_pe/hidden.rs#L276)
+[Source](../../../lib/src/vm/py_pe/hidden.rs#L257)
 
 A PE-shaped header or section-table fragment inside a candidate allocation.
-
-#### __init__
-
-```python
-__init__(self, kind: br3k.pe.headers.ArtifactKind, address: int, offset: int, score: int, sections: Iterable[br3k.pe.headers.Section], coverage_count: int, *, machine: Any = ..., is_dll: bool = ..., section_table_offset: int = ..., e_lfanew: int = ...) -> None
-```
-
-Create an explicit artifact record; validates enum and machine values, not the target's contents.
-
-#### kind
-
-```python
-kind: br3k.pe.headers.ArtifactKind
-```
-
-Read-only property.
-
-Typed category for programmatic filtering.
 
 #### address
 
@@ -669,6 +651,24 @@ score: int
 Read-only property.
 
 Heuristic evidence score; higher values indicate stronger matching evidence.
+
+#### __init__
+
+```python
+__init__(self, kind: br3k.pe.headers.ArtifactKind, address: int, offset: int, score: int, sections: Iterable[br3k.pe.headers.Section], coverage_count: int, *, machine: Any = ..., is_dll: bool = ..., section_table_offset: int = ..., e_lfanew: int = ...) -> None
+```
+
+Create an explicit artifact record; validates enum and machine values, not the target's contents.
+
+#### kind
+
+```python
+kind: br3k.pe.headers.ArtifactKind
+```
+
+Read-only property.
+
+Typed category for programmatic filtering.
 
 #### sections
 
@@ -766,7 +766,7 @@ Format inferred section names and extents for display.
 
 ### HiddenModuleCandidate
 
-[Source](../../../lib/src/vm/py_pe/hidden.rs#L420)
+[Source](../../../lib/src/vm/py_pe/hidden.rs#L393)
 
 An allocation containing unexplained executable regions or PE-shaped evidence.
 
@@ -781,6 +781,16 @@ allocation_base: int
 Read-only property.
 
 Absolute base address used to group the candidate allocation.
+
+#### score
+
+```python
+score: int
+```
+
+Read-only property.
+
+Heuristic evidence score; higher values indicate stronger matching evidence.
 
 #### regions
 
@@ -821,16 +831,6 @@ artifacts: list[br3k.pe.analysis.HiddenModuleArtifact]
 Read-only property.
 
 Ranked PE-shaped artifacts found in the allocation.
-
-#### score
-
-```python
-score: int
-```
-
-Read-only property.
-
-Heuristic evidence score; higher values indicate stronger matching evidence.
 
 #### reasons
 
@@ -878,7 +878,7 @@ This is a recovery hint; overflow raises ValueError.
 
 ### HiddenModuleReason
 
-[Source](../../../lib/src/vm/py_pe/hidden.rs#L231)
+[Source](../../../lib/src/vm/py_pe/hidden.rs#L208)
 
 Typed evidence explaining a candidate's score, optionally linked to a header artifact.
 
@@ -927,19 +927,11 @@ Evidence contributing to a hidden-module candidate's ranking. No single reason p
 
 ### HiddenModuleScanOptions
 
-[Source](../../../lib/src/vm/py_pe/hidden.rs#L156)
+[Source](../../../lib/src/vm/py_pe/hidden.rs#L140)
 
 Bounds and reporting threshold for hidden-image scans.
 
 Defaults: min_score=5, max_allocation_scan_bytes=64 MiB, max_artifacts_per_candidate=24, show_all_executable_regions=False.
-
-#### __init__
-
-```python
-__init__(self, *, min_score: int = ..., max_allocation_scan_bytes: int = ..., max_artifacts_per_candidate: int = ..., show_all_executable_regions: bool = ...) -> None
-```
-
-Create scan bounds and thresholds, overriding only supplied defaults.
 
 #### min_score
 
@@ -950,6 +942,24 @@ min_score: int
 Read-only property.
 
 Minimum score used by visible_candidates(); default 5.
+
+#### show_all_executable_regions
+
+```python
+show_all_executable_regions: bool
+```
+
+Read-only property.
+
+Whether reporting bypasses the minimum-score filter.
+
+#### __init__
+
+```python
+__init__(self, *, min_score: int = ..., max_allocation_scan_bytes: int = ..., max_artifacts_per_candidate: int = ..., show_all_executable_regions: bool = ...) -> None
+```
+
+Create scan bounds and thresholds, overriding only supplied defaults.
 
 #### max_allocation_scan_bytes
 
@@ -971,19 +981,9 @@ Read-only property.
 
 Maximum retained header artifacts per candidate; default 24.
 
-#### show_all_executable_regions
-
-```python
-show_all_executable_regions: bool
-```
-
-Read-only property.
-
-Whether reporting bypasses the minimum-score filter.
-
 ### HiddenModuleScanResult
 
-[Source](../../../lib/src/vm/py_pe/hidden.rs#L530)
+[Source](../../../lib/src/vm/py_pe/hidden.rs#L503)
 
 Hidden-image scan snapshot, with unfiltered candidates and thresholded reporting views.
 
@@ -1271,7 +1271,7 @@ Compare live slots and retain unresolved expectations in result diagnostics. An 
 
 ### MemoryRange
 
-[Source](../../../lib/src/vm/py_pe/hidden.rs#L127)
+[Source](../../../lib/src/vm/py_pe/hidden.rs#L115)
 
 A half-open target virtual-address range [start, end).
 
@@ -1445,6 +1445,26 @@ Combined hidden-image, working-set, thread-start, and stack-region evidence.
 
 Subqueries are best-effort: inspect working_set_error and thread_error before interpreting empty lists or zero counters. Suspicious flags are heuristic.
 
+#### working_set_error
+
+```python
+working_set_error: str | None
+```
+
+Read-only property.
+
+Working-set query failure, or None if that stage succeeded.
+
+#### thread_error
+
+```python
+thread_error: str | None
+```
+
+Read-only property.
+
+Thread-enumeration failure, or None if that stage succeeded.
+
 #### modules
 
 ```python
@@ -1474,16 +1494,6 @@ working_set_regions: list[br3k.proc.WorkingSetRegion]
 Read-only property.
 
 Residency and sharing summaries for queried executable regions.
-
-#### working_set_error
-
-```python
-working_set_error: str | None
-```
-
-Read-only property.
-
-Working-set query failure, or None if that stage succeeded.
 
 #### thread_starts
 
@@ -1524,16 +1534,6 @@ suspicious_thread_stack_regions: list[br3k.pe.analysis.ThreadStackRegion]
 Read-only property.
 
 Stack-region observations whose heuristic score is positive.
-
-#### thread_error
-
-```python
-thread_error: str | None
-```
-
-Read-only property.
-
-Thread-enumeration failure, or None if that stage succeeded.
 
 #### findings
 
@@ -1875,16 +1875,6 @@ Content fingerprint used for comparison, not a cryptographic authenticity check.
 
 One reportable executable-memory or hidden-image finding. Scores are heuristic, not verdicts.
 
-#### kind
-
-```python
-kind: br3k.pe.analysis.FindingKind
-```
-
-Read-only property.
-
-Typed category for programmatic filtering.
-
 #### address
 
 ```python
@@ -1914,6 +1904,16 @@ score: int
 Read-only property.
 
 Heuristic evidence score; higher values indicate stronger matching evidence.
+
+#### kind
+
+```python
+kind: br3k.pe.analysis.FindingKind
+```
+
+Read-only property.
+
+Typed category for programmatic filtering.
 
 #### reason
 
@@ -2126,16 +2126,6 @@ Operation stage responsible for an analysis or build diagnostic.
 
 Classification of a memory region intersecting a thread's reported stack.
 
-#### kind
-
-```python
-kind: br3k.pe.analysis.ThreadStackRegionKind
-```
-
-Read-only property.
-
-Typed classification of this thread-related observation.
-
 #### score
 
 ```python
@@ -2145,6 +2135,16 @@ score: int
 Read-only property.
 
 Heuristic score assigned to the observation.
+
+#### kind
+
+```python
+kind: br3k.pe.analysis.ThreadStackRegionKind
+```
+
+Read-only property.
+
+Typed classification of this thread-related observation.
 
 #### suspicious
 
@@ -2250,16 +2250,6 @@ Protection classification of a memory region intersecting a thread's stack.
 
 Classification of a thread's start address against module and region snapshots.
 
-#### kind
-
-```python
-kind: br3k.pe.analysis.ThreadStartKind
-```
-
-Read-only property.
-
-Typed classification of this thread-related observation.
-
 #### score
 
 ```python
@@ -2269,6 +2259,16 @@ score: int
 Read-only property.
 
 Heuristic score assigned to the observation.
+
+#### kind
+
+```python
+kind: br3k.pe.analysis.ThreadStartKind
+```
+
+Read-only property.
+
+Typed classification of this thread-related observation.
 
 #### suspicious
 

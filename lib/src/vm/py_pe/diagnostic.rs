@@ -11,16 +11,16 @@ pub struct Diagnostic { pub(crate) diagnostic: raw::Diagnostic }
 impl Diagnostic {
     /// Analysis or build stage that produced this diagnostic.
     #[pygetset]
-    fn stage(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostic::Stage>> { PyEnumValue::new(self.diagnostic.stage, vm) }
+    fn stage(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostic::Stage>> { PyEnumValue::new(zelf.diagnostic.stage, vm) }
     /// Importance of the limitation or failure, not a malware-confidence score.
     #[pygetset]
-    fn severity(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostic::Severity>> { PyEnumValue::new(self.diagnostic.severity, vm) }
+    fn severity(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostic::Severity>> { PyEnumValue::new(zelf.diagnostic.severity, vm) }
     /// Human-readable explanation of the limitation or failure.
     #[pygetset]
-    fn message(&self) -> String { self.diagnostic.message.clone() }
+    fn message(zelf: &Py<Self>) -> String { zelf.diagnostic.message.clone() }
     /// Image-relative location when available, otherwise None.
     #[pygetset]
-    fn rva(&self) -> Option<u32> { self.diagnostic.rva }
+    fn rva(zelf: &Py<Self>) -> Option<u32> { zelf.diagnostic.rva }
 }
 
 pub(crate) fn to_py(diagnostics: &[raw::Diagnostic], vm: &VirtualMachine) -> PyListOf<PyRef<Diagnostic>> {

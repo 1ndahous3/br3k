@@ -905,18 +905,6 @@ class Evidence:
     Provenance for a recovered import. Confidence is a heuristic score, not a probability.
     """
     @property
-    def kind(self) -> br3k.pe.imports.EvidenceKind:
-        """
-        Typed evidence or issue category.
-        """
-        ...
-    @property
-    def resolution(self) -> br3k.pe.imports.ResolutionKind:
-        """
-        Method used to resolve the target from the evidence.
-        """
-        ...
-    @property
     def confidence(self) -> int:
         """
         Accumulated heuristic confidence; not a calibrated probability.
@@ -944,6 +932,18 @@ class Evidence:
     def iat_rva(self) -> int | None:
         """
         Image-relative address of the IAT or associated IAT slot.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.imports.EvidenceKind:
+        """
+        Typed evidence or issue category.
+        """
+        ...
+    @property
+    def resolution(self) -> br3k.pe.imports.ResolutionKind:
+        """
+        Method used to resolve the target from the evidence.
         """
         ...
     def summary(self) -> str:
@@ -1092,18 +1092,6 @@ class Issue:
     Typed inconsistency in an import model, optionally relating adjacent entries.
     """
     @property
-    def kind(self) -> br3k.pe.imports.IssueKind:
-        """
-        Typed evidence or issue category.
-        """
-        ...
-    @property
-    def severity(self) -> br3k.pe.imports.IssueSeverity:
-        """
-        Typed severity of the model inconsistency.
-        """
-        ...
-    @property
     def rva(self) -> int:
         """
         Image-relative start address of the IAT range or import slot.
@@ -1143,6 +1131,18 @@ class Issue:
     def next_module_name(self) -> str | None:
         """
         Module name of the adjacent or conflicting entry, when relevant.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.imports.IssueKind:
+        """
+        Typed evidence or issue category.
+        """
+        ...
+    @property
+    def severity(self) -> br3k.pe.imports.IssueSeverity:
+        """
+        Typed severity of the model inconsistency.
         """
         ...
 

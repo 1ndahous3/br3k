@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::result::Result;
 
-use serde_yaml::{Mapping, Value};
+use serde_norway::{Mapping, Value};
 
 pub fn script_var_from_yaml(name: &str, value: &Value) -> Result<ScriptVarType, String> {
     match value {
@@ -61,7 +61,7 @@ pub fn script_vars_from_yaml(variables: &Mapping) -> Result<ScriptVars, String> 
 pub fn read_script_config(config_path: &str) -> Result<ScriptVars, String> {
     let config_data = std::fs::read_to_string(config_path)
         .map_err(|e| format!("Unable to read config file '{config_path}': {e}"))?;
-    let config: Value = serde_yaml::from_str(&config_data)
+    let config: Value = serde_norway::from_str(&config_data)
         .map_err(|e| format!("Unable to parse config file '{config_path}': {e}"))?;
 
     let variables = config
@@ -96,7 +96,7 @@ pub fn script_var_to_py_object(
             for (key, value) in values {
                 let value = script_var_to_py_object(&format!("{name}.{key}"), value, vm)?;
                 object.set_item(key.as_str(), value, vm).map_err(|exc| {
-                    vm.print_exception(exc);
+                    vm.print_exception(&exc);
                     VmError::RuntimeSetup("set custom script object field")
                 })?;
             }
@@ -111,7 +111,7 @@ pub fn script_vars_to_py_object(script_vars: &ScriptVars, vm: &VirtualMachine) -
     for (name, value) in script_vars {
         let value = script_var_to_py_object(name, value, vm)?;
         object.set_item(name.as_str(), value, vm).map_err(|exc| {
-            vm.print_exception(exc);
+            vm.print_exception(&exc);
             VmError::RuntimeSetup("set config variable object field")
         })?;
     }

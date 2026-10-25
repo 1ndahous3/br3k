@@ -22,7 +22,11 @@ impl Handle {}
 #[pyclass(module = false, name = "BufferView")]
 #[derive(Debug, PyPayload)]
 pub struct BufferView {
+    /// Local virtual address of the first byte. Valid only while the backing storage remains alive.
+    #[pymember]
     pub ptr: u64,
+    /// Length of the borrowed storage in bytes.
+    #[pymember]
     pub size: u64,
 }
 
@@ -47,17 +51,6 @@ impl Constructor for BufferView {
 // because Python does not have a class for non-owning flat buffers (PyMemoryView is too abstract)
 #[pyclass(with(Constructor))]
 impl BufferView {
-    /// Local virtual address of the first byte. Valid only while the backing storage remains alive.
-    #[pygetset]
-    fn ptr(&self) -> u64 {
-        self.ptr
-    }
-
-    /// Length of the borrowed storage in bytes.
-    #[pygetset]
-    fn size(&self) -> u64 {
-        self.size
-    }
 }
 
 impl From<PyRef<PyBytes>> for BufferView {

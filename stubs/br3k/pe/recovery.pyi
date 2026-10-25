@@ -219,6 +219,12 @@ class Plan:
     validate() recomputes model issues. build() never accepts a different source image.
     """
     @property
+    def model(self) -> br3k.pe.imports.Model:
+        """
+        Editable, target-pointer-sized import model shared with this plan.
+        """
+        ...
+    @property
     def diagnostics(self) -> list[br3k.pe.analysis.Diagnostic]:
         """
         Diagnostics collected during analysis. Call validate() to check the current edited model.
@@ -234,12 +240,6 @@ class Plan:
     def header_prefix(self) -> int:
         """
         Bytes preceding the recovered header, or zero when no prefix was identified.
-        """
-        ...
-    @property
-    def model(self) -> br3k.pe.imports.Model:
-        """
-        Editable, target-pointer-sized import model shared with this plan.
         """
         ...
     def validate(self) -> list[br3k.pe.imports.Issue]:

@@ -22,13 +22,14 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Memory",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Wdk_Storage_FileSystem",
 ]}
 
 [build-dependencies]
 rayon = "1.12"
-bindgen = "0.72"
-regex = "1.12"
+bindgen = "0.72" # upgrade regresses union-bitfield layouts: https://github.com/rust-lang/rust-bindgen/pull/3531
+regex = "1.13"
 
 [lib]
 path = "src/lib.rs"

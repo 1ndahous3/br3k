@@ -138,16 +138,16 @@ impl Constructor for PeImportBuilder {
 impl PeImportBuilder {
     /// Revision incremented after each successful model edit.
     #[pygetset]
-    fn revision(&self) -> u64 { self.revision.get() }
+    fn revision(zelf: &Py<Self>) -> u64 { zelf.revision.get() }
     /// Target pointer width, in bytes.
     #[pygetset]
-    pub(crate) fn pointer_size(&self) -> usize { self.pointer_size }
+    pub(crate) fn pointer_size(zelf: &Py<Self>) -> usize { zelf.pointer_size }
     /// Add an empty module with its first IAT slot RVA and optional declared slot count (default zero).
     ///
     /// Names are matched case-insensitively. Adding an existing module name replaces that module and its functions.
     #[pymethod]
-    fn add_module(&self, args: AddModuleArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.edit(vm, "Unable to add import module", |model| model.add_module(&args.module_name.to_string(), args.first_thunk, args.nb_thunks.unwrap_or(0)))?;
+    fn add_module(zelf: &Py<Self>, args: AddModuleArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.edit(vm, "Unable to add import module", |model| model.add_module(&args.module_name.to_string(), args.first_thunk, args.nb_thunks.unwrap_or(0)))?;
 
         Ok(())
     }
@@ -156,7 +156,7 @@ impl PeImportBuilder {
     ///
     /// Specify exactly one of name, ordinal, or unresolved address. Named imports may also carry hint (default zero) and export_ordinal. Unresolved addresses must remain invalid. force=True replaces an existing slot; the default rejects duplicates.
     #[pymethod]
-    fn add_function(&self, args: AddFunctionArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn add_function(zelf: &Py<Self>, args: AddFunctionArgs, vm: &VirtualMachine) -> PyResult<()> {
         let export_ordinal = args.export_ordinal.present();
         let target = match (args.name.present(), args.ordinal.present(), args.address.present()) {
             (Some(name), None, None) => ImportTarget::Name {
@@ -186,7 +186,7 @@ impl PeImportBuilder {
             return Err(vm.new_value_error("Unresolved import functions must be invalid"));
         }
 
-        self.edit(vm, "Unable to add import function", |model| model.add_function(
+        zelf.edit(vm, "Unable to add import function", |model| model.add_function(
                 &args.module_name.to_string(),
                 args.rva,
                 target,
@@ -199,40 +199,40 @@ impl PeImportBuilder {
 
     /// Set the validation flag for an existing IAT slot. This is a model annotation, not independent verification of its target.
     #[pymethod]
-    fn set_function_validity(&self, args: SetFunctionValidityArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.edit(vm, "Unable to update import function validity", |model| model.set_function_validity(args.rva, args.valid))?;
+    fn set_function_validity(zelf: &Py<Self>, args: SetFunctionValidityArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.edit(vm, "Unable to update import function validity", |model| model.set_function_validity(args.rva, args.valid))?;
 
         Ok(())
     }
 
     /// Remove the function at the supplied IAT slot RVA.
     #[pymethod]
-    fn remove_function(&self, args: ImportFunctionRvaArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.edit(vm, "Unable to remove import function", |model| model.remove_function(args.rva))?;
+    fn remove_function(zelf: &Py<Self>, args: ImportFunctionRvaArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.edit(vm, "Unable to remove import function", |model| model.remove_function(args.rva))?;
 
         Ok(())
     }
 
     /// Remove the module containing the specified IAT slot and all of its functions.
     #[pymethod]
-    fn remove_module_containing_thunk(&self, args: ImportFunctionRvaArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.edit(vm, "Unable to remove import module", |model| model.remove_module_containing_thunk(args.rva))?;
+    fn remove_module_containing_thunk(zelf: &Py<Self>, args: ImportFunctionRvaArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.edit(vm, "Unable to remove import module", |model| model.remove_module_containing_thunk(args.rva))?;
 
         Ok(())
     }
 
     /// Remove one IAT slot and split its module's declared span around the resulting gap.
     #[pymethod]
-    fn cut_thunk(&self, args: CutThunkArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.edit(vm, "Unable to cut import thunk", |model| model.cut_thunk(args.rva, self.pointer_size))?;
+    fn cut_thunk(zelf: &Py<Self>, args: CutThunkArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.edit(vm, "Unable to cut import thunk", |model| model.cut_thunk(args.rva, zelf.pointer_size))?;
 
         Ok(())
     }
 
     /// Rename the module containing the supplied IAT slot.
     #[pymethod]
-    fn rename_module_containing_thunk(&self, args: RenameModuleContainingThunkArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.edit(vm, "Unable to rename import module", |model| model.rename_module_containing_thunk(args.rva, &args.module_name.to_string()))?;
+    fn rename_module_containing_thunk(zelf: &Py<Self>, args: RenameModuleContainingThunkArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.edit(vm, "Unable to rename import module", |model| model.rename_module_containing_thunk(args.rva, &args.module_name.to_string()))?;
 
         Ok(())
     }
@@ -241,9 +241,9 @@ impl PeImportBuilder {
     ///
     /// Defaults: exact addresses, forwarder resolution enabled, unresolved slots omitted. Returns the number recovered by this operation.
     #[pymethod]
-    fn resolve_slots(&self, args: ResolveSlotsArgs, vm: &VirtualMachine) -> PyResult<usize> {
+    fn resolve_slots(zelf: &Py<Self>, args: ResolveSlotsArgs, vm: &VirtualMachine) -> PyResult<usize> {
         let exports = args.symbols.map().tables().collect::<Vec<_>>();
-        let pointer_size = self.pointer_size;
+        let pointer_size = zelf.pointer_size;
         let slots = args.slots.iter().map(|slot| slot.slot.clone()).collect::<Vec<_>>();
         let recovery_options = RecoverIatOptions {
             address_resolve_options: ImportAddressResolveOptions {
@@ -253,40 +253,40 @@ impl PeImportBuilder {
             keep_unresolved: args.keep_unresolved.unwrap_or(false),
         };
 
-        let recovered = self.edit(vm, "Unable to recover PE imports from IAT slots", |model| model.recover_iat_slots_with_recovery_options(&slots, pointer_size, recovery_options, &exports))?;
+        let recovered = zelf.edit(vm, "Unable to recover PE imports from IAT slots", |model| model.recover_iat_slots_with_recovery_options(&slots, pointer_size, recovery_options, &exports))?;
 
         Ok(recovered)
     }
 
     /// Merge supported IAT-bearing code-reference evidence into the model and return the recovered count.
     #[pymethod]
-    fn add_references(&self, args: AddReferencesArgs, vm: &VirtualMachine) -> PyResult<usize> {
+    fn add_references(zelf: &Py<Self>, args: AddReferencesArgs, vm: &VirtualMachine) -> PyResult<usize> {
         let references = args
             .references
             .into_iter()
             .map(|reference| reference.to_import_code_reference())
             .collect::<Vec<_>>();
-        let recovered = self.edit(vm, "Unable to recover PE imports from code references", |model| model.recover_iat_from_code_references(&references, self.pointer_size))?;
+        let recovered = zelf.edit(vm, "Unable to recover PE imports from code references", |model| model.recover_iat_from_code_references(&references, zelf.pointer_size))?;
 
         Ok(recovered)
     }
 
     /// Return the number of modules currently in the model.
     #[pymethod]
-    fn module_count(&self) -> usize {
-        self.model.borrow().module_count()
+    fn module_count(zelf: &Py<Self>) -> usize {
+        zelf.model.borrow().module_count()
     }
 
     /// Return the total number of functions, including invalid or unresolved entries.
     #[pymethod]
-    fn function_count(&self) -> usize {
-        self.model.borrow().function_count()
+    fn function_count(zelf: &Py<Self>) -> usize {
+        zelf.model.borrow().function_count()
     }
 
     /// Return snapshots of the model's module records.
     #[pymethod]
-    fn modules(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportModule>>> {
-        let modules = self
+    fn modules(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportModule>>> {
+        let modules = zelf
             .model
             .borrow()
             .modules()
@@ -299,8 +299,8 @@ impl PeImportBuilder {
 
     /// Return snapshots of the model's function records and recovery evidence.
     #[pymethod]
-    fn imports(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportFunction>>> {
-        let imports = self
+    fn imports(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportFunction>>> {
+        let imports = zelf
             .model
             .borrow()
             .imports()
@@ -313,11 +313,11 @@ impl PeImportBuilder {
 
     /// Return current structural issues, optionally checking targets against symbols. This does not mutate the model.
     #[pymethod]
-    fn validate(&self, args: ImportIssuesArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportIssue>>> {
-        let pointer_size = self.pointer_size;
+    fn validate(zelf: &Py<Self>, args: ImportIssuesArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportIssue>>> {
+        let pointer_size = zelf.pointer_size;
         let issues = match args.symbols.present() {
-            Some(symbols) => self.model.borrow().issues_with_export_map(pointer_size, symbols.map()),
-            None => self.model.borrow().issues(pointer_size),
+            Some(symbols) => zelf.model.borrow().issues_with_export_map(pointer_size, symbols.map()),
+            None => zelf.model.borrow().issues(pointer_size),
         }
         .map_err(map_to_py_value_error(vm, "Unable to inspect PE import model"))?
             .into_iter()
@@ -354,8 +354,8 @@ impl Constructor for AddressSlot {
 impl AddressSlot {
     /// Image-relative virtual address of the IAT slot.
     #[pygetset]
-    fn rva(&self) -> u32 { self.slot.rva }
+    fn rva(zelf: &Py<Self>) -> u32 { zelf.slot.rva }
     /// Observed target virtual address stored in the slot.
     #[pygetset]
-    fn address(&self) -> u64 { self.slot.address }
+    fn address(zelf: &Py<Self>) -> u64 { zelf.slot.address }
 }

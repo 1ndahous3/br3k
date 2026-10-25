@@ -5,6 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-syn = { version = "2.0", features = ["full", "visit", "visit-mut", "extra-traits"] }
+syn = { version = "3.0", features = ["full", "visit", "visit-mut", "extra-traits"] }
 quote = "1.0"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }

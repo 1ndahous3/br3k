@@ -39,12 +39,6 @@ class Reference:
         """
         ...
     @property
-    def kind(self) -> br3k.pe.code.ReferenceKind:
-        """
-        Architecture-specific kind of recognized API-reference pattern.
-        """
-        ...
-    @property
     def target_address(self) -> int:
         """
         Target virtual address obtained from the recognized pattern before export matching.
@@ -78,6 +72,12 @@ class Reference:
     def ordinal(self) -> int:
         """
         Resolved export ordinal.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.code.ReferenceKind:
+        """
+        Architecture-specific kind of recognized API-reference pattern.
         """
         ...
     @property

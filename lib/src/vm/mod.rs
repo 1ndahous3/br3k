@@ -120,44 +120,44 @@ impl Vm {
             let scope = vm.new_scope_with_builtins();
 
             let br3k_mod = vm.import("br3k", 0).map_err(|exc| {
-                vm.print_exception(exc);
+                vm.print_exception(&exc);
                 VmError::RuntimeSetup("import br3k")
             })?;
 
             let print_fn = vm
-                .get_attribute_opt(br3k_mod.clone(), "print")
+                .get_attribute_opt(&br3k_mod, "print")
                 .map_err(|exc| {
-                    vm.print_exception(exc);
+                    vm.print_exception(&exc);
                     VmError::RuntimeSetup("load br3k.print")
                 })?
                 .ok_or(VmError::MissingBr3kAttribute("print"))?;
 
             let excepthook_fn = vm
-                .get_attribute_opt(br3k_mod.clone(), "excepthook")
+                .get_attribute_opt(&br3k_mod, "excepthook")
                 .map_err(|exc| {
-                    vm.print_exception(exc);
+                    vm.print_exception(&exc);
                     VmError::RuntimeSetup("load br3k.excepthook")
                 })?
                 .ok_or(VmError::MissingBr3kAttribute("excepthook"))?;
 
             vm.sys_module.set_attr("excepthook", excepthook_fn, vm).map_err(|exc| {
-                vm.print_exception(exc);
+                vm.print_exception(&exc);
                 VmError::RuntimeSetup("set sys.excepthook")
             })?;
 
             scope.globals.set_item("print", print_fn, vm).map_err(|exc| {
-                vm.print_exception(exc);
+                vm.print_exception(&exc);
                 VmError::RuntimeSetup("set print")
             })?;
 
             scope.globals.set_item("__name__", vm.ctx.new_str("__main__").into(), vm).map_err(|exc| {
-                vm.print_exception(exc);
+                vm.print_exception(&exc);
                 VmError::RuntimeSetup("set __name__")
             })?;
 
             let script_path = script_path.unwrap_or(String::from("<script>"));
             scope.globals.set_item("__file__", vm.ctx.new_str(script_path.clone()).into(), vm).map_err(|exc| {
-                vm.print_exception(exc);
+                vm.print_exception(&exc);
                 VmError::RuntimeSetup("set __file__")
             })?;
 
@@ -167,18 +167,18 @@ impl Vm {
                     let value = script_var_to_py_object(var.0.as_str(), var.1, vm)?;
 
                     scope.globals.set_item(var.0.as_str(), value, vm).map_err(|exc| {
-                        vm.print_exception(exc);
+                        vm.print_exception(&exc);
                         VmError::RuntimeSetup("set custom script variable")
                     })?;
                 }
             }
 
-            let res = vm.run_string(scope, script, script_path);
+            let res = vm.run_string(scope, script, &script_path);
 
             match res {
                 Ok(_) => Ok(()),
                 Err(exc) => {
-                    vm.print_exception(exc);
+                    vm.print_exception(&exc);
                     Err(VmError::ScriptExecution)
                 }
             }

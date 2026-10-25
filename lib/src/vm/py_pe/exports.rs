@@ -16,20 +16,20 @@ pub struct PeExportSymbol {
 impl PeExportSymbol {
     /// Name of the module supplying this export or table.
     #[pygetset]
-    fn module_name(&self) -> String {
-        self.symbol.module_name.clone()
+    fn module_name(zelf: &Py<Self>) -> String {
+        zelf.symbol.module_name.clone()
     }
 
     /// Preferred export name, or None for ordinal-only exports.
     #[pygetset]
-    fn name(&self) -> Option<String> {
-        self.symbol.name.clone()
+    fn name(zelf: &Py<Self>) -> Option<String> {
+        zelf.symbol.name.clone()
     }
 
     /// All name aliases associated with this export.
     #[pygetset]
-    fn names(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        let names = self
+    fn names(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        let names = zelf
             .symbol
             .names
             .iter()
@@ -41,32 +41,32 @@ impl PeExportSymbol {
 
     /// Public export ordinal.
     #[pygetset]
-    fn ordinal(&self) -> u32 {
-        self.symbol.ordinal
+    fn ordinal(zelf: &Py<Self>) -> u32 {
+        zelf.symbol.ordinal
     }
 
     /// Export target RVA; forwarders refer to the forwarding-string RVA.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.symbol.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.symbol.rva
     }
 
     /// Export address under the table's image base; inspect forwarder before treating it as code.
     #[pygetset]
-    fn address(&self) -> u64 {
-        self.symbol.address
+    fn address(zelf: &Py<Self>) -> u64 {
+        zelf.symbol.address
     }
 
     /// Forwarding target string, or None for a non-forwarded export.
     #[pygetset]
-    fn forwarder(&self) -> Option<String> {
-        self.symbol.forwarder.clone()
+    fn forwarder(zelf: &Py<Self>) -> Option<String> {
+        zelf.symbol.forwarder.clone()
     }
 
     /// Provenance of the export table; optional when a standalone table has no assigned source.
     #[pygetset]
-    fn source(&self, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
-        export_table_source_to_py(self.source, vm)
+    fn source(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
+        export_table_source_to_py(zelf.source, vm)
     }
 }
 
@@ -146,42 +146,42 @@ pub struct PeExportMapRecord {
 impl PeExportMapRecord {
     /// Name of the module supplying this export or table.
     #[pygetset]
-    fn module_name(&self) -> String {
-        self.record.table.module_name.clone()
+    fn module_name(zelf: &Py<Self>) -> String {
+        zelf.record.table.module_name.clone()
     }
 
     /// Base used to convert this table's RVAs into virtual addresses.
     #[pygetset]
-    fn image_base(&self) -> u64 {
-        self.record.table.image_base
+    fn image_base(zelf: &Py<Self>) -> u64 {
+        zelf.record.table.image_base
     }
 
     /// Mapped image extent used for address containment, in bytes.
     #[pygetset]
-    fn image_size(&self) -> u32 {
-        self.record.table.image_size
+    fn image_size(zelf: &Py<Self>) -> u32 {
+        zelf.record.table.image_size
     }
 
     /// Number of export records in the table.
     #[pygetset]
-    fn export_count(&self) -> usize {
-        self.record.table.symbols.len()
+    fn export_count(zelf: &Py<Self>) -> usize {
+        zelf.record.table.symbols.len()
     }
 
     /// Provenance of the export table; optional when a standalone table has no assigned source.
     #[pygetset]
-    fn source(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::export_map::ExportTableSource>> {
-        PyEnumValue::new(self.record.source, vm)
+    fn source(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::export_map::ExportTableSource>> {
+        PyEnumValue::new(zelf.record.source, vm)
     }
 
     /// Format the module name, export count, and table source.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "{} exports={} source={}",
-            self.record.table.module_name,
-            self.record.table.symbols.len(),
-            self.record.source.as_str()
+            zelf.record.table.module_name,
+            zelf.record.table.symbols.len(),
+            zelf.record.source.as_str()
         )
     }
 }
@@ -206,18 +206,18 @@ impl Constructor for PeExportResolver {
 impl PeExportResolver {
     /// Return the image timestamp associated with the export table, when available.
     #[pymethod]
-    fn time_date_stamp(&self) -> Option<u32> { self.table.time_date_stamp }
+    fn time_date_stamp(zelf: &Py<Self>) -> Option<u32> { zelf.table.time_date_stamp }
 
     /// Name of the module supplying this export or table.
     #[pygetset]
-    fn module_name(&self) -> String {
-        self.table.module_name.clone()
+    fn module_name(zelf: &Py<Self>) -> String {
+        zelf.table.module_name.clone()
     }
 
     /// Return all export records in the table or symbol map.
     #[pymethod]
-    fn exports(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
-        let exports = self
+    fn exports(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
+        let exports = zelf
             .table
             .symbols
             .iter()
@@ -230,14 +230,14 @@ impl PeExportResolver {
 
     /// Resolve an exact export virtual address; return None when no match exists.
     #[pymethod]
-    fn resolve_va(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
-        export_symbol_to_py(self.table.resolve_va(args.address), vm)
+    fn resolve_va(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+        export_symbol_to_py(zelf.table.resolve_va(args.address), vm)
     }
 
     /// Return every export record matching an exact virtual address.
     #[pymethod]
-    fn resolve_all_va(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
-        let symbols = self
+    fn resolve_all_va(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
+        let symbols = zelf
             .table
             .resolve_all_va(args.address)
             .into_iter()
@@ -252,8 +252,8 @@ impl PeExportResolver {
     /// This is not function-boundary analysis; an interior address need not belong
     /// to the returned export's implementation.
     #[pymethod]
-    fn resolve_nearest_va(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
-        export_symbol_to_py(self.table.resolve_nearest_va(args.address), vm)
+    fn resolve_nearest_va(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+        export_symbol_to_py(zelf.table.resolve_nearest_va(args.address), vm)
     }
 }
 
@@ -303,20 +303,20 @@ impl Constructor for PeExportMap {
 impl PeExportMap {
     /// Number of registered export tables.
     #[pygetset]
-    fn resolver_count(&self) -> usize {
-        self.export_map.tables().len()
+    fn resolver_count(zelf: &Py<Self>) -> usize {
+        zelf.export_map.tables().len()
     }
 
     /// Number of API-set contracts available for resolution.
     #[pygetset]
-    fn api_set_count(&self) -> usize {
-        self.export_map.api_set_map().entries().len()
+    fn api_set_count(zelf: &Py<Self>) -> usize {
+        zelf.export_map.api_set_map().entries().len()
     }
 
     /// Return per-table metadata and source provenance.
     #[pymethod]
-    fn records(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportMapRecord>>> {
-        let records = self
+    fn records(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportMapRecord>>> {
+        let records = zelf
             .export_map
             .records()
             .iter()
@@ -329,8 +329,8 @@ impl PeExportMap {
 
     /// Return all export records in the table or symbol map.
     #[pymethod]
-    fn exports(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
-        let exports = self
+    fn exports(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
+        let exports = zelf
             .export_map
             .records()
             .iter()
@@ -352,24 +352,24 @@ impl PeExportMap {
 
     /// Resolve an exact export virtual address; return None when no match exists.
     #[pymethod]
-    fn resolve_va(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
-        export_map_symbol_to_py(self.export_map.resolve_va_with_source(args.address), vm)
+    fn resolve_va(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+        export_map_symbol_to_py(zelf.export_map.resolve_va_with_source(args.address), vm)
     }
 
     /// Choose a public import identity for a target, optionally preferring a module name.
     #[pymethod]
-    fn resolve_public_va(&self, args: ResolvePublicVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+    fn resolve_public_va(zelf: &Py<Self>, args: ResolvePublicVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
         let symbol = match args.module_name.present() {
-            Some(module_name) => self.export_map.resolve_public_va_for_module(args.address, &module_name),
-            None => self.export_map.resolve_public_va_with_source(args.address),
+            Some(module_name) => zelf.export_map.resolve_public_va_for_module(args.address, &module_name),
+            None => zelf.export_map.resolve_public_va_with_source(args.address),
         };
         export_map_symbol_to_py(symbol, vm)
     }
 
     /// List possible public export identities for a target, including forwarding paths.
     #[pymethod]
-    fn public_candidates(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyListOf<PyRef<PeExportSymbol>> {
-        let symbols = self.export_map.public_candidates(args.address).into_iter()
+    fn public_candidates(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyListOf<PyRef<PeExportSymbol>> {
+        let symbols = zelf.export_map.public_candidates(args.address).into_iter()
             .map(|resolved| PeExportSymbol { symbol: resolved.symbol, source: Some(resolved.source) }.into_ref(&vm.ctx))
             .collect();
         PyListOf::new(symbols, vm)
@@ -377,8 +377,8 @@ impl PeExportMap {
 
     /// Return every export record matching an exact virtual address.
     #[pymethod]
-    fn resolve_all_va(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
-        let symbols = self
+    fn resolve_all_va(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<PeExportSymbol>>> {
+        let symbols = zelf
             .export_map
             .resolve_all_va_with_source(args.address)
             .into_iter()
@@ -396,15 +396,15 @@ impl PeExportMap {
     /// This is not function-boundary analysis; an interior address need not belong
     /// to the returned export's implementation.
     #[pymethod]
-    fn resolve_nearest_va(&self, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
-        export_map_symbol_to_py(self.export_map.resolve_nearest_va_with_source(args.address), vm)
+    fn resolve_nearest_va(zelf: &Py<Self>, args: ResolveVaArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+        export_map_symbol_to_py(zelf.export_map.resolve_nearest_va_with_source(args.address), vm)
     }
 
     /// Resolve a module and export name through known forwarding/API-set relationships.
     #[pymethod]
-    fn resolve_module_name(&self, args: ResolveModuleNameArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+    fn resolve_module_name(zelf: &Py<Self>, args: ResolveModuleNameArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
         export_map_symbol_to_py(
-            self.export_map
+            zelf.export_map
                 .resolve_module_name_with_source(&args.module_name.to_string(), &args.name.to_string()),
             vm,
         )
@@ -412,9 +412,9 @@ impl PeExportMap {
 
     /// Resolve a module and public ordinal through the known export tables.
     #[pymethod]
-    fn resolve_module_ordinal(&self, args: ResolveModuleOrdinalArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
+    fn resolve_module_ordinal(zelf: &Py<Self>, args: ResolveModuleOrdinalArgs, vm: &VirtualMachine) -> PyResult<Option<PyRef<PeExportSymbol>>> {
         export_map_symbol_to_py(
-            self.export_map
+            zelf.export_map
                 .resolve_module_ordinal_with_source(&args.module_name.to_string(), args.ordinal),
             vm,
         )

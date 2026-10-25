@@ -187,7 +187,7 @@ impl Context {
         let simple = match name.as_str() {
             "Self" => Some(owner.map_or("Any".into(), |owner| format!("{}.{}", owner.module, owner.name))),
             "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" => Some("int".into()),
-            "f32" | "f64" => Some("float".into()), "bool" | "ArgIntoBool" => Some("bool".into()),
+            "f32" | "f64" => Some("float".into()), "bool" | "PyBool" | "ArgIntoBool" => Some("bool".into()),
             "PyDictRef" => Some("dict[Any, Any]".into()),
             "PyObjectRef" | "PosArgs" => Some("Any".into()),
             "str" | "String" | "PyStr" | "PyStrRef" => Some("str".into()), "PyBytes" | "PyBytesRef" => Some("bytes".into()), "PyInt" => Some("int".into()), _ => None,
@@ -243,7 +243,7 @@ impl Context {
             let FnArg::Typed(argument) = argument else { continue; };
             let name = match argument.pat.as_ref() { Pat::Ident(name) => name.ident.to_string(), _ => return Err(format!("{}: add explicit argument names", node.path).into()) };
             let native_type = match argument.ty.as_ref() { Type::Reference(ty) => type_name(&ty.elem), ty => type_name(ty) };
-            if native_type.as_deref() == Some("VirtualMachine") || matches!(name.as_str(), "cls" | "_cls" | "zelf") { continue; }
+            if native_type.as_deref() == Some("VirtualMachine") || matches!(name.as_str(), "cls" | "_cls" | "zelf" | "_zelf") { continue; }
             if let Some((source, record)) = self.args_struct(&argument.ty, node)? {
                 for field in &record.fields {
                     let flags = flags(&field.attrs, "pyarg")?;
@@ -353,13 +353,30 @@ pub fn collect(root: &Path) -> Result<Api, Error> {
     for owner in context.bindings.iter().filter(|owner| registered.contains(&format!("{}.{}", owner.module, owner.name))) {
         let Item::Struct(item) = &owner.node.item else { unreachable!() };
         let mut class = Class { module: owner.module.clone(), name: owner.name.clone(), doc: doc(&item.attrs), methods: Vec::new(), variants: Vec::new(), location: location(&owner.node, item.span()) };
+        for field in &item.fields {
+            for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("pymember")) {
+                let attrs = std::slice::from_ref(attr);
+                let options = strings(attrs, "pymember")?;
+                if options.contains_key("path") || flags(attrs, "pymember")?.contains("writable") {
+                    return Err(format!("{}: API generation currently supports direct readonly pymember fields", owner.node.path).into());
+                }
+                let name = options.get("name").cloned()
+                    .or_else(|| field.ident.as_ref().map(ToString::to_string))
+                    .ok_or("unnamed pymember field needs a Python name")?;
+                class.methods.push(Method {
+                    name, kind: MethodKind::Property, parameters: Vec::new(),
+                    returns: annotations::read(&field.attrs)?.ty.unwrap_or(context.py_type(&field.ty, &owner.node, Some(owner), Direction::Output)?),
+                    doc: doc(&field.attrs), location: location(&owner.node, field.span()),
+                });
+            }
+        }
         for node in &context.nodes {
             let Item::Impl(implementation) = &node.item else { continue; };
             if type_name(&implementation.self_ty).as_deref() != Some(&owner.rust) { continue; }
-            if !has(&implementation.attrs, "pyclass") && implementation.trait_.as_ref().is_none_or(|(_, path, _)| path.segments.last().unwrap().ident != "Constructor") { continue; }
+            if !has(&implementation.attrs, "pyclass") && implementation.trait_.as_ref().is_none_or(|(path, _)| path.segments.last().unwrap().ident != "Constructor") { continue; }
             let resolved = context.binding(&implementation.self_ty, node)?.ok_or("Python impl has no matching class")?;
             if resolved.module != owner.module || resolved.name != owner.name { continue; }
-            if implementation.trait_.as_ref().is_some_and(|(_, path, _)| path.segments.last().unwrap().ident == "Constructor") {
+            if implementation.trait_.as_ref().is_some_and(|(path, _)| path.segments.last().unwrap().ident == "Constructor") {
                 class.methods.push(context.constructor(node, implementation, owner)?);
             }
             if !has(&implementation.attrs, "pyclass") { continue; }
@@ -410,112 +427,5 @@ pub fn collect(root: &Path) -> Result<Api, Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn node(module: &str, item: Item) -> Node { Node { item, path: "fixture.rs".into(), rust_module: module.into(), py_module: None } }
-
-    #[test]
-    fn resolves_from_args_through_imports_without_name_guessing() {
-        let nodes = vec![
-            node("test::one", syn::parse_quote! {
-                #[derive(FromArgs)] struct Args {
-                    /// Number of bytes to read.
-                    #[pyarg(any)] size: usize,
-                    #[pyi(ty = "str | None")] #[pyarg(named, optional)] label: OptionalArg<PyObjectRef>,
-                }
-            }),
-            node("test::two", syn::parse_quote! { #[derive(FromArgs)] struct Args { #[pyarg(any)] wrong: bool } }),
-            node("test::consumer", syn::parse_quote! { use super::one::*; }),
-        ];
-        let source = node("test::consumer", syn::parse_quote! { fn read(args: Args, vm: &VirtualMachine) {} });
-        let Item::Fn(function) = &source.item else { unreachable!() };
-        let context = Context { nodes, bindings: Vec::new(), registrations: Vec::new(), enums: BTreeMap::new() };
-        let params = context.parameters(&function.sig, &[], &source, None).unwrap();
-        assert_eq!(params.len(), 2);
-        assert_eq!(params[0].name, "size");
-        assert_eq!(params[0].doc, "Number of bytes to read.");
-        assert_eq!(params[1].ty, "str | None");
-        assert!(params[1].keyword && params[1].optional);
-        let foreign = node("other", source.item.clone());
-        assert!(context.parameters(&function.sig, &[], &foreign, None).is_err());
-    }
-
-    #[test]
-    fn rejects_parameter_override_typo_and_infers_nested_types() {
-        let context = Context { nodes: Vec::new(), bindings: Vec::new(), registrations: Vec::new(), enums: BTreeMap::new() };
-        let source = node("test", syn::parse_quote! { fn read(data: Vec<Option<u32>>) {} });
-        let Item::Fn(function) = &source.item else { unreachable!() };
-        assert_eq!(context.parameters(&function.sig, &[], &source, None).unwrap()[0].ty, "Iterable[int | None]");
-        assert!(context.parameters(&function.sig, &[], &source, None).unwrap()[0].positional_only);
-        let attrs = vec![syn::parse_quote!(#[pyi(params(dtaa = "bytes"))])];
-        assert!(context.parameters(&function.sig, &attrs, &source, None).is_err());
-    }
-
-    #[test]
-    fn default_values_and_implicit_from_args_modes_are_optional_without_guessing() {
-        let source = node("fixture", syn::parse_quote! { fn print(options: Options, py_vm: &VirtualMachine) {} });
-        let Item::Fn(function) = &source.item else { unreachable!() };
-        let context = Context {
-            nodes: vec![node("fixture", syn::parse_quote! {
-                #[derive(FromArgs)] struct Options {
-                    ep: u64,
-                    #[pyarg(named, default)] file: Option<PyObjectRef>,
-                    #[pyarg(named, default = ArgIntoBool::FALSE)] flush: ArgIntoBool,
-                }
-            })], bindings: Vec::new(), registrations: Vec::new(), enums: BTreeMap::new(),
-        };
-        let params = context.parameters(&function.sig, &[], &source, None).unwrap();
-        assert_eq!(params.len(), 3);
-        assert!(!params[0].optional && !params[0].positional_only && !params[0].keyword);
-        assert!(params[1].optional && params[2].optional);
-        assert_eq!(params[2].ty, "bool");
-    }
-
-    #[test]
-    fn return_adapters_follow_rustpython_conversion_semantics() {
-        let context = Context {
-            nodes: Vec::new(), bindings: Vec::new(),
-            registrations: vec![Registration { old: "Layout".into(), domain: String::new(), name: "Layout".into() }],
-            enums: BTreeMap::from([("Layout".into(), "crate::pe::image::Layout".into())]),
-        };
-        let source = node("fixture", syn::parse_quote!(fn example() {}));
-        for (ty, expected) in [
-            (syn::parse_quote!(PyResult<Option<PyRef<PyBytes>>>), "bytes | None"),
-            (syn::parse_quote!(PyListOf<PyRef<PyStr>>), "list[str]"),
-            (syn::parse_quote!(PyResult<PyEnumValue<crate::pe::image::Layout>>), "br3k.pe.Layout"),
-            (syn::parse_quote!(Either<PyRef<PyBytes>, PyListOf<u8>>), "bytes | list[int]"),
-            (syn::parse_quote!(Vec<u8>), "bytes"),
-        ] {
-            assert_eq!(context.py_type(&ty, &source, None, Direction::Output).unwrap(), expected);
-        }
-        assert_eq!(context.py_type(&syn::parse_quote!(Vec<u8>), &source, None, Direction::Input).unwrap(), "Iterable[int]");
-        assert!(context.py_type(&syn::parse_quote!(Vec<PyRef<PyStr>>), &source, None, Direction::Output).is_err());
-    }
-
-    #[test]
-    fn repository_schema_and_generated_files_are_current() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        let api = collect(&root).unwrap();
-        let comparison = api.classes.iter().find(|class| class.module == "br3k.pe.analysis" && class.name == "Comparison").unwrap();
-        assert!(comparison.methods.iter().find(|method| method.name == "complete").unwrap().doc.contains("optional components"));
-        assert!(api.classes.len() > 100);
-        assert!(api.classes.iter().flat_map(|class| &class.methods).all(|method| !method.returns.contains("Any")));
-        assert!(api.functions.iter().all(|(_, method)| !method.returns.contains("Any") || matches!(method.name.as_str(), "config_read_variables" | "read_variables")));
-        for class in &api.classes {
-            assert!(!class.doc.is_empty(), "{}.{} needs source documentation", class.module, class.name);
-            assert!(class.variants.iter().all(|(_, doc)| !doc.is_empty()), "{} has undocumented variants", class.name);
-            for method in &class.methods { assert!(!method.doc.is_empty(), "{}.{} needs source documentation", class.name, method.name); }
-        }
-        for (module, method) in &api.functions {
-            assert!(!method.doc.is_empty(), "{module}.{} needs source documentation", method.name);
-        }
-        assert!(api.aliases.iter().any(|(module, name, target)| module == "br3k" && name == "Process" && target == "br3k.proc.Process"));
-        assert!(api.constants.iter().any(|(module, name, _)| module == "br3k.mem" && name == "MEM_IMAGE"));
-        let imports = api.classes.iter().find(|class| class.module == "br3k.pe.analysis" && class.name == "ImportComparison").unwrap();
-        assert_eq!(imports.methods.iter().map(|method| method.name.as_str()).collect::<Vec<_>>(), ["changes"]);
-        for (name, contents) in crate::render::generate(&api).unwrap() {
-            assert_eq!(fs::read_to_string(root.join(&name)).unwrap(), contents, "{name} is stale; run cargo api");
-        }
-    }
-}
+#[path = "tests/collect.rs"]
+mod tests;

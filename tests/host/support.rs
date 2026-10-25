@@ -1,4 +1,4 @@
-use std::{env, fs, io, path::{Path, PathBuf}, process::{Child, Command, ExitStatus, Stdio}, thread, time::{Duration, Instant}};
+use std::{env, fs, io, path::{Path, PathBuf}, process::{Child, Command, Stdio}, thread, time::{Duration, Instant}};
 use std::os::windows::process::CommandExt;
 
 use serde::Serialize;
@@ -35,7 +35,7 @@ struct ScriptConfig<'a, T> {
 }
 
 fn script_config(variables: &impl Serialize) -> String {
-    serde_yaml::to_string(&ScriptConfig { variables }).expect("serialize script config")
+    serde_norway::to_string(&ScriptConfig { variables }).expect("serialize script config")
 }
 
 fn workspace() -> &'static Path {
@@ -46,11 +46,21 @@ fn bin_dir() -> PathBuf {
     if let Some(path) = env::var_os("BR3K_TEST_BIN_DIR") {
         return std::path::absolute(path).expect("resolve BR3K_TEST_BIN_DIR");
     }
-    // Cargo places integration-test executables in <profile>/deps for each target.
     let executable = env::current_exe().expect("locate host test executable");
-    let deps = executable.parent().expect("test executable directory");
-    assert_eq!(deps.file_name().unwrap(), "deps", "set BR3K_TEST_BIN_DIR for relocated test binaries");
-    deps.parent().unwrap().to_owned()
+    cargo_profile_dir(&executable).expect("set BR3K_TEST_BIN_DIR for relocated test binaries or a separate Cargo build-dir").to_owned()
+}
+
+fn cargo_profile_dir(executable: &Path) -> Option<&Path> {
+    let directory = executable.parent()?;
+    match directory.file_name()?.to_str()? {
+        "deps" => directory.parent(),
+        "out" => {
+            // Cargo 1.100+: <profile>/build/<package>/<hash>/out/<test.exe>.
+            let build = directory.parent()?.parent()?.parent()?;
+            if build.file_name()? == "build" { build.parent() } else { None }
+        }
+        _ => None,
+    }
 }
 
 impl Case {
@@ -191,43 +201,5 @@ fn diagnostics(directory: &Path) -> String {
     }).join("\n")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::windows::process::ExitStatusExt;
-
-    #[test]
-    fn config_preserves_unicode_null_and_false() {
-        #[derive(Serialize)]
-        struct Variables<'a> {
-            name: &'a str,
-            empty: Option<u32>,
-            enabled: bool,
-        }
-        let yaml = script_config(&Variables { name: "space and \u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}", empty: None, enabled: false });
-        assert!(!yaml.contains('\r'));
-        let config: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(config["variables"]["name"].as_str(), Some("space and \u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}"));
-        assert!(config["variables"]["empty"].is_null());
-        assert_eq!(config["variables"]["enabled"].as_bool(), Some(false));
-    }
-
-    #[test]
-    fn completed_process_status_is_preserved() {
-        for code in [0, 7] {
-            let status = poll_until(Duration::ZERO, || Ok(Some(ExitStatus::from_raw(code)))).unwrap().unwrap();
-            assert_eq!(status.code(), Some(code as i32));
-        }
-    }
-
-    #[test]
-    fn unfinished_process_hits_deadline() {
-        let mut polls = 0;
-        let result = poll_until::<ExitStatus>(Duration::ZERO, || {
-            polls += 1;
-            Ok(None)
-        }).unwrap();
-        assert!(result.is_none());
-        assert_eq!(polls, 1);
-    }
-}
+#[path = "support/tests.rs"]
+mod tests;

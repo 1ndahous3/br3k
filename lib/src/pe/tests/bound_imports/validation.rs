@@ -1,10 +1,12 @@
 use super::*;
-use super::tests::fixture;
+
 use crate::pe::api_set::ApiSetMap;
+
 use crate::pe::export_map::{ExportMap, ExportTableRecord, ExportTableSource};
+
 use crate::pe::exports::ExportTable;
+
 use crate::pe::format::{PE_DIRECTORY_ENTRY_EXPORT, PE_DIRECTORY_ENTRY_IMPORT};
-use crate::vm::Vm;
 
 fn dependency(name: &str, timestamp: Option<u32>) -> ExportTable {
     ExportTable {
@@ -172,72 +174,4 @@ fn reads_coff_timestamp_instead_of_export_directory_timestamp() {
         let table = ExportTable::parse(image.data(), None, Some("kernel32.dll".into())).unwrap();
         assert_eq!(table.time_date_stamp, Some(0x12345678));
     }
-}
-
-#[test]
-fn python_binding_checks_and_comparison_report_use_typed_results() {
-    crate::logging::init(true, false).unwrap();
-    let mut mapped = fixture("arm64", 0x1100);
-    mapped.write_u16(0x110e, 0).unwrap();
-    import_descriptor(&mut mapped, u32::MAX);
-    mapped.write_pointer(0x1300, 8, 0x7fff70001000).unwrap();
-    let file = Image::parse(mapped.mapped_to_file_image().unwrap()).unwrap();
-    let dependency = export_image("arm64");
-    let report_source = include_str!("../../../../scripts/pe/compare_memory_disk.py");
-    let script = format!(r#"
-import ast
-import br3k
-
-resolver = br3k.pe.exports.Table(bytes({dependency:?}), module_name="kernel32.dll")
-assert resolver.time_date_stamp() == 0x12345678
-assert br3k.pe.Image(bytes({dependency:?})).headers.time_date_stamp == 0x12345678
-exports = br3k.pe.exports.Symbols([resolver])
-file_data = bytes({file_data:?})
-mapped_data = bytes({mapped_data:?})
-for data, mapped_layout in [(file_data, False), (mapped_data, True)]:
-    image = br3k.pe.Image.from_mapped(data, br3k.pe.Image(data).headers.preferred_base) if mapped_layout else br3k.pe.Image(data)
-    checks = image.imports.bound.check(exports)
-    assert len(checks) == 2
-    check = checks[0]
-    assert isinstance(check, br3k.pe.imports.BoundCheck)
-    assert check.dll_name == "kernel32.dll"
-    assert check.rva == 0x1100
-    assert check.kind == br3k.pe.imports.BoundKind.BoundDescriptor
-    assert check.status == br3k.pe.imports.BoundStatus.TimestampMatch
-    assert check.expected_timestamp == check.dependency_timestamp == 0x12345678
-    assert check.dependency_source == br3k.pe.exports.SourceKind.Unknown
-    assert check.reserved is None
-    assert not check.matches_dependencies()
-    assert check.forwarders[0].status == br3k.pe.imports.BoundStatus.DependencyMissing
-    assert check.forwarders[0].dependency_timestamp is None
-    assert check.forwarders[0].dependency_source is None
-    assert check.forwarders[0].reserved == 0
-    descriptor = image.imports.entries()[0]
-    assert descriptor.lookup_kind == (br3k.pe.imports.LookupKind.ResolvedAddresses if mapped_layout else br3k.pe.imports.LookupKind.BoundAddresses)
-    assert descriptor.imports[0].name is None
-    assert descriptor.imports[0].ordinal is None
-    assert descriptor.imports[0].raw_address_value == 0x7fff70001000
-
-module = ast.parse({report_source:?})
-module.body = [node for node in module.body if isinstance(node, (ast.Import, ast.FunctionDef))]
-exec(compile(module, "compare_memory_disk.py", "exec"))
-lines = metadata_lines("metadata", br3k.pe.Image(file_data), export_map=exports)
-assert any("kernel32.dll: BoundDescriptor TimestampMatch" in line for line in lines)
-assert any("expected=0x12345678 actual=0x12345678 source=Unknown" in line for line in lines)
-assert any("ntdll.dll: ForwarderRef DependencyMissing" in line for line in lines)
-
-damaged = bytearray(file_data)
-damaged[{count_offset}] = 255
-damaged[{count_offset} + 1] = 255
-try:
-    br3k.pe.Image(bytes(damaged)).imports.bound.check(exports)
-except ValueError:
-    pass
-else:
-    raise AssertionError("Invalid binding metadata must raise ValueError")
-lines = metadata_lines("metadata", br3k.pe.Image(bytes(damaged)), export_map=exports)
-assert any("bound_dependency_checks: unavailable" in line for line in lines)
-assert "  dotnet: none" in lines
-"#, dependency = dependency.data(), file_data = file.data(), mapped_data = mapped.data(), count_offset = file.rva_to_file_offset(0x1100).unwrap() + 6);
-    Vm::default().execute_script(&script, None, &None).expect("bound-import checks and report must work in Python");
 }

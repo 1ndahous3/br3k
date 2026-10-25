@@ -22,11 +22,6 @@ class BufferView:
     Keep the original bytes object alive for every use of the view. The view does
     not retain its owner, copy the data, or make the storage writable.
     """
-    def __init__(self, obj_ref: bytes, /) -> None:
-        """
-        Borrow the storage of a `bytes` object; other objects raise `TypeError`.
-        """
-        ...
     @property
     def ptr(self) -> int:
         """
@@ -37,6 +32,11 @@ class BufferView:
     def size(self) -> int:
         """
         Length of the borrowed storage in bytes.
+        """
+        ...
+    def __init__(self, obj_ref: bytes, /) -> None:
+        """
+        Borrow the storage of a `bytes` object; other objects raise `TypeError`.
         """
         ...
 

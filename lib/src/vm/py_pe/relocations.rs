@@ -16,43 +16,43 @@ pub struct PeBaseRelocationEntry {
 impl PeBaseRelocationEntry {
     /// Image-relative address of the relocation site.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.entry.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.entry.rva
     }
 
     /// Byte offset of the relocation site within its relocation page.
     #[pygetset]
-    fn offset(&self) -> u16 {
-        self.entry.offset
+    fn offset(zelf: &Py<Self>) -> u16 {
+        zelf.entry.offset
     }
 
     /// Uninterpreted numeric relocation type from the entry.
     #[pygetset]
-    fn raw_kind(&self) -> u16 {
-        self.entry.raw_kind
+    fn raw_kind(zelf: &Py<Self>) -> u16 {
+        zelf.entry.raw_kind
     }
 
     /// Architecture-aware relocation kind.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::relocations::BaseRelocationKind>> {
-        PyEnumValue::new(self.entry.kind, vm)
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::relocations::BaseRelocationKind>> {
+        PyEnumValue::new(zelf.entry.kind, vm)
     }
 
     /// Display name for the relocation kind.
     #[pygetset]
-    fn kind_name(&self) -> &'static str {
-        self.entry.kind.as_str()
+    fn kind_name(zelf: &Py<Self>) -> &'static str {
+        zelf.entry.kind.as_str()
     }
 
     /// Format relocation locations, layout, or operation counters.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "{} rva=0x{:x} offset=0x{:x} raw_kind={}",
-            self.entry.kind.as_str(),
-            self.entry.rva,
-            self.entry.offset,
-            self.entry.raw_kind
+            zelf.entry.kind.as_str(),
+            zelf.entry.rva,
+            zelf.entry.offset,
+            zelf.entry.raw_kind
         )
     }
 }
@@ -68,36 +68,36 @@ pub struct PeBaseRelocationBlock {
 impl PeBaseRelocationBlock {
     /// Image-relative base of the relocation block's page.
     #[pygetset]
-    fn page_rva(&self) -> u32 {
-        self.block.page_rva
+    fn page_rva(zelf: &Py<Self>) -> u32 {
+        zelf.block.page_rva
     }
 
     /// Encoded relocation-block size in bytes, including its header.
     #[pygetset]
-    fn block_size(&self) -> u32 {
-        self.block.block_size
+    fn block_size(zelf: &Py<Self>) -> u32 {
+        zelf.block.block_size
     }
 
     /// Number of relocation entries described or processed.
     #[pygetset]
-    fn entry_count(&self) -> usize {
-        self.block.entries.len()
+    fn entry_count(zelf: &Py<Self>) -> usize {
+        zelf.block.entries.len()
     }
 
     /// Decoded entries in the block, including padding entries.
     #[pygetset]
-    fn entries(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeBaseRelocationEntry>> {
-        base_relocation_entries_to_py(&self.block.entries, vm)
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeBaseRelocationEntry>> {
+        base_relocation_entries_to_py(&zelf.block.entries, vm)
     }
 
     /// Format relocation locations, layout, or operation counters.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "page=0x{:x} size=0x{:x} entries={}",
-            self.block.page_rva,
-            self.block.block_size,
-            self.block.entries.len()
+            zelf.block.page_rva,
+            zelf.block.block_size,
+            zelf.block.entries.len()
         )
     }
 }
@@ -113,51 +113,51 @@ pub struct PeRelocationCandidate {
 impl PeRelocationCandidate {
     /// Image-relative address of the relocation site.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.candidate.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.candidate.rva
     }
 
     /// Byte offset of the candidate within the scanned image storage layout.
     #[pygetset]
-    fn offset(&self) -> usize {
-        self.candidate.offset
+    fn offset(zelf: &Py<Self>) -> usize {
+        zelf.candidate.offset
     }
 
     /// Pointer-sized value observed at the candidate site.
     #[pygetset]
-    fn value(&self) -> u64 {
-        self.candidate.value
+    fn value(zelf: &Py<Self>) -> u64 {
+        zelf.candidate.value
     }
 
     /// Image-relative target implied by the candidate value and load base.
     #[pygetset]
-    fn target_rva(&self) -> u32 {
-        self.candidate.target_rva
+    fn target_rva(zelf: &Py<Self>) -> u32 {
+        zelf.candidate.target_rva
     }
 
     /// Section containing the candidate site, when known.
     #[pygetset]
-    fn section_name(&self) -> Option<String> {
-        self.candidate.section_name.clone()
+    fn section_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.candidate.section_name.clone()
     }
 
     /// Section containing the candidate target, when known.
     #[pygetset]
-    fn target_section_name(&self) -> Option<String> {
-        self.candidate.target_section_name.clone()
+    fn target_section_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.candidate.target_section_name.clone()
     }
 
     /// Format relocation locations, layout, or operation counters.
     #[pymethod]
-    fn summary(&self) -> String {
-        let section = self.candidate.section_name.as_deref().unwrap_or("?");
-        let target_section = self.candidate.target_section_name.as_deref().unwrap_or("?");
+    fn summary(zelf: &Py<Self>) -> String {
+        let section = zelf.candidate.section_name.as_deref().unwrap_or("?");
+        let target_section = zelf.candidate.target_section_name.as_deref().unwrap_or("?");
 
         format!(
             "rva=0x{:x} value=0x{:x} target_rva=0x{:x} section={} target_section={}",
-            self.candidate.rva,
-            self.candidate.value,
-            self.candidate.target_rva,
+            zelf.candidate.rva,
+            zelf.candidate.value,
+            zelf.candidate.target_rva,
             section,
             target_section,
         )
@@ -175,38 +175,38 @@ pub struct PeRelocationDiscovery {
 impl PeRelocationDiscovery {
     /// Load base used to interpret pointer values.
     #[pygetset]
-    fn image_base(&self) -> u64 {
-        self.discovery.image_base
+    fn image_base(zelf: &Py<Self>) -> u64 {
+        zelf.discovery.image_base
     }
 
     /// Image size used to bound candidate targets, in bytes.
     #[pygetset]
-    fn image_size(&self) -> u32 {
-        self.discovery.image_size
+    fn image_size(zelf: &Py<Self>) -> u32 {
+        zelf.discovery.image_size
     }
 
     /// Pointer width in bytes for this image.
     #[pygetset]
-    fn pointer_size(&self) -> usize {
-        self.discovery.pointer_size
+    fn pointer_size(zelf: &Py<Self>) -> usize {
+        zelf.discovery.pointer_size
     }
 
     /// Number of retained relocation candidates.
     #[pygetset]
-    fn candidate_count(&self) -> usize {
-        self.discovery.candidates.len()
+    fn candidate_count(zelf: &Py<Self>) -> usize {
+        zelf.discovery.candidates.len()
     }
 
     /// Pointer-shaped relocation candidates requiring validation.
     #[pygetset]
-    fn candidates(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeRelocationCandidate>> {
-        relocation_candidates_to_py(&self.discovery.candidates, vm)
+    fn candidates(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeRelocationCandidate>> {
+        relocation_candidates_to_py(&zelf.discovery.candidates, vm)
     }
 
     /// Return the discovered relocation-site RVAs.
     #[pymethod]
-    fn rvas(&self, vm: &VirtualMachine) -> PyListOf<PyRef<rustpython_vm::builtins::PyInt>> {
-        let rvas = self.discovery
+    fn rvas(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<rustpython_vm::builtins::PyInt>> {
+        let rvas = zelf.discovery
             .rvas()
             .into_iter()
             .map(|rva| vm.ctx.new_int(rva))
@@ -217,13 +217,13 @@ impl PeRelocationDiscovery {
 
     /// Format relocation locations, layout, or operation counters.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "base=0x{:x} size=0x{:x} pointer_size={} candidates={}",
-            self.discovery.image_base,
-            self.discovery.image_size,
-            self.discovery.pointer_size,
-            self.discovery.candidates.len(),
+            zelf.discovery.image_base,
+            zelf.discovery.image_size,
+            zelf.discovery.pointer_size,
+            zelf.discovery.candidates.len(),
         )
     }
 }
@@ -239,64 +239,64 @@ pub struct PeRebaseResult {
 impl PeRebaseResult {
     /// Independent bytes produced by the relocation operation.
     #[pygetset]
-    fn image(&self, vm: &VirtualMachine) -> PyRef<PyBytes> {
-        vm.ctx.new_bytes(self.result.image.clone())
+    fn image(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PyBytes> {
+        vm.ctx.new_bytes(zelf.result.image.clone())
     }
 
     /// Base before rebasing.
     #[pygetset]
-    fn old_image_base(&self) -> u64 {
-        self.result.old_image_base
+    fn old_image_base(zelf: &Py<Self>) -> u64 {
+        zelf.result.old_image_base
     }
 
     /// Requested base after rebasing.
     #[pygetset]
-    fn new_image_base(&self) -> u64 {
-        self.result.new_image_base
+    fn new_image_base(zelf: &Py<Self>) -> u64 {
+        zelf.result.new_image_base
     }
 
     /// Signed byte difference between new and old bases.
     #[pygetset]
-    fn delta(&self) -> i64 {
-        self.result.delta
+    fn delta(zelf: &Py<Self>) -> i64 {
+        zelf.result.delta
     }
 
     /// Number of relocation blocks processed or produced.
     #[pygetset]
-    fn block_count(&self) -> usize {
-        self.result.block_count
+    fn block_count(zelf: &Py<Self>) -> usize {
+        zelf.result.block_count
     }
 
     /// Number of relocation entries described or processed.
     #[pygetset]
-    fn entry_count(&self) -> usize {
-        self.result.entry_count
+    fn entry_count(zelf: &Py<Self>) -> usize {
+        zelf.result.entry_count
     }
 
     /// Number of relocation entries applied to image bytes.
     #[pygetset]
-    fn applied_count(&self) -> usize {
-        self.result.applied_count
+    fn applied_count(zelf: &Py<Self>) -> usize {
+        zelf.result.applied_count
     }
 
     /// Number of entries not applied, such as padding.
     #[pygetset]
-    fn skipped_count(&self) -> usize {
-        self.result.skipped_count
+    fn skipped_count(zelf: &Py<Self>) -> usize {
+        zelf.result.skipped_count
     }
 
     /// Format relocation locations, layout, or operation counters.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "0x{:x}->0x{:x} delta={} blocks={} entries={} applied={} skipped={}",
-            self.result.old_image_base,
-            self.result.new_image_base,
-            self.result.delta,
-            self.result.block_count,
-            self.result.entry_count,
-            self.result.applied_count,
-            self.result.skipped_count
+            zelf.result.old_image_base,
+            zelf.result.new_image_base,
+            zelf.result.delta,
+            zelf.result.block_count,
+            zelf.result.entry_count,
+            zelf.result.applied_count,
+            zelf.result.skipped_count
         )
     }
 }
@@ -312,57 +312,57 @@ pub struct PeRelocationBuild {
 impl PeRelocationBuild {
     /// Independent bytes produced by the relocation operation.
     #[pygetset]
-    fn image(&self, vm: &VirtualMachine) -> PyRef<PyBytes> {
-        vm.ctx.new_bytes(self.result.image.clone())
+    fn image(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PyBytes> {
+        vm.ctx.new_bytes(zelf.result.image.clone())
     }
 
     /// RVA of the section containing rebuilt relocation metadata.
     #[pygetset]
-    fn section_rva(&self) -> u32 {
-        self.result.section_rva
+    fn section_rva(zelf: &Py<Self>) -> u32 {
+        zelf.result.section_rva
     }
 
     /// Generated relocation section size in bytes.
     #[pygetset]
-    fn section_size(&self) -> u32 {
-        self.result.section_size
+    fn section_size(zelf: &Py<Self>) -> u32 {
+        zelf.result.section_size
     }
 
     /// RVA of the rebuilt relocation directory.
     #[pygetset]
-    fn directory_rva(&self) -> u32 {
-        self.result.directory_rva
+    fn directory_rva(zelf: &Py<Self>) -> u32 {
+        zelf.result.directory_rva
     }
 
     /// Rebuilt relocation directory size in bytes.
     #[pygetset]
-    fn directory_size(&self) -> u32 {
-        self.result.directory_size
+    fn directory_size(zelf: &Py<Self>) -> u32 {
+        zelf.result.directory_size
     }
 
     /// Number of relocation blocks processed or produced.
     #[pygetset]
-    fn block_count(&self) -> usize {
-        self.result.block_count
+    fn block_count(zelf: &Py<Self>) -> usize {
+        zelf.result.block_count
     }
 
     /// Number of relocation entries described or processed.
     #[pygetset]
-    fn entry_count(&self) -> usize {
-        self.result.entry_count
+    fn entry_count(zelf: &Py<Self>) -> usize {
+        zelf.result.entry_count
     }
 
     /// Format relocation locations, layout, or operation counters.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "section=0x{:x}/0x{:x} directory=0x{:x}/0x{:x} blocks={} entries={}",
-            self.result.section_rva,
-            self.result.section_size,
-            self.result.directory_rva,
-            self.result.directory_size,
-            self.result.block_count,
-            self.result.entry_count
+            zelf.result.section_rva,
+            zelf.result.section_size,
+            zelf.result.directory_rva,
+            zelf.result.directory_size,
+            zelf.result.block_count,
+            zelf.result.entry_count
         )
     }
 }

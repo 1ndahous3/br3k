@@ -18,6 +18,7 @@ fn main() {
         "-Wno-microsoft-static-assert",
         "-Wno-pragma-pack",
         "-Wno-visibility",
+        "-Wno-c23-extensions",
     ];
 
     let target = std::env::var("TARGET").unwrap();
@@ -42,12 +43,16 @@ fn main() {
         ("ntsxs", "ntsxs.h"),
         ("ntrtl", "ntrtl.h"),
         ("ntnls", "ntnls.h"),
+        ("ntmisc", "ntmisc.h"),
     ];
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/winbase.rs");
     println!("cargo:rerun-if-changed=src/ntstatus.rs");
     println!("cargo:rerun-if-changed=src/ntwin.h");
+    println!("cargo:rerun-if-changed=src/rpcwin.h");
+    println!("cargo:rerun-if-changed=src/rpc");
+    println!("cargo:rerun-if-env-changed=PHNT_PATH");
 
     let phnt_path_str = std::env::var("PHNT_PATH")
         .expect("PHNT_PATH environment variable must be set")
@@ -58,6 +63,8 @@ fn main() {
         // relative to workspace -> relative to build script
         phnt_path = PathBuf::from(format!("../{}", phnt_path.display()));
     };
+
+    println!("cargo:rerun-if-changed={}", phnt_path.display());
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("generated");
     fs::create_dir_all(&out_dir).unwrap();
@@ -130,9 +137,15 @@ fn main() {
         }
 
         builder = match module.0 {
+            "ntdef" => builder.allowlist_type("PCSID|PBYTE"),
+            "ntpebteb" => builder.allowlist_type("_KERNEL_CALLBACK_TABLE|PFN_DISPATCH|_GDI_HANDLE_ENTRY|PGDI_HANDLE_ENTRY"),
+            "ntexapi" => builder.allowlist_type("_INTERFACE_TYPE|_BUS_DATA_TYPE"),
             "ntioapi" => builder.allowlist_var("IO_COMPLETION_ALL_ACCESS"),
             "ntobapi" => builder.allowlist_var("DUPLICATE_.*"),
             "ntpsapi" => builder
+                // Keep PCONTEXT unchanged; only embedded native contexts need this wrapper.
+                .raw_line("#[cfg(any(target_arch = \"x86_64\", target_arch = \"aarch64\"))]")
+                .raw_line("use crate::winbase::AlignedContext as CONTEXT;")
                 .allowlist_var("JOB_OBJECT_ALL_ACCESS")
                 .allowlist_var("PS_ATTRIBUTE_.*"),
             _ => builder,
@@ -181,7 +194,10 @@ fn generate_cross_use(file_path: &PathBuf, modules: &[(&str, &str)], module: &st
     header.push_str("use windows_sys::Win32::System::Threading::*;\n");
     header.push_str("use windows_sys::Win32::System::Performance::HardwareCounterProfiling::*;\n");
     header.push_str("use windows_sys::Win32::System::SystemServices::*;\n");
-    header.push_str("use windows_sys::Win32::System::Power::*;\n");
+    if module != "ntrtl" {
+        // UserPresent conflicts with a PHNT bitfield accessor parameter in ntrtl.
+        header.push_str("use windows_sys::Win32::System::Power::*;\n");
+    }
     header.push_str("use windows_sys::Win32::System::ApplicationInstallationAndServicing::*;\n");
     header.push_str("use windows_sys::Win32::System::Memory::*;\n");
     header.push_str("use windows_sys::Win32::Storage::FileSystem::*;\n");

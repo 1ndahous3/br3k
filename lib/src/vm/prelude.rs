@@ -12,7 +12,7 @@ pub use rustpython_vm::{
     function::OptionalArg,
     builtins::{
         PyModule, PyType,
-        PyStr, PyBytes,
+        PyStr, PyBytes, PyInt, PyBool, PyListRef,
         PyStrRef, PyBaseExceptionRef,
         PyDictRef
     }

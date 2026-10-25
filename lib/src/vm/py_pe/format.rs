@@ -82,160 +82,88 @@ pub struct SynthesizeMappedImageArgs {
 }
 
 /// Parsed COFF/optional-header metadata and section records from an explicit buffer offset.
+#[py_api]
 #[pyclass(module = "br3k.pe.headers", name = "FileHeader")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeFileHeader {
+    /// COFF machine identifier from the parsed header.
+    #[pymember]
     machine: u16,
-    machine_name: String,
+    /// Architecture display name.
+    #[pymember]
+    machine_name: PyStrRef,
+    /// Number of section records described by the result.
+    #[pymember]
     section_count: u16,
+    /// Declared optional-header size in bytes.
+    #[pymember]
     optional_header_size: u16,
+    /// Optional-header magic distinguishing PE32 and PE32+.
+    #[pymember]
     optional_magic: u16,
+    /// Raw COFF file characteristic flags.
+    #[pymember]
     characteristics: u16,
+    /// Whether the file-header DLL flag is set.
+    #[pymember]
     is_dll: bool,
-    section_table_offset: usize,
-    sections: PyListOf<PyRef<super::sections::PeSection>>,
+    /// Section-table byte offset in the supplied buffer or scanned allocation.
+    #[pymember]
+    section_table_offset: PyRef<PyInt>,
+    /// Cached section records; repeated access retains the Python list identity.
+    #[pyi(ty = "list[br3k.pe.headers.Section]")]
+    #[pymember]
+    sections: PyListRef,
 }
 
 #[pyclass]
-impl PeFileHeader {
-    /// COFF machine identifier from the parsed header.
-    #[pygetset]
-    fn machine(&self) -> u16 {
-        self.machine
-    }
-
-    /// Architecture display name.
-    #[pygetset]
-    fn machine_name(&self) -> String {
-        self.machine_name.clone()
-    }
-
-    /// Number of section records described by the result.
-    #[pygetset]
-    fn section_count(&self) -> u16 {
-        self.section_count
-    }
-
-    /// Declared optional-header size in bytes.
-    #[pygetset]
-    fn optional_header_size(&self) -> u16 {
-        self.optional_header_size
-    }
-
-    /// Optional-header magic distinguishing PE32 and PE32+.
-    #[pygetset]
-    fn optional_magic(&self) -> u16 {
-        self.optional_magic
-    }
-
-    /// Raw COFF file characteristic flags.
-    #[pygetset]
-    fn characteristics(&self) -> u16 {
-        self.characteristics
-    }
-
-    /// Whether the file-header DLL flag is set.
-    #[pygetset]
-    fn is_dll(&self) -> bool {
-        self.is_dll
-    }
-
-    /// Section-table byte offset in the supplied buffer or scanned allocation.
-    #[pygetset]
-    fn section_table_offset(&self) -> usize {
-        self.section_table_offset
-    }
-
-    /// Cached section records; repeated access retains the Python list identity.
-    #[pygetset]
-    fn sections(&self) -> PyListOf<PyRef<super::sections::PeSection>> {
-        self.sections.clone()
-    }
-}
+impl PeFileHeader {}
 
 /// PE-shaped header evidence found in a memory chunk, with allocation-relative offsets.
+#[py_api]
 #[pyclass(module = "br3k.pe.headers", name = "Artifact")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeHeaderArtifact {
     kind: HeaderArtifactKind,
+    /// Absolute virtual address of the detected artifact.
+    #[pymember]
     address: u64,
+    /// Artifact offset in bytes from the scan's allocation base.
+    #[pymember]
     offset: u64,
+    /// Heuristic confidence score for the header-shaped evidence.
+    #[pymember]
     score: u32,
-    section_count: usize,
-    sections: PyListOf<PyRef<super::sections::PeSection>>,
-    machine: Option<u16>,
-    machine_name: Option<String>,
-    is_dll: Option<bool>,
-    section_table_offset: Option<u64>,
-    e_lfanew: Option<u32>,
+    /// Number of section records described by the result.
+    #[pymember]
+    section_count: PyRef<PyInt>,
+    /// Cached section records; repeated access retains the Python list identity.
+    #[pyi(ty = "list[br3k.pe.headers.Section]")]
+    #[pymember]
+    sections: PyListRef,
+    /// PE machine identifier; optional when no reliable file header was recovered.
+    #[pymember]
+    machine: Option<PyRef<PyInt>>,
+    /// Architecture display name; optional when the machine is unknown.
+    #[pymember]
+    machine_name: Option<PyStrRef>,
+    /// Whether the file-header DLL flag is set; optional when the header is unavailable.
+    #[pymember]
+    is_dll: Option<PyRef<PyBool>>,
+    /// Section-table byte offset in the supplied buffer or scanned allocation.
+    #[pymember]
+    section_table_offset: Option<PyRef<PyInt>>,
+    /// Recovered DOS e_lfanew value, when available.
+    #[pymember]
+    e_lfanew: Option<PyRef<PyInt>>,
 }
 
 #[pyclass]
 impl PeHeaderArtifact {
     /// Typed classification of the surviving header evidence.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::format::HeaderArtifactKind>> {
-        PyEnumValue::new(self.kind, vm)
-    }
-
-    /// Absolute virtual address of the detected artifact.
-    #[pygetset]
-    fn address(&self) -> u64 {
-        self.address
-    }
-
-    /// Artifact offset in bytes from the scan's allocation base.
-    #[pygetset]
-    fn offset(&self) -> u64 {
-        self.offset
-    }
-
-    /// Heuristic confidence score for the header-shaped evidence.
-    #[pygetset]
-    fn score(&self) -> u32 {
-        self.score
-    }
-
-    /// Number of section records described by the result.
-    #[pygetset]
-    fn section_count(&self) -> usize {
-        self.section_count
-    }
-
-    /// Cached section records; repeated access retains the Python list identity.
-    #[pygetset]
-    fn sections(&self) -> PyListOf<PyRef<super::sections::PeSection>> {
-        self.sections.clone()
-    }
-
-    /// PE machine identifier; optional when no reliable file header was recovered.
-    #[pygetset]
-    fn machine(&self) -> Option<u16> {
-        self.machine
-    }
-
-    /// Architecture display name; optional when the machine is unknown.
-    #[pygetset]
-    fn machine_name(&self) -> Option<String> {
-        self.machine_name.clone()
-    }
-
-    /// Whether the file-header DLL flag is set; optional when the header is unavailable.
-    #[pygetset]
-    fn is_dll(&self) -> Option<bool> {
-        self.is_dll
-    }
-
-    /// Section-table byte offset in the supplied buffer or scanned allocation.
-    #[pygetset]
-    fn section_table_offset(&self) -> Option<u64> {
-        self.section_table_offset
-    }
-
-    /// Recovered DOS e_lfanew value, when available.
-    #[pygetset]
-    fn e_lfanew(&self) -> Option<u32> {
-        self.e_lfanew
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::format::HeaderArtifactKind>> {
+        PyEnumValue::new(zelf.kind, vm)
     }
 }
 
@@ -243,40 +171,25 @@ impl PeHeaderArtifact {
 #[pyclass(module = "br3k.pe.headers", name = "SyntheticImage")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeSyntheticImage {
+    /// Synthesized image bytes in mapped layout.
+    #[pymember]
     data: PyRef<PyBytes>,
+    /// Image base assigned to the synthesized mapped image.
+    #[pymember]
     image_base: u64,
+    /// Prefix shift used when placing synthetic headers; currently zero for in-place synthesis.
+    #[pymember]
     header_prefix: u32,
+    /// Entry-point RVA chosen during synthesis.
+    #[pymember]
     entry_point: u32,
+    /// Synthesized SizeOfImage in bytes.
+    #[pymember]
     image_size: u32,
 }
 
 #[pyclass]
-impl PeSyntheticImage {
-    /// Image base assigned to the synthesized mapped image.
-    #[pygetset]
-    fn image_base(&self) -> u64 { self.image_base }
-
-    /// Prefix shift used when placing synthetic headers; currently zero for in-place synthesis.
-    #[pygetset]
-    fn header_prefix(&self) -> u32 { self.header_prefix }
-    /// Synthesized image bytes in mapped layout.
-    #[pygetset]
-    fn data(&self) -> PyRef<PyBytes> {
-        self.data.clone()
-    }
-
-    /// Entry-point RVA chosen during synthesis.
-    #[pygetset]
-    fn entry_point(&self) -> u32 {
-        self.entry_point
-    }
-
-    /// Synthesized SizeOfImage in bytes.
-    #[pygetset]
-    fn image_size(&self) -> u32 {
-        self.image_size
-    }
-}
+impl PeSyntheticImage {}
 
 /// Architecture display name; optional when the machine is unknown.
 pub fn machine_name(machine: u16) -> String {
@@ -355,14 +268,14 @@ pub fn synthesize_mapped_image(args: SynthesizeMappedImageArgs, vm: &VirtualMach
 pub fn file_header_to_py(header: raw_format::FileHeaderInfo, vm: &VirtualMachine) -> PyRef<PeFileHeader> {
     PeFileHeader {
         machine: header.machine,
-        machine_name: header.machine_name.to_string(),
+        machine_name: vm.ctx.new_str(header.machine_name),
         section_count: header.section_count,
         optional_header_size: header.optional_header_size,
         optional_magic: header.optional_magic,
         characteristics: header.characteristics,
         is_dll: header.is_dll,
-        section_table_offset: header.section_table_offset,
-        sections: sections_to_py(header.sections, vm),
+        section_table_offset: vm.ctx.new_int(header.section_table_offset),
+        sections: sections_to_py(header.sections, vm).into(),
     }
     .into_ref(&vm.ctx)
 }
@@ -375,13 +288,13 @@ pub fn header_artifact_to_py(artifact: raw_format::HeaderArtifact, vm: &VirtualM
         address: artifact.address,
         offset: artifact.offset,
         score: artifact.score,
-        section_count: artifact.sections.len(),
-        sections,
-        machine: artifact.machine,
-        machine_name: artifact.machine_name.map(str::to_string),
-        is_dll: artifact.is_dll,
-        section_table_offset: artifact.section_table_offset,
-        e_lfanew: artifact.e_lfanew,
+        section_count: vm.ctx.new_int(artifact.sections.len()),
+        sections: sections.into(),
+        machine: artifact.machine.map(|value| vm.ctx.new_int(value)),
+        machine_name: artifact.machine_name.map(|value| vm.ctx.new_str(value)),
+        is_dll: artifact.is_dll.map(|value| vm.ctx.new_bool(value)),
+        section_table_offset: artifact.section_table_offset.map(|value| vm.ctx.new_int(value)),
+        e_lfanew: artifact.e_lfanew.map(|value| vm.ctx.new_int(value)),
     }
     .into_ref(&vm.ctx)
 }

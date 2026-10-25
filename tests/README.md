@@ -9,13 +9,17 @@ Build artifacts with Cargo, then run tests with Cargo. Host tests execute the pr
 - `fixtures/`: the `br3k-test-fixtures` Cargo package. Its `pe-target` executable is an idle process for PE tests, with no dependency on br3k.
 - `../scripts/`: user scenarios. Only explicitly listed PE examples are smoke-tested; adding a script does not opt it into execution.
 
+Rust unit tests live in separate, feature-specific `tests/` directories alongside implementation modules. Private child modules can test internal logic without expanding the public API. Native layout tests live in `../lib/windef/tests/`, and stub generator tests live in `../tools/python-api/src/tests/`. Share fixtures where useful.
+
 The native fixture explicitly loads `ucrtbase.dll` before signalling readiness, independently of static/dynamic CRT linkage. Each process-based test gets its own copy of the executable and its own process. Host-owned processes are stopped in fixture teardown, including after failed assertions or CLI timeouts. Reconstructed PE files are parsed, never executed. VM scenarios are self-contained because the embedded runtime intentionally does not enable `host_env` or general filesystem imports.
 
 ## Test Scope
 
-Each VM scenario exercises a coherent feature workflow, such as capturing and inspecting an image, recovering imports and validating the output, or checking file operations across strategies. Related assertions and edge cases belong within that scenario; do not add a separate VM script for each parameter or failure path. These scenarios test br3k functionality, not the Python language or RustPython runtime.
+Permanent tests should protect br3k's own functional and system behavior, nontrivial algorithms, and generators. This includes PE processing, process and memory operations, filesystem workflows, and API generation. Choose tests by the behavior and failure risks they cover, not simply because code was touched or refactored.
 
-Use Rust unit tests for isolated algorithms and validation rules. Host tests manage native fixtures, invoke scenarios, and check their artifacts. Tests of host support code exercise config serialization and polling without VM scripts or native fixtures.
+Use Rust unit tests for meaningful algorithms, invariants, ABI assumptions, generator behavior, and concrete regressions in our code. Avoid microtests that merely repeat a dependency's guarantees, exercise trivial forwarding wrappers, or verify a one-off migration. Check those changes during development without automatically adding permanent tests.
+
+Each VM scenario exercises a coherent feature workflow through our API and the operating system. Group related assertions and edge cases within that scenario rather than creating a separate script for every parameter or failure path. Host tests manage native fixtures, invoke scenarios, and validate their results and artifacts. These tests cover br3k functionality, not the Python language or RustPython runtime.
 
 ## Local Runs
 
@@ -28,7 +32,7 @@ cargo test --release --workspace --no-fail-fast
 
 To run only host tests, use `cargo test --release -p br3k-host-tests`. Add a name filter such as `pe::`, `fs::`, `examples::`, or `recovery`. `cargo test --release -p br3k-host-tests -- --list` compiles the test executable and lists cases without launching scenarios. The `support::tests::` cases do not require CLI or fixture binaries. Missing required artifacts fail the affected tests rather than silently skipping them.
 
-For another architecture, pass the same `--target <triple>` to both Cargo commands. The default binary directory is the profile directory containing the host test executable's `deps/` directory, including custom Cargo target directories. ARM64 cross-compilation alone is not a runtime test; use `cargo test --release --workspace --target aarch64-pc-windows-msvc --no-run` on x64.
+For another architecture, pass the same `--target <triple>` to both Cargo commands. The default binary directory is inferred from the test executable's Cargo profile directory; both legacy `deps/` and current `build/<package>/<hash>/out/` layouts are supported, including custom target directories. When Cargo's `build-dir` is separate from `target-dir`, set `BR3K_TEST_BIN_DIR` explicitly. ARM64 cross-compilation alone is not a runtime test; use `cargo test --release --workspace --target aarch64-pc-windows-msvc --no-run` on x64.
 
 Optional environment overrides:
 
@@ -42,7 +46,7 @@ Each CLI invocation records its input config, stdout, and stderr in the case's t
 
 Successful cases remove their temporary directories. Failed cases retain configs, logs, and generated files, with the directory path printed in the failure output. Retained failures are not automatically pruned. CI uploads these directories; test results appear in the Cargo job log.
 
-VM tests assert PE semantics, including IAT slot preservation and source immutability. Example tests validate emitted PE/YAML artifacts where available. Reporting-only examples deliberately catch some per-module errors, so their smoke checks prove completion, not complete semantic coverage; the dedicated VM tests provide stricter checks. Hidden/packed/malformed images still need their own controlled corpus.
+VM tests check functional results and important invariants. Example smoke tests check completion and emitted artifacts, but do not prove full semantic coverage, especially when scripts catch individual errors. Unusual inputs and system states need controlled fixtures and dedicated scenarios.
 
 ## CI
 

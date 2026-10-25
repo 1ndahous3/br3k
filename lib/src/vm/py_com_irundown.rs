@@ -96,7 +96,7 @@ impl Constructor for ComIRundown {
 pub struct ExecuteArgs {
     #[pyarg(any)]
     ep: usize,
-    #[pyarg(any, optional)]
+    #[pyarg(any, default = 0)]
     arg1: usize,
 }
 
@@ -153,9 +153,9 @@ fn connect_to_irundown(oid: OID, oxid: OXID, ipid: IPID) -> Result<*mut IRundown
 impl ComIRundown {
     /// Read COM allocator/IPID entries from target memory and replace the cached entry list.
     #[pymethod]
-    fn read_ipid_entries(&self, vm: &VirtualMachine) -> PyResult<()> {
+    fn read_ipid_entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
         unsafe {
-            let mut memory = self.process.memory.borrow_mut();
+            let mut memory = zelf.process.memory.borrow_mut();
             let memory = memory.as_mut()
                 .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -164,7 +164,7 @@ impl ComIRundown {
             memory.set_remote_base_addr(ptr::null_mut());
             memory
                 .read_memory(
-                    self.ole32_address.add(self.ole32_palloc_rva),
+                    zelf.ole32_address.add(zelf.ole32_palloc_rva),
                     addr_of!(palloc) as _,
                     size_of::<rpcwin::CPageAllocator>()
                 )
@@ -224,7 +224,7 @@ impl ComIRundown {
                     let oxid_oid: OxidOid = mem::zeroed();
                     memory
                         .read_memory(
-                            entry.pOXIDEntry.add(self.moxid_offset) as _,
+                            entry.pOXIDEntry.add(zelf.moxid_offset) as _,
                             addr_of!(oxid_oid) as _,
                             size_of::<OxidOid>()
                         )
@@ -245,7 +245,7 @@ impl ComIRundown {
                 }
             }
 
-            self.ipid_entries.replace(ipid_entries);
+            zelf.ipid_entries.replace(ipid_entries);
             Ok(())
         }
     }
@@ -256,13 +256,13 @@ impl ComIRundown {
     /// Requires previously read IPID entries and an initialized read context;
     /// connection, memory, and COM failures may raise `SystemError`.
     #[pymethod]
-    fn execute(&self, args: ExecuteArgs, vm: &VirtualMachine) -> PyResult<bool> {
+    fn execute(zelf: &Py<Self>, args: ExecuteArgs, vm: &VirtualMachine) -> PyResult<bool> {
         unsafe {
-            let mut memory = self.process.memory.borrow_mut();
+            let mut memory = zelf.process.memory.borrow_mut();
             let memory = memory.as_mut()
                 .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
-            for ipid_entry in self.ipid_entries.borrow().iter() {
+            for ipid_entry in zelf.ipid_entries.borrow().iter() {
                 let ipid_values: rpcwin::IPID_VALUES = mem::transmute(ipid_entry.ipid);
                 let valid_tid = ipid_values.tid != 0 && ipid_values.tid != u16::MAX;
 
@@ -273,7 +273,7 @@ impl ComIRundown {
                 let mut server_ctx_addr: PVOID = ptr::null_mut();
 
                 if valid_tid {
-                    let thread = sysapi::open_thread(*self.process.pid.borrow(), ipid_values.tid as _, THREAD_QUERY_INFORMATION)
+                    let thread = sysapi::open_thread(*zelf.process.pid.borrow(), ipid_values.tid as _, THREAD_QUERY_INFORMATION)
                         .map_err(|e| to_py_system_error(vm, &format!("Failed to open thread {}", ipid_values.tid), e))?;
 
                     let basic_info = sysapi::get_thread_basic_info(*thread)
@@ -290,13 +290,13 @@ impl ComIRundown {
                         )
                         .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read thread Teb::ReservedForOle"))?;
 
-                    let ole_tls_data: rpcwin::SOleTlsData = Default::default();
+                    let ole_tls_data: rpcwin::SOleTlsDataWithContext = Default::default();
 
                     memory
                         .read_memory(
                             ole_addr as _,
                             addr_of!(ole_tls_data) as _,
-                            size_of::<rpcwin::SOleTlsData>()
+                            size_of::<rpcwin::SOleTlsDataWithContext>()
                         )
                         .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read thread SOleTlsData"))?;
 
@@ -304,17 +304,17 @@ impl ComIRundown {
                 }
 
                 if server_ctx_addr.is_null() {
-                    if self.global_ctx_addr.is_null() {
+                    if zelf.global_ctx_addr.is_null() {
                         memory
                             .read_memory(
-                                self.ole32_address.add(self.ole32_emptyctx_rva) as _,
-                                addr_of!(self.global_ctx_addr) as _,
+                                zelf.ole32_address.add(zelf.ole32_emptyctx_rva) as _,
+                                addr_of!(zelf.global_ctx_addr) as _,
                                 size_of::<PVOID>(),
                             )
                             .map_err(map_process_memory_error_to_py_exception(vm, "Failed to read process g_pMTAEmptyCtx"))?;
                     }
 
-                    server_ctx_addr = self.global_ctx_addr;
+                    server_ctx_addr = zelf.global_ctx_addr;
                 }
 
                 let mut params = XAptCallback {
@@ -324,30 +324,30 @@ impl ComIRundown {
                     ..Default::default()
                 };
 
-                if self.ole32_secret == GUID::default() {
+                if zelf.ole32_secret == GUID::default() {
                     memory
                         .read_memory(
-                            self.ole32_address.add(self.ole32_secret_rva) as _,
-                            addr_of!(self.ole32_secret) as _,
+                            zelf.ole32_address.add(zelf.ole32_secret_rva) as _,
+                            addr_of!(zelf.ole32_secret) as _,
                             size_of::<GUID>(),
                         )
                         .map_err(map_process_memory_error_to_py_exception(vm, OLE32_SECRET_CONTEXT_ERR))?;
 
                     // invoking IRundown::DoCallback() with invalid secret to init...
-                    if self.ole32_secret == GUID::default() {
+                    if zelf.ole32_secret == GUID::default() {
                         (*(*irundown).lpVtbl).DoCallback.unwrap()(irundown, &mut params);
 
                         memory
                             .read_memory(
-                                self.ole32_address.add(self.ole32_secret_rva) as _,
-                                addr_of!(self.ole32_secret) as _,
+                                zelf.ole32_address.add(zelf.ole32_secret_rva) as _,
+                                addr_of!(zelf.ole32_secret) as _,
                                 size_of::<GUID>(),
                             )
                             .map_err(map_process_memory_error_to_py_exception(vm, OLE32_SECRET_CONTEXT_ERR))?;
                     }
                 }
 
-                params.guidProcessSecret = mem::transmute::<GUID, windows_sys::core::GUID>(self.ole32_secret);
+                params.guidProcessSecret = mem::transmute::<GUID, windows_sys::core::GUID>(zelf.ole32_secret);
 
                 let hr = HRESULT((*(*irundown).lpVtbl).DoCallback.unwrap()(irundown, &mut params));
                 if hr.is_err() {

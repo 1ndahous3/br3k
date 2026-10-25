@@ -7,7 +7,7 @@ The inventory covers the root module and every registered namespace: PE, process
 ## Source Of Truth
 
 - RustPython `#[pyclass(module = ..., name = ...)]` supplies class identity.
-- `#[pymethod]`, `#[pygetset]`, `#[pyclassmethod]`, and `#[pyfunction]` supply exposure.
+- `#[pymethod]`, `#[pygetset]`, `#[pymember]`, `#[pyclassmethod]`, and `#[pyfunction]` supply exposure.
 - Rust types and `#[pyarg]` fields supply signatures and argument modes.
 - `///` comments supply class, method, property, and parameter documentation.
 - `#[pyi(...)]` supplies only information erased by `PyObjectRef` or other adapters.
@@ -26,8 +26,8 @@ Prefer concrete RustPython payloads/references and `Option<T>`/`PyResult<T>`. Th
 impl PeImage {
     /// Copy bytes in the image's declared storage layout.
     #[pygetset]
-    fn data(&self, vm: &VirtualMachine) -> PyRef<PyBytes> {
-        vm.ctx.new_bytes(self.image.data().to_vec())
+    fn data(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PyBytes> {
+        vm.ctx.new_bytes(zelf.image.data().to_vec())
     }
 }
 ```
@@ -46,6 +46,8 @@ Conversions are directional: RustPython returns `Vec<u8>` as `bytes`, whereas an
 
 Place `#[py_api]` before an enclosing macro only when nested `#[pyi]` hints are needed. It validates/removes those hints, leaving registration and `///` comments to RustPython. Retain hints for genuinely erased or custom-converted arguments.
 
+Direct readonly `#[pymember]` fields supply property names, types, and documentation. For a `PyListRef` field, use a hint such as `#[pyi(ty = "list[br3k.pe.headers.Section]")]` to retain the element type. Writable and nested-path members are not supported by the generator; keep using `#[pygetset]` for computed or converted properties.
+
 Argument fields carry their own semantic type and documentation:
 
 ```rust
@@ -63,13 +65,13 @@ For a direct erased argument, use a method/function hint such as `#[pyi(params(t
 
 ## Documentation
 
-The pinned RustPython version exposes Rust `///` comments on classes, methods, class methods, and module functions through `__doc__`. Standard Python tools such as `help()` and `pydoc` consume this metadata, but br3k currently disables RustPython's `host_env` feature: `pydoc` cannot import its native `nt` dependency in this embedded runtime. Read `__doc__` directly or use the generated reference. Its inferred `__text_signature__` is best-effort and cannot fully expand our `FromArgs` records. Use generated stubs/reference signatures for those APIs.
+The pinned RustPython version exposes Rust `///` comments on classes, methods, class methods, module functions, and property descriptors through `__doc__`. Standard Python tools such as `help()` and `pydoc` consume this metadata, but br3k currently disables RustPython's `host_env` feature: `pydoc` cannot import its native `nt` dependency in this embedded runtime. Read `__doc__` directly or use the generated reference. Its inferred `__text_signature__` is best-effort and cannot fully expand our `FromArgs` records. Use generated stubs/reference signatures for those APIs.
 
-Its native get/set descriptor does not currently store a docstring. Property comments are therefore included in the generated stubs/reference, but are not claimed to be available through the runtime property's `__doc__`. This avoids replacing descriptors or forking RustPython just for documentation.
+Both `#[pygetset]` getter comments and `#[pymember]` field comments are available on the class descriptor's `__doc__` and in generated stubs/reference. Inspect the descriptor on the class, not the property's value on an instance.
 
 Write detailed contracts beside Rust declarations. Keep hand-written Markdown for workflow examples, architecture, and limitations. The generated namespace reference links back to those declarations and includes parameter documentation from `FromArgs`.
 
-Upstream implementation: [class and method documentation](https://github.com/RustPython/RustPython/blob/39a6486/crates/derive-impl/src/pyclass.rs), [get/set descriptor](https://github.com/RustPython/RustPython/blob/39a6486/crates/vm/src/builtins/getset.rs).
+Upstream implementation: [class and member macros](https://github.com/RustPython/RustPython/blob/5bccf31156996d42882485ba70f17edbc77a713e/crates/derive-impl/src/pyclass.rs), [get/set descriptor](https://github.com/RustPython/RustPython/blob/5bccf31156996d42882485ba70f17edbc77a713e/crates/vm/src/builtins/getset.rs), [member descriptor](https://github.com/RustPython/RustPython/blob/5bccf31156996d42882485ba70f17edbc77a713e/crates/vm/src/builtins/descriptor.rs).
 
 ## Build Integration
 
@@ -80,4 +82,4 @@ Outputs:
 - `stubs/br3k/__init__.pyi`, `stubs/br3k/*.pyi`, and `stubs/br3k/pe/*.pyi`: signatures and source docstrings for editors.
 - `docs/api/index.md`, `docs/api/*.md`, and `docs/api/pe/*.md`: namespace/class/member reference.
 
-Checks cover metadata validation, import resolution, duplicate Rust short names, type inference, generated-file drift, Python syntax, runtime registration, and native RustPython documentation. The runtime inventory test checks every namespace, class member, function, constant, and class alias, including undocumented extra exports. Prose coverage is enforced across the full API to prevent newly exposed members losing their contracts. Dynamic/external types without a declaration or hint remain `Any`; the tool is not a Rust compiler or a complete type checker.
+Checks cover metadata validation, import resolution, duplicate Rust short names, type inference, generated-file drift, Python syntax, and runtime registration. The runtime inventory test checks every namespace, class member, function, constant, and class alias, including undocumented extra exports. Prose coverage is enforced across the full API to prevent newly exposed members losing their contracts. Dynamic/external types without a declaration or hint remain `Any`; the tool is not a Rust compiler or a complete type checker.

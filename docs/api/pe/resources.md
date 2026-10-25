@@ -93,7 +93,7 @@ Difference for one typed resource-tree path.
 
 ### DataEntry
 
-[Source](../../../lib/src/vm/py_pe/image_resources.rs#L158)
+[Source](../../../lib/src/vm/py_pe/image_resources.rs#L98)
 
 A resource leaf's path, data location, size, and code-page metadata.
 
@@ -209,7 +209,7 @@ Raw reserved field from IMAGE_RESOURCE_DATA_ENTRY.
 
 ### DirectoryInfo
 
-[Source](../../../lib/src/vm/py_pe/image_resources.rs#L63)
+[Source](../../../lib/src/vm/py_pe/image_resources.rs#L47)
 
 Resource-tree extent and aggregate counts from parsing.
 
@@ -317,7 +317,7 @@ Copy resource data from a file or mapped image with captured section contents. M
 
 ### MergePreference
 
-[Source](../../../lib/src/pe/image.rs#L115)
+[Source](../../../lib/src/pe/image.rs#L113)
 
 Conflict policy when the same resource leaf exists in file and mapped sources.
 
@@ -327,7 +327,7 @@ Conflict policy when the same resource leaf exists in file and mapped sources.
 
 ### PathEntry
 
-[Source](../../../lib/src/vm/py_pe/image_resources.rs#L128)
+[Source](../../../lib/src/vm/py_pe/image_resources.rs#L80)
 
 One named or numeric component of a resource path.
 

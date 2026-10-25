@@ -24,4 +24,5 @@ pub use recover::*;
 pub use types::*;
 
 #[cfg(test)]
+#[path = "tests/imports/mod.rs"]
 mod tests;

@@ -2,6 +2,7 @@ pub mod imports;
 pub mod headers;
 
 #[cfg(test)]
+#[path = "../tests/recovery.rs"]
 mod tests;
 
 use crate::pe::image::{Image, SanitizeHeadersOptions};

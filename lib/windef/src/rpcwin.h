@@ -77,7 +77,8 @@ struct IPID_VALUES {
     BYTE seq[8];
 };
 
-typedef struct tagSOleTlsData {
+// Extended layout including the context fields omitted from PHNT's SOleTlsData.
+typedef struct tagSOleTlsDataWithContext {
     /* 0x0000 */ void *pvThreadBase;
     /* 0x0008 */ void *pSmAllocator;
     /* 0x0010 */ ULONG dwApartmentID;
@@ -94,7 +95,7 @@ typedef struct tagSOleTlsData {
     /* 0x0058 */ ULONG dwTIDCaller;
     /* 0x0060 */ void *pCurrentCtxForNefariousReaders;
     /* 0x0068 */ void *pCurrentContext;
-} SOleTlsData;
+} SOleTlsDataWithContext;
 
 #ifdef __cplusplus
 }

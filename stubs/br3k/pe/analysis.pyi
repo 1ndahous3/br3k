@@ -411,17 +411,6 @@ class HiddenModuleArtifact:
     """
     A PE-shaped header or section-table fragment inside a candidate allocation.
     """
-    def __init__(self, kind: br3k.pe.headers.ArtifactKind, address: int, offset: int, score: int, sections: Iterable[br3k.pe.headers.Section], coverage_count: int, *, machine: Any = ..., is_dll: bool = ..., section_table_offset: int = ..., e_lfanew: int = ...) -> None:
-        """
-        Create an explicit artifact record; validates enum and machine values, not the target's contents.
-        """
-        ...
-    @property
-    def kind(self) -> br3k.pe.headers.ArtifactKind:
-        """
-        Typed category for programmatic filtering.
-        """
-        ...
     @property
     def address(self) -> int:
         """
@@ -438,6 +427,17 @@ class HiddenModuleArtifact:
     def score(self) -> int:
         """
         Heuristic evidence score; higher values indicate stronger matching evidence.
+        """
+        ...
+    def __init__(self, kind: br3k.pe.headers.ArtifactKind, address: int, offset: int, score: int, sections: Iterable[br3k.pe.headers.Section], coverage_count: int, *, machine: Any = ..., is_dll: bool = ..., section_table_offset: int = ..., e_lfanew: int = ...) -> None:
+        """
+        Create an explicit artifact record; validates enum and machine values, not the target's contents.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.headers.ArtifactKind:
+        """
+        Typed category for programmatic filtering.
         """
         ...
     @property
@@ -512,6 +512,12 @@ class HiddenModuleCandidate:
         """
         ...
     @property
+    def score(self) -> int:
+        """
+        Heuristic evidence score; higher values indicate stronger matching evidence.
+        """
+        ...
+    @property
     def regions(self) -> list[br3k.proc.MemoryRegion]:
         """
         Memory regions retained in this snapshot.
@@ -533,12 +539,6 @@ class HiddenModuleCandidate:
     def artifacts(self) -> list[br3k.pe.analysis.HiddenModuleArtifact]:
         """
         Ranked PE-shaped artifacts found in the allocation.
-        """
-        ...
-    @property
-    def score(self) -> int:
-        """
-        Heuristic evidence score; higher values indicate stronger matching evidence.
         """
         ...
     @property
@@ -636,15 +636,21 @@ class HiddenModuleScanOptions:
     Defaults: min_score=5, max_allocation_scan_bytes=64 MiB,
     max_artifacts_per_candidate=24, show_all_executable_regions=False.
     """
-    def __init__(self, *, min_score: int = ..., max_allocation_scan_bytes: int = ..., max_artifacts_per_candidate: int = ..., show_all_executable_regions: bool = ...) -> None:
-        """
-        Create scan bounds and thresholds, overriding only supplied defaults.
-        """
-        ...
     @property
     def min_score(self) -> int:
         """
         Minimum score used by visible_candidates(); default 5.
+        """
+        ...
+    @property
+    def show_all_executable_regions(self) -> bool:
+        """
+        Whether reporting bypasses the minimum-score filter.
+        """
+        ...
+    def __init__(self, *, min_score: int = ..., max_allocation_scan_bytes: int = ..., max_artifacts_per_candidate: int = ..., show_all_executable_regions: bool = ...) -> None:
+        """
+        Create scan bounds and thresholds, overriding only supplied defaults.
         """
         ...
     @property
@@ -657,12 +663,6 @@ class HiddenModuleScanOptions:
     def max_artifacts_per_candidate(self) -> int:
         """
         Maximum retained header artifacts per candidate; default 24.
-        """
-        ...
-    @property
-    def show_all_executable_regions(self) -> bool:
-        """
-        Whether reporting bypasses the minimum-score filter.
         """
         ...
 
@@ -1029,6 +1029,18 @@ class ProcessScan:
     interpreting empty lists or zero counters. Suspicious flags are heuristic.
     """
     @property
+    def working_set_error(self) -> str | None:
+        """
+        Working-set query failure, or None if that stage succeeded.
+        """
+        ...
+    @property
+    def thread_error(self) -> str | None:
+        """
+        Thread-enumeration failure, or None if that stage succeeded.
+        """
+        ...
+    @property
     def modules(self) -> list[br3k.proc.Module]:
         """
         Loader modules used for scan classification.
@@ -1044,12 +1056,6 @@ class ProcessScan:
     def working_set_regions(self) -> list[br3k.proc.WorkingSetRegion]:
         """
         Residency and sharing summaries for queried executable regions.
-        """
-        ...
-    @property
-    def working_set_error(self) -> str | None:
-        """
-        Working-set query failure, or None if that stage succeeded.
         """
         ...
     @property
@@ -1074,12 +1080,6 @@ class ProcessScan:
     def suspicious_thread_stack_regions(self) -> list[br3k.pe.analysis.ThreadStackRegion]:
         """
         Stack-region observations whose heuristic score is positive.
-        """
-        ...
-    @property
-    def thread_error(self) -> str | None:
-        """
-        Thread-enumeration failure, or None if that stage succeeded.
         """
         ...
     @property
@@ -1294,12 +1294,6 @@ class ScanFinding:
     One reportable executable-memory or hidden-image finding. Scores are heuristic, not verdicts.
     """
     @property
-    def kind(self) -> br3k.pe.analysis.FindingKind:
-        """
-        Typed category for programmatic filtering.
-        """
-        ...
-    @property
     def address(self) -> int:
         """
         Absolute target virtual address of the finding or artifact.
@@ -1315,6 +1309,12 @@ class ScanFinding:
     def score(self) -> int:
         """
         Heuristic evidence score; higher values indicate stronger matching evidence.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.analysis.FindingKind:
+        """
+        Typed category for programmatic filtering.
         """
         ...
     @property
@@ -1490,15 +1490,15 @@ class ThreadStackRegion:
     Classification of a memory region intersecting a thread's reported stack.
     """
     @property
-    def kind(self) -> br3k.pe.analysis.ThreadStackRegionKind:
-        """
-        Typed classification of this thread-related observation.
-        """
-        ...
-    @property
     def score(self) -> int:
         """
         Heuristic score assigned to the observation.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.analysis.ThreadStackRegionKind:
+        """
+        Typed classification of this thread-related observation.
         """
         ...
     @property
@@ -1577,15 +1577,15 @@ class ThreadStartEvidence:
     Classification of a thread's start address against module and region snapshots.
     """
     @property
-    def kind(self) -> br3k.pe.analysis.ThreadStartKind:
-        """
-        Typed classification of this thread-related observation.
-        """
-        ...
-    @property
     def score(self) -> int:
         """
         Heuristic score assigned to the observation.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.analysis.ThreadStartKind:
+        """
+        Typed classification of this thread-related observation.
         """
         ...
     @property

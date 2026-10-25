@@ -13,12 +13,6 @@ class Artifact:
     PE-shaped header evidence found in a memory chunk, with allocation-relative offsets.
     """
     @property
-    def kind(self) -> br3k.pe.headers.ArtifactKind:
-        """
-        Typed classification of the surviving header evidence.
-        """
-        ...
-    @property
     def address(self) -> int:
         """
         Absolute virtual address of the detected artifact.
@@ -76,6 +70,12 @@ class Artifact:
     def e_lfanew(self) -> int | None:
         """
         Recovered DOS e_lfanew value, when available.
+        """
+        ...
+    @property
+    def kind(self) -> br3k.pe.headers.ArtifactKind:
+        """
+        Typed classification of the surviving header evidence.
         """
         ...
 
@@ -375,11 +375,6 @@ class Section:
     """
     PE section-header record with explicit virtual and file ranges. Constructing a record does not add a section to an image.
     """
-    def __init__(self, *, name: str, virtual_address: int, virtual_size: int, raw_offset: int, raw_size: int, characteristics: int) -> None:
-        """
-        Create a section record from named header fields. Values are stored without validating a complete image layout.
-        """
-        ...
     @property
     def name(self) -> str:
         """
@@ -414,6 +409,11 @@ class Section:
     def characteristics(self) -> int:
         """
         Raw IMAGE_SCN_* section characteristics.
+        """
+        ...
+    def __init__(self, *, name: str, virtual_address: int, virtual_size: int, raw_offset: int, raw_size: int, characteristics: int) -> None:
+        """
+        Create a section record from named header fields. Values are stored without validating a complete image layout.
         """
         ...
     def size(self) -> int:
@@ -472,6 +472,12 @@ class SyntheticImage:
     Mapped image bytes with synthesized headers; reconstructed metadata is not original provenance.
     """
     @property
+    def data(self) -> bytes:
+        """
+        Synthesized image bytes in mapped layout.
+        """
+        ...
+    @property
     def image_base(self) -> int:
         """
         Image base assigned to the synthesized mapped image.
@@ -481,12 +487,6 @@ class SyntheticImage:
     def header_prefix(self) -> int:
         """
         Prefix shift used when placing synthetic headers; currently zero for in-place synthesis.
-        """
-        ...
-    @property
-    def data(self) -> bytes:
-        """
-        Synthesized image bytes in mapped layout.
         """
         ...
     @property

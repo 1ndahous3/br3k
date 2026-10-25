@@ -53,14 +53,14 @@ impl Constructor for Br3kIPC {
 impl Br3kIPC {
     /// Create the server-side pipe named for the associated process PID.
     #[pymethod]
-    pub fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let pid = *self.process.pid.borrow();
+    pub fn create(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let pid = *zelf.process.pid.borrow();
         slog_info!("Creating pipe for process, PID = {pid}");
 
         let pipe_handle = br3k_ipc::create_pipe(pid)
             .map_err(map_to_py_system_error(vm, "Unable to create pipe"))?;
 
-        self.pipe_handle.replace(pipe_handle);
+        zelf.pipe_handle.replace(pipe_handle);
         Ok(())
     }
 
@@ -69,8 +69,8 @@ impl Br3kIPC {
     /// Retries a listening pipe up to ten times with one-second waits for a client.
     /// Other errors, or an absent client after the retries, raise `SystemError`.
     #[pymethod]
-    pub fn send_data(&self, args: SendDataArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let pipe_handle = self.pipe_handle.borrow();
+    pub fn send_data(zelf: &Py<Self>, args: SendDataArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let pipe_handle = zelf.pipe_handle.borrow();
 
         for _ in 0..10 {
             return match br3k_ipc::send_data(**pipe_handle, args.data.as_slice()) {
@@ -92,11 +92,11 @@ impl Br3kIPC {
 
     /// Open the existing pipe named for the associated process PID.
     #[pymethod]
-    pub fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let pipe_handle = br3k_ipc::open_pipe(*self.process.pid.borrow())
+    pub fn open(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let pipe_handle = br3k_ipc::open_pipe(*zelf.process.pid.borrow())
             .map_err(map_to_py_system_error(vm, "Unable to open pipe"))?;
 
-        self.pipe_handle.replace(pipe_handle);
+        zelf.pipe_handle.replace(pipe_handle);
         Ok(())
     }
 }

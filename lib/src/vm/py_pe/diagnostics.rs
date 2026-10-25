@@ -36,56 +36,56 @@ pub struct PeSectionComparison {
 impl PeSectionComparison {
     /// Section name used for the comparison.
     #[pygetset]
-    fn name(&self) -> String {
-        self.comparison.name.clone()
+    fn name(zelf: &Py<Self>) -> String {
+        zelf.comparison.name.clone()
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.comparison.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.comparison.rva
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.comparison.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.comparison.size
     }
 
     /// Whether the compared section has the executable characteristic.
     #[pygetset]
-    fn executable(&self) -> bool {
-        self.comparison.executable
+    fn executable(zelf: &Py<Self>) -> bool {
+        zelf.comparison.executable
     }
 
     /// Fingerprint of the mapped bytes; unavailable comparisons return None.
     #[pygetset]
-    fn mapped_hash(&self) -> Option<u64> {
-        self.comparison.mapped_hash
+    fn mapped_hash(zelf: &Py<Self>) -> Option<u64> {
+        zelf.comparison.mapped_hash
     }
 
     /// Fingerprint of the normalized disk-reference bytes; unavailable comparisons return None.
     #[pygetset]
-    fn disk_hash(&self) -> Option<u64> {
-        self.comparison.disk_hash
+    fn disk_hash(zelf: &Py<Self>) -> Option<u64> {
+        zelf.comparison.disk_hash
     }
 
     /// Reason mapped bytes could not be compared, or None.
     #[pygetset]
-    fn mapped_error(&self) -> Option<String> {
-        self.comparison.mapped_error.clone()
+    fn mapped_error(zelf: &Py<Self>) -> Option<String> {
+        zelf.comparison.mapped_error.clone()
     }
 
     /// Reason reference bytes could not be compared, or None.
     #[pygetset]
-    fn disk_error(&self) -> Option<String> {
-        self.comparison.disk_error.clone()
+    fn disk_error(zelf: &Py<Self>) -> Option<String> {
+        zelf.comparison.disk_error.clone()
     }
 
     /// Whether comparable section content differs.
     #[pygetset]
-    fn changed(&self) -> bool {
-        self.comparison.changed
+    fn changed(zelf: &Py<Self>) -> bool {
+        zelf.comparison.changed
     }
 }
 
@@ -104,32 +104,32 @@ impl PeImageComparison {
 impl PeImageComparison {
     /// Per-section comparison records, including errors.
     #[pygetset]
-    fn sections(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeSectionComparison>> {
-        section_comparisons_to_py(&self.comparison.sections, vm)
+    fn sections(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeSectionComparison>> {
+        section_comparisons_to_py(&zelf.comparison.sections, vm)
     }
 
     /// Number of sections reported as changed.
     #[pygetset]
-    fn changed_count(&self) -> usize {
-        self.comparison.changed_count()
+    fn changed_count(zelf: &Py<Self>) -> usize {
+        zelf.comparison.changed_count()
     }
 
     /// Number of changed sections marked executable.
     #[pygetset]
-    fn changed_executable_count(&self) -> usize {
-        self.comparison.changed_executable_count()
+    fn changed_executable_count(zelf: &Py<Self>) -> usize {
+        zelf.comparison.changed_executable_count()
     }
 
     /// Return names of all sections reported as changed.
     #[pymethod]
-    fn changed_section_names(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        string_list_to_py(&self.comparison.changed_section_names(), vm)
+    fn changed_section_names(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        string_list_to_py(&zelf.comparison.changed_section_names(), vm)
     }
 
     /// Return names of changed executable sections.
     #[pymethod]
-    fn changed_executable_section_names(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        string_list_to_py(&self.comparison.changed_executable_section_names(), vm)
+    fn changed_executable_section_names(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        string_list_to_py(&zelf.comparison.changed_executable_section_names(), vm)
     }
 }
 
@@ -144,80 +144,80 @@ pub struct PeSectionByteChange {
 impl PeSectionByteChange {
     /// Name of the containing section.
     #[pygetset]
-    fn section_name(&self) -> String {
-        self.change.section_name.clone()
+    fn section_name(zelf: &Py<Self>) -> String {
+        zelf.change.section_name.clone()
     }
 
     /// Image-relative start address of the containing section.
     #[pygetset]
-    fn section_rva(&self) -> u32 {
-        self.change.section_rva
+    fn section_rva(zelf: &Py<Self>) -> u32 {
+        zelf.change.section_rva
     }
 
     /// Whether the compared section has the executable characteristic.
     #[pygetset]
-    fn executable(&self) -> bool {
-        self.change.executable
+    fn executable(zelf: &Py<Self>) -> bool {
+        zelf.change.executable
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.change.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.change.rva
     }
 
     /// Byte offset of the change from the containing section's start.
     #[pygetset]
-    fn offset(&self) -> u32 {
-        self.change.offset
+    fn offset(zelf: &Py<Self>) -> u32 {
+        zelf.change.offset
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.change.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.change.size
     }
 
     /// Fingerprint of the mapped bytes.
     #[pygetset]
-    fn mapped_hash(&self) -> u64 {
-        self.change.mapped_hash
+    fn mapped_hash(zelf: &Py<Self>) -> u64 {
+        zelf.change.mapped_hash
     }
 
     /// Fingerprint of the normalized disk-reference bytes.
     #[pygetset]
-    fn disk_hash(&self) -> u64 {
-        self.change.disk_hash
+    fn disk_hash(zelf: &Py<Self>) -> u64 {
+        zelf.change.disk_hash
     }
 
     /// Bounded sample of mapped bytes from this change.
     #[pygetset]
-    fn mapped_sample(&self, vm: &VirtualMachine) -> PyRef<PyBytes> {
-        vm.ctx.new_bytes(self.change.mapped_sample.clone())
+    fn mapped_sample(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PyBytes> {
+        vm.ctx.new_bytes(zelf.change.mapped_sample.clone())
     }
 
     /// Bounded sample of reference bytes from this change.
     #[pygetset]
-    fn disk_sample(&self, vm: &VirtualMachine) -> PyRef<PyBytes> {
-        vm.ctx.new_bytes(self.change.disk_sample.clone())
+    fn disk_sample(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PyBytes> {
+        vm.ctx.new_bytes(zelf.change.disk_sample.clone())
     }
 
     /// Whether samples omit bytes from the full changed range.
     #[pygetset]
-    fn sample_truncated(&self) -> bool {
-        self.change.sample_truncated
+    fn sample_truncated(zelf: &Py<Self>) -> bool {
+        zelf.change.sample_truncated
     }
 
     /// Format the record's location, evidence, and comparison details for display.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "{} rva=0x{:x} size=0x{:x} mapped_hash=0x{:x} disk_hash=0x{:x}",
-            self.change.section_name,
-            self.change.rva,
-            self.change.size,
-            self.change.mapped_hash,
-            self.change.disk_hash,
+            zelf.change.section_name,
+            zelf.change.rva,
+            zelf.change.size,
+            zelf.change.mapped_hash,
+            zelf.change.disk_hash,
         )
     }
 }
@@ -233,38 +233,38 @@ pub struct PeImageByteChanges {
 impl PeImageByteChanges {
     /// Individual changed byte ranges retained within the reporting limit.
     #[pygetset]
-    fn ranges(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeSectionByteChange>> {
-        section_byte_changes_to_py(&self.changes.ranges, vm)
+    fn ranges(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeSectionByteChange>> {
+        section_byte_changes_to_py(&zelf.changes.ranges, vm)
     }
 
     /// Number of sections compared.
     #[pygetset]
-    fn compared_section_count(&self) -> usize {
-        self.changes.compared_section_count
+    fn compared_section_count(zelf: &Py<Self>) -> usize {
+        zelf.changes.compared_section_count
     }
 
     /// Number of sections containing changed bytes.
     #[pygetset]
-    fn changed_section_count(&self) -> usize {
-        self.changes.changed_section_count
+    fn changed_section_count(zelf: &Py<Self>) -> usize {
+        zelf.changes.changed_section_count
     }
 
     /// Number of differing bytes counted by the comparison.
     #[pygetset]
-    fn changed_byte_count(&self) -> usize {
-        self.changes.changed_byte_count
+    fn changed_byte_count(zelf: &Py<Self>) -> usize {
+        zelf.changes.changed_byte_count
     }
 
     /// Number of retained changed-range records.
     #[pygetset]
-    fn range_count(&self) -> usize {
-        self.changes.range_count()
+    fn range_count(zelf: &Py<Self>) -> usize {
+        zelf.changes.range_count()
     }
 
     /// Whether reporting limits prevented retaining every changed range.
     #[pygetset]
-    fn truncated(&self) -> bool {
-        self.changes.truncated
+    fn truncated(zelf: &Py<Self>) -> bool {
+        zelf.changes.truncated
     }
 }
 
@@ -279,26 +279,26 @@ pub struct PeExportPrologueHash {
 impl PeExportPrologueHash {
     /// All export display names sharing the prologue RVA.
     #[pygetset]
-    fn names(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        string_list_to_py(&self.hash.names, vm)
+    fn names(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        string_list_to_py(&zelf.hash.names, vm)
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.hash.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.hash.rva
     }
 
     /// Content fingerprint used for comparison, not a cryptographic authenticity check.
     #[pygetset]
-    fn hash(&self) -> u64 {
-        self.hash.hash
+    fn hash(zelf: &Py<Self>) -> u64 {
+        zelf.hash.hash
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> usize {
-        self.hash.size
+    fn size(zelf: &Py<Self>) -> usize {
+        zelf.hash.size
     }
 }
 
@@ -313,107 +313,107 @@ pub struct PeImportAddressChange {
 impl PeImportAddressChange {
     /// Module named by the import descriptor.
     #[pygetset]
-    fn module_name(&self) -> String {
-        self.change.module_name.clone()
+    fn module_name(zelf: &Py<Self>) -> String {
+        zelf.change.module_name.clone()
     }
 
     /// Imported symbol name, or None for an ordinal import.
     #[pygetset]
-    fn name(&self) -> Option<String> {
-        self.change.name.clone()
+    fn name(zelf: &Py<Self>) -> Option<String> {
+        zelf.change.name.clone()
     }
 
     /// Imported ordinal when the import is ordinal-based.
     #[pygetset]
-    fn ordinal(&self) -> Option<u16> {
-        self.change.ordinal
+    fn ordinal(zelf: &Py<Self>) -> Option<u16> {
+        zelf.change.ordinal
     }
 
     /// Image-relative address of the changed IAT slot.
     #[pygetset]
-    fn iat_rva(&self) -> u32 {
-        self.change.iat_rva
+    fn iat_rva(zelf: &Py<Self>) -> u32 {
+        zelf.change.iat_rva
     }
 
     /// Expected target virtual address resolved from the reference exports.
     #[pygetset]
-    fn expected_address(&self) -> u64 {
-        self.change.expected_address
+    fn expected_address(zelf: &Py<Self>) -> u64 {
+        zelf.change.expected_address
     }
 
     /// Module supplying the expected target, after forwarding resolution.
     #[pygetset]
-    fn expected_module_name(&self) -> String {
-        self.change.expected_module_name.clone()
+    fn expected_module_name(zelf: &Py<Self>) -> String {
+        zelf.change.expected_module_name.clone()
     }
 
     /// Expected target's export name when available.
     #[pygetset]
-    fn expected_name(&self) -> Option<String> {
-        self.change.expected_name.clone()
+    fn expected_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.change.expected_name.clone()
     }
 
     /// Expected target's export ordinal.
     #[pygetset]
-    fn expected_ordinal(&self) -> u32 {
-        self.change.expected_ordinal
+    fn expected_ordinal(zelf: &Py<Self>) -> u32 {
+        zelf.change.expected_ordinal
     }
 
     /// Source policy result used for the expected export.
     #[pygetset]
-    fn expected_source(&self, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
-        export_table_source_to_py(Some(self.change.expected_source), vm)
+    fn expected_source(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
+        export_table_source_to_py(Some(zelf.change.expected_source), vm)
     }
 
     /// Pointer value observed in the mapped IAT slot.
     #[pygetset]
-    fn actual_address(&self) -> u64 {
-        self.change.actual_address
+    fn actual_address(zelf: &Py<Self>) -> u64 {
+        zelf.change.actual_address
     }
 
     /// Resolved module for the observed pointer, or None if unresolved.
     #[pygetset]
-    fn actual_module_name(&self) -> Option<String> {
-        self.change.actual_module_name.clone()
+    fn actual_module_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.change.actual_module_name.clone()
     }
 
     /// Resolved export name for the observed pointer, or None.
     #[pygetset]
-    fn actual_name(&self) -> Option<String> {
-        self.change.actual_name.clone()
+    fn actual_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.change.actual_name.clone()
     }
 
     /// Resolved export ordinal for the observed pointer, or None.
     #[pygetset]
-    fn actual_ordinal(&self) -> Option<u32> {
-        self.change.actual_ordinal
+    fn actual_ordinal(zelf: &Py<Self>) -> Option<u32> {
+        zelf.change.actual_ordinal
     }
 
     /// Source of the observed target's export metadata, or None if unresolved.
     #[pygetset]
-    fn actual_source(&self, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
-        export_table_source_to_py(self.change.actual_source, vm)
+    fn actual_source(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
+        export_table_source_to_py(zelf.change.actual_source, vm)
     }
 
     /// Format the record's location, evidence, and comparison details for display.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "{}!{} iat=0x{:x} expected={} actual={}",
-            self.change.module_name,
-            import_target_text(self.change.name.as_deref(), self.change.ordinal),
-            self.change.iat_rva,
+            zelf.change.module_name,
+            import_target_text(zelf.change.name.as_deref(), zelf.change.ordinal),
+            zelf.change.iat_rva,
             export_target_text(
-                &self.change.expected_module_name,
-                self.change.expected_name.as_deref(),
-                Some(self.change.expected_ordinal),
-                self.change.expected_address,
+                &zelf.change.expected_module_name,
+                zelf.change.expected_name.as_deref(),
+                Some(zelf.change.expected_ordinal),
+                zelf.change.expected_address,
             ),
             resolved_address_text(
-                self.change.actual_module_name.as_deref(),
-                self.change.actual_name.as_deref(),
-                self.change.actual_ordinal,
-                self.change.actual_address,
+                zelf.change.actual_module_name.as_deref(),
+                zelf.change.actual_name.as_deref(),
+                zelf.change.actual_ordinal,
+                zelf.change.actual_address,
             ),
         )
     }
@@ -430,73 +430,73 @@ pub struct PeImageAnomaly {
 impl PeImageAnomaly {
     /// Typed anomaly category for programmatic filtering.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostics::ImageAnomalyKind>> {
-        PyEnumValue::new(self.anomaly.kind, vm)
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostics::ImageAnomalyKind>> {
+        PyEnumValue::new(zelf.anomaly.kind, vm)
     }
 
     /// Typed severity assigned by the structural checks.
     #[pygetset]
-    fn severity(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostics::ImageAnomalySeverity>> {
-        PyEnumValue::new(self.anomaly.severity, vm)
+    fn severity(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::diagnostics::ImageAnomalySeverity>> {
+        PyEnumValue::new(zelf.anomaly.severity, vm)
     }
 
     /// Associated section name, or None for image-wide anomalies.
     #[pygetset]
-    fn section_name(&self) -> Option<String> {
-        self.anomaly.section_name.clone()
+    fn section_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.anomaly.section_name.clone()
     }
 
     /// PE data-directory index involved in the anomaly, or None.
     #[pygetset]
-    fn directory_index(&self) -> Option<usize> {
-        self.anomaly.directory_index
+    fn directory_index(zelf: &Py<Self>) -> Option<usize> {
+        zelf.anomaly.directory_index
     }
 
     /// Display name of the involved data directory, or None.
     #[pygetset]
-    fn directory_name(&self) -> Option<String> {
-        self.anomaly.directory_name.clone()
+    fn directory_name(zelf: &Py<Self>) -> Option<String> {
+        zelf.anomaly.directory_name.clone()
     }
 
     /// Image-relative virtual address of this item; None where no location is available.
     #[pygetset]
-    fn rva(&self) -> Option<u32> {
-        self.anomaly.rva
+    fn rva(zelf: &Py<Self>) -> Option<u32> {
+        zelf.anomaly.rva
     }
 
     /// Extent in bytes, or None when the extent is unknown.
     #[pygetset]
-    fn size(&self) -> Option<u32> {
-        self.anomaly.size
+    fn size(zelf: &Py<Self>) -> Option<u32> {
+        zelf.anomaly.size
     }
 
     /// Human-readable explanation of the anomaly.
     #[pygetset]
-    fn message(&self) -> String {
-        self.anomaly.message.clone()
+    fn message(zelf: &Py<Self>) -> String {
+        zelf.anomaly.message.clone()
     }
 
     /// Format the record's location, evidence, and comparison details for display.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         let mut text = format!(
             "{} {}",
-            self.anomaly.severity.as_str(),
-            self.anomaly.kind.as_str(),
+            zelf.anomaly.severity.as_str(),
+            zelf.anomaly.kind.as_str(),
         );
-        if let Some(section_name) = &self.anomaly.section_name {
+        if let Some(section_name) = &zelf.anomaly.section_name {
             text.push_str(&format!(" section={section_name}"));
         }
-        if let Some(directory_name) = &self.anomaly.directory_name {
+        if let Some(directory_name) = &zelf.anomaly.directory_name {
             text.push_str(&format!(" directory={directory_name}"));
         }
-        if let Some(rva) = self.anomaly.rva {
+        if let Some(rva) = zelf.anomaly.rva {
             text.push_str(&format!(" rva=0x{rva:x}"));
         }
-        if let Some(size) = self.anomaly.size {
+        if let Some(size) = zelf.anomaly.size {
             text.push_str(&format!(" size=0x{size:x}"));
         }
-        text.push_str(&format!(": {}", self.anomaly.message));
+        text.push_str(&format!(": {}", zelf.anomaly.message));
 
         text
     }
@@ -516,20 +516,20 @@ pub struct PeSecurityDirectoryInfo {
 impl PeSecurityDirectoryInfo {
     /// Whether this metadata structure was detected.
     #[pygetset]
-    fn present(&self) -> bool {
-        self.info.present
+    fn present(zelf: &Py<Self>) -> bool {
+        zelf.info.present
     }
 
     /// Certificate-table byte offset in file layout, not an RVA.
     #[pygetset]
-    fn file_offset(&self) -> u32 {
-        self.info.file_offset
+    fn file_offset(zelf: &Py<Self>) -> u32 {
+        zelf.info.file_offset
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.info.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.info.size
     }
 }
 
@@ -544,32 +544,32 @@ pub struct PeRichHeaderInfo {
 impl PeRichHeaderInfo {
     /// Whether this metadata structure was detected.
     #[pygetset]
-    fn present(&self) -> bool {
-        self.info.present
+    fn present(zelf: &Py<Self>) -> bool {
+        zelf.info.present
     }
 
     /// Byte offset of the Rich header from the start of the file.
     #[pygetset]
-    fn offset(&self) -> usize {
-        self.info.offset
+    fn offset(zelf: &Py<Self>) -> usize {
+        zelf.info.offset
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> usize {
-        self.info.size
+    fn size(zelf: &Py<Self>) -> usize {
+        zelf.info.size
     }
 
     /// XOR key stored in the Rich header.
     #[pygetset]
-    fn key(&self) -> u32 {
-        self.info.key
+    fn key(zelf: &Py<Self>) -> u32 {
+        zelf.info.key
     }
 
     /// Content fingerprint used for comparison, not a cryptographic authenticity check.
     #[pygetset]
-    fn hash(&self) -> u64 {
-        self.info.hash
+    fn hash(zelf: &Py<Self>) -> u64 {
+        zelf.info.hash
     }
 }
 
@@ -589,110 +589,110 @@ pub struct PeLoadConfigInfo {
 impl PeLoadConfigInfo {
     /// Whether this metadata structure was detected.
     #[pygetset]
-    fn present(&self) -> bool {
-        self.info.present
+    fn present(zelf: &Py<Self>) -> bool {
+        zelf.info.present
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.info.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.info.rva
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.info.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.info.size
     }
 
     /// Size declared inside the load-config structure, when readable.
     #[pygetset]
-    fn structure_size(&self) -> Option<u32> {
-        self.info.structure_size
+    fn structure_size(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.structure_size
     }
 
     /// Raw load-config TimeDateStamp value.
     #[pygetset]
-    fn time_date_stamp(&self) -> Option<u32> {
-        self.info.time_date_stamp
+    fn time_date_stamp(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.time_date_stamp
     }
 
     /// Declared load-config major version.
     #[pygetset]
-    fn major_version(&self) -> Option<u16> {
-        self.info.major_version
+    fn major_version(zelf: &Py<Self>) -> Option<u16> {
+        zelf.info.major_version
     }
 
     /// Declared load-config minor version.
     #[pygetset]
-    fn minor_version(&self) -> Option<u16> {
-        self.info.minor_version
+    fn minor_version(zelf: &Py<Self>) -> Option<u16> {
+        zelf.info.minor_version
     }
 
     /// Declared dependent-load flags.
     #[pygetset]
-    fn dependent_load_flags(&self) -> Option<u16> {
-        self.info.dependent_load_flags
+    fn dependent_load_flags(zelf: &Py<Self>) -> Option<u16> {
+        zelf.info.dependent_load_flags
     }
 
     /// Declared process-heap flags.
     #[pygetset]
-    fn process_heap_flags(&self) -> Option<u32> {
-        self.info.process_heap_flags
+    fn process_heap_flags(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.process_heap_flags
     }
 
     /// Virtual address of the security-cookie storage.
     #[pygetset]
-    fn security_cookie(&self) -> Option<u64> {
-        self.info.security_cookie
+    fn security_cookie(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.security_cookie
     }
 
     /// Virtual address of the SafeSEH handler table.
     #[pygetset]
-    fn se_handler_table(&self) -> Option<u64> {
-        self.info.se_handler_table
+    fn se_handler_table(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.se_handler_table
     }
 
     /// Number of SafeSEH handler entries.
     #[pygetset]
-    fn se_handler_count(&self) -> Option<u64> {
-        self.info.se_handler_count
+    fn se_handler_count(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.se_handler_count
     }
 
     /// Virtual address of the CFG check-function pointer slot.
     #[pygetset]
-    fn guard_cf_check_function_pointer(&self) -> Option<u64> {
-        self.info.guard_cf_check_function_pointer
+    fn guard_cf_check_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_cf_check_function_pointer
     }
 
     /// Virtual address of the CFG dispatch-function pointer slot.
     #[pygetset]
-    fn guard_cf_dispatch_function_pointer(&self) -> Option<u64> {
-        self.info.guard_cf_dispatch_function_pointer
+    fn guard_cf_dispatch_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_cf_dispatch_function_pointer
     }
 
     /// Virtual address of the CFG function table.
     #[pygetset]
-    fn guard_cf_function_table(&self) -> Option<u64> {
-        self.info.guard_cf_function_table
+    fn guard_cf_function_table(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_cf_function_table
     }
 
     /// Number of CFG function-table entries.
     #[pygetset]
-    fn guard_cf_function_count(&self) -> Option<u64> {
-        self.info.guard_cf_function_count
+    fn guard_cf_function_count(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_cf_function_count
     }
 
     /// Raw GuardFlags bitfield.
     #[pygetset]
-    fn guard_flags(&self) -> Option<u32> {
-        self.info.guard_flags
+    fn guard_flags(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.guard_flags
     }
 
     /// Recognized GuardFlags names for display.
     #[pygetset]
-    fn guard_flag_names(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        let names = self.info
+    fn guard_flag_names(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        let names = zelf.info
             .guard_flag_names()
             .into_iter()
             .map(str::to_string)
@@ -703,20 +703,20 @@ impl PeLoadConfigInfo {
 
     /// Compatibility spelling of guard_flag_names.
     #[pygetset]
-    fn guard_flags_names(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        self.guard_flag_names(vm)
+    fn guard_flags_names(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        Self::guard_flag_names(zelf, vm)
     }
 
     /// CFG table-entry size in bytes derived from GuardFlags, or None.
     #[pygetset]
-    fn guard_cf_function_table_entry_size(&self) -> Option<u32> {
-        self.info.guard_cf_function_table_entry_size()
+    fn guard_cf_function_table_entry_size(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.guard_cf_function_table_entry_size()
     }
 
     /// Parsed CodeIntegrity record when the load-config structure contains it.
     #[pygetset]
-    fn code_integrity(&self, vm: &VirtualMachine) -> Option<PyRef<PeLoadConfigCodeIntegrityInfo>> {
-        match self.info.code_integrity.clone() {
+    fn code_integrity(zelf: &Py<Self>, vm: &VirtualMachine) -> Option<PyRef<PeLoadConfigCodeIntegrityInfo>> {
+        match zelf.info.code_integrity.clone() {
             Some(info) => Some(PeLoadConfigCodeIntegrityInfo { info }.into_ref(&vm.ctx)),
             None => None,
         }
@@ -724,200 +724,200 @@ impl PeLoadConfigInfo {
 
     /// Virtual address of the address-taken IAT-entry table.
     #[pygetset]
-    fn guard_address_taken_iat_entry_table(&self) -> Option<u64> {
-        self.info.guard_address_taken_iat_entry_table
+    fn guard_address_taken_iat_entry_table(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_address_taken_iat_entry_table
     }
 
     /// Number of address-taken IAT entries.
     #[pygetset]
-    fn guard_address_taken_iat_entry_count(&self) -> Option<u64> {
-        self.info.guard_address_taken_iat_entry_count
+    fn guard_address_taken_iat_entry_count(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_address_taken_iat_entry_count
     }
 
     /// Virtual address of the guarded long-jump target table.
     #[pygetset]
-    fn guard_long_jump_target_table(&self) -> Option<u64> {
-        self.info.guard_long_jump_target_table
+    fn guard_long_jump_target_table(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_long_jump_target_table
     }
 
     /// Number of guarded long-jump targets.
     #[pygetset]
-    fn guard_long_jump_target_count(&self) -> Option<u64> {
-        self.info.guard_long_jump_target_count
+    fn guard_long_jump_target_count(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_long_jump_target_count
     }
 
     /// Virtual address of the dynamic-value relocation table.
     #[pygetset]
-    fn dynamic_value_reloc_table(&self) -> Option<u64> {
-        self.info.dynamic_value_reloc_table
+    fn dynamic_value_reloc_table(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.dynamic_value_reloc_table
     }
 
     /// Virtual address of CHPE/hybrid-image metadata.
     #[pygetset]
-    fn chpe_metadata_pointer(&self) -> Option<u64> {
-        self.info.chpe_metadata_pointer
+    fn chpe_metadata_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.chpe_metadata_pointer
     }
 
     /// Virtual address of the return-flow-guard failure routine.
     #[pygetset]
-    fn guard_rf_failure_routine(&self) -> Option<u64> {
-        self.info.guard_rf_failure_routine
+    fn guard_rf_failure_routine(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_rf_failure_routine
     }
 
     /// Virtual address of the return-flow-guard failure-function pointer slot.
     #[pygetset]
-    fn guard_rf_failure_routine_function_pointer(&self) -> Option<u64> {
-        self.info.guard_rf_failure_routine_function_pointer
+    fn guard_rf_failure_routine_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_rf_failure_routine_function_pointer
     }
 
     /// Dynamic relocation table offset within the indicated section.
     #[pygetset]
-    fn dynamic_value_reloc_table_offset(&self) -> Option<u32> {
-        self.info.dynamic_value_reloc_table_offset
+    fn dynamic_value_reloc_table_offset(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.dynamic_value_reloc_table_offset
     }
 
     /// Section index associated with the dynamic relocation table offset.
     #[pygetset]
-    fn dynamic_value_reloc_table_section(&self) -> Option<u16> {
-        self.info.dynamic_value_reloc_table_section
+    fn dynamic_value_reloc_table_section(zelf: &Py<Self>) -> Option<u16> {
+        zelf.info.dynamic_value_reloc_table_section
     }
 
     /// Virtual address of the return-flow-guard stack-verification pointer slot.
     #[pygetset]
-    fn guard_rf_verify_stack_pointer_function_pointer(&self) -> Option<u64> {
-        self.info.guard_rf_verify_stack_pointer_function_pointer
+    fn guard_rf_verify_stack_pointer_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_rf_verify_stack_pointer_function_pointer
     }
 
     /// Declared hotpatch table offset.
     #[pygetset]
-    fn hot_patch_table_offset(&self) -> Option<u32> {
-        self.info.hot_patch_table_offset
+    fn hot_patch_table_offset(zelf: &Py<Self>) -> Option<u32> {
+        zelf.info.hot_patch_table_offset
     }
 
     /// Virtual address of enclave configuration.
     #[pygetset]
-    fn enclave_configuration_pointer(&self) -> Option<u64> {
-        self.info.enclave_configuration_pointer
+    fn enclave_configuration_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.enclave_configuration_pointer
     }
 
     /// Virtual address of volatile metadata.
     #[pygetset]
-    fn volatile_metadata_pointer(&self) -> Option<u64> {
-        self.info.volatile_metadata_pointer
+    fn volatile_metadata_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.volatile_metadata_pointer
     }
 
     /// Virtual address of the guarded exception-continuation table.
     #[pygetset]
-    fn guard_eh_continuation_table(&self) -> Option<u64> {
-        self.info.guard_eh_continuation_table
+    fn guard_eh_continuation_table(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_eh_continuation_table
     }
 
     /// Number of guarded exception-continuation targets.
     #[pygetset]
-    fn guard_eh_continuation_count(&self) -> Option<u64> {
-        self.info.guard_eh_continuation_count
+    fn guard_eh_continuation_count(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_eh_continuation_count
     }
 
     /// Virtual address of the XFG check-function pointer slot.
     #[pygetset]
-    fn guard_xfg_check_function_pointer(&self) -> Option<u64> {
-        self.info.guard_xfg_check_function_pointer
+    fn guard_xfg_check_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_xfg_check_function_pointer
     }
 
     /// Virtual address of the XFG dispatch-function pointer slot.
     #[pygetset]
-    fn guard_xfg_dispatch_function_pointer(&self) -> Option<u64> {
-        self.info.guard_xfg_dispatch_function_pointer
+    fn guard_xfg_dispatch_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_xfg_dispatch_function_pointer
     }
 
     /// Virtual address of the XFG table-dispatch pointer slot.
     #[pygetset]
-    fn guard_xfg_table_dispatch_function_pointer(&self) -> Option<u64> {
-        self.info.guard_xfg_table_dispatch_function_pointer
+    fn guard_xfg_table_dispatch_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_xfg_table_dispatch_function_pointer
     }
 
     /// Raw CastGuardOsDeterminedFailureMode load-config field.
     #[pygetset]
-    fn cast_guard_os_determined_failure_mode(&self) -> Option<u64> {
-        self.info.cast_guard_os_determined_failure_mode
+    fn cast_guard_os_determined_failure_mode(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.cast_guard_os_determined_failure_mode
     }
 
     /// Virtual address of the guarded memcpy pointer slot.
     #[pygetset]
-    fn guard_memcpy_function_pointer(&self) -> Option<u64> {
-        self.info.guard_memcpy_function_pointer
+    fn guard_memcpy_function_pointer(zelf: &Py<Self>) -> Option<u64> {
+        zelf.info.guard_memcpy_function_pointer
     }
 
     /// Whether GuardFlags declares CFG instrumentation.
     #[pygetset]
-    fn guard_cf_instrumented(&self) -> bool {
-        self.info.guard_cf_instrumented()
+    fn guard_cf_instrumented(zelf: &Py<Self>) -> bool {
+        zelf.info.guard_cf_instrumented()
     }
 
     /// Whether GuardFlags declares a CFG function table.
     #[pygetset]
-    fn guard_cf_function_table_present(&self) -> bool {
-        self.info.guard_cf_function_table_present()
+    fn guard_cf_function_table_present(zelf: &Py<Self>) -> bool {
+        zelf.info.guard_cf_function_table_present()
     }
 
     /// Whether load-config metadata declares return-flow guard.
     #[pygetset]
-    fn guard_rf_enabled(&self) -> bool {
-        self.info.guard_rf_enabled()
+    fn guard_rf_enabled(zelf: &Py<Self>) -> bool {
+        zelf.info.guard_rf_enabled()
     }
 
     /// Whether XFG metadata is indicated by the parsed load config.
     #[pygetset]
-    fn has_xfg(&self) -> bool {
-        self.info.has_xfg()
+    fn has_xfg(zelf: &Py<Self>) -> bool {
+        zelf.info.has_xfg()
     }
 
     /// Whether CastGuard metadata is indicated.
     #[pygetset]
-    fn has_cast_guard(&self) -> bool {
-        self.info.has_cast_guard()
+    fn has_cast_guard(zelf: &Py<Self>) -> bool {
+        zelf.info.has_cast_guard()
     }
 
     /// Whether guarded-memcpy metadata is indicated.
     #[pygetset]
-    fn has_guard_memcpy(&self) -> bool {
-        self.info.has_guard_memcpy()
+    fn has_guard_memcpy(zelf: &Py<Self>) -> bool {
+        zelf.info.has_guard_memcpy()
     }
 
     /// Whether a nonzero CHPE metadata pointer is present.
     #[pygetset]
-    fn has_chpe_metadata(&self) -> bool {
-        self.info.has_chpe_metadata()
+    fn has_chpe_metadata(zelf: &Py<Self>) -> bool {
+        zelf.info.has_chpe_metadata()
     }
 
     /// Whether dynamic-value relocation metadata is indicated.
     #[pygetset]
-    fn has_dynamic_value_relocations(&self) -> bool {
-        self.info.has_dynamic_value_relocations()
+    fn has_dynamic_value_relocations(zelf: &Py<Self>) -> bool {
+        zelf.info.has_dynamic_value_relocations()
     }
 
     /// Whether a hotpatch table offset is present and nonzero.
     #[pygetset]
-    fn has_hotpatch_table(&self) -> bool {
-        self.info.has_hotpatch_table()
+    fn has_hotpatch_table(zelf: &Py<Self>) -> bool {
+        zelf.info.has_hotpatch_table()
     }
 
     /// Whether enclave configuration is indicated.
     #[pygetset]
-    fn has_enclave_config(&self) -> bool {
-        self.info.has_enclave_config()
+    fn has_enclave_config(zelf: &Py<Self>) -> bool {
+        zelf.info.has_enclave_config()
     }
 
     /// Whether volatile metadata is indicated.
     #[pygetset]
-    fn has_volatile_metadata(&self) -> bool {
-        self.info.has_volatile_metadata()
+    fn has_volatile_metadata(zelf: &Py<Self>) -> bool {
+        zelf.info.has_volatile_metadata()
     }
 
     /// Whether guarded exception-continuation metadata is indicated.
     #[pygetset]
-    fn has_guard_eh_continuations(&self) -> bool {
-        self.info.has_guard_eh_continuations()
+    fn has_guard_eh_continuations(zelf: &Py<Self>) -> bool {
+        zelf.info.has_guard_eh_continuations()
     }
 }
 
@@ -932,26 +932,26 @@ pub struct PeLoadConfigCodeIntegrityInfo {
 impl PeLoadConfigCodeIntegrityInfo {
     /// Raw CodeIntegrity flags.
     #[pygetset]
-    fn flags(&self) -> u16 {
-        self.info.flags
+    fn flags(zelf: &Py<Self>) -> u16 {
+        zelf.info.flags
     }
 
     /// CodeIntegrity catalog identifier.
     #[pygetset]
-    fn catalog(&self) -> u16 {
-        self.info.catalog
+    fn catalog(zelf: &Py<Self>) -> u16 {
+        zelf.info.catalog
     }
 
     /// Declared offset associated with the code-integrity catalog.
     #[pygetset]
-    fn catalog_offset(&self) -> u32 {
-        self.info.catalog_offset
+    fn catalog_offset(zelf: &Py<Self>) -> u32 {
+        zelf.info.catalog_offset
     }
 
     /// Raw reserved CodeIntegrity field; retained for inspection.
     #[pygetset]
-    fn reserved(&self) -> u32 {
-        self.info.reserved
+    fn reserved(zelf: &Py<Self>) -> u32 {
+        zelf.info.reserved
     }
 }
 
@@ -966,20 +966,20 @@ pub struct PeDotNetDirectoryInfo {
 impl PeDotNetDirectoryInfo {
     /// Whether this metadata structure was detected.
     #[pygetset]
-    fn present(&self) -> bool {
-        self.info.present
+    fn present(zelf: &Py<Self>) -> bool {
+        zelf.info.present
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.info.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.info.rva
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.info.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.info.size
     }
 }
 
@@ -994,20 +994,20 @@ pub struct PeDirectoryInfo {
 impl PeDirectoryInfo {
     /// Whether this metadata structure was detected.
     #[pygetset]
-    fn present(&self) -> bool {
-        self.info.present
+    fn present(zelf: &Py<Self>) -> bool {
+        zelf.info.present
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.info.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.info.rva
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.info.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.info.size
     }
 }
 
@@ -1022,26 +1022,26 @@ pub struct PeTlsDirectoryInfo {
 impl PeTlsDirectoryInfo {
     /// Whether this metadata structure was detected.
     #[pygetset]
-    fn present(&self) -> bool {
-        self.info.present
+    fn present(zelf: &Py<Self>) -> bool {
+        zelf.info.present
     }
 
     /// Image-relative virtual address of this item.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.info.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.info.rva
     }
 
     /// Extent in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.info.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.info.size
     }
 
     /// TLS callback virtual addresses recovered from the image.
     #[pygetset]
-    fn callbacks(&self, vm: &VirtualMachine) -> PyListOf<PyRef<rustpython_vm::builtins::PyInt>> {
-        let callbacks = self.info
+    fn callbacks(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<rustpython_vm::builtins::PyInt>> {
+        let callbacks = zelf.info
             .callbacks
             .iter()
             .map(|callback| vm.ctx.new_int(*callback))
@@ -1062,14 +1062,14 @@ pub struct PePackerHint {
 impl PePackerHint {
     /// Heuristic packer or toolchain label.
     #[pygetset]
-    fn name(&self) -> String {
-        self.hint.name.clone()
+    fn name(zelf: &Py<Self>) -> String {
+        zelf.hint.name.clone()
     }
 
     /// Evidence used to produce the heuristic label.
     #[pygetset]
-    fn reason(&self) -> String {
-        self.hint.reason.clone()
+    fn reason(zelf: &Py<Self>) -> String {
+        zelf.hint.reason.clone()
     }
 }
 
@@ -1087,7 +1087,11 @@ impl PeMetadataSummary {
 #[pyclass]
 impl PeMetadataSummary {
     /// Certificate-table presence and file-layout extent.
-    #[pygetset]
+    #[pygetset(name = "security")]
+    pub(crate) fn py_security(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeSecurityDirectoryInfo> {
+        zelf.security(vm)
+    }
+
     pub(crate) fn security(&self, vm: &VirtualMachine) -> PyRef<PeSecurityDirectoryInfo> {
         PeSecurityDirectoryInfo {
             info: self.summary.security.clone(),
@@ -1097,15 +1101,19 @@ impl PeMetadataSummary {
 
     /// Rich-header detection and fingerprint.
     #[pygetset]
-    fn rich_header(&self, vm: &VirtualMachine) -> PyRef<PeRichHeaderInfo> {
+    fn rich_header(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeRichHeaderInfo> {
         PeRichHeaderInfo {
-            info: self.summary.rich_header.clone(),
+            info: zelf.summary.rich_header.clone(),
         }
         .into_ref(&vm.ctx)
     }
 
     /// Parsed load-configuration and mitigation fields.
-    #[pygetset]
+    #[pygetset(name = "load_config")]
+    pub(crate) fn py_load_config(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeLoadConfigInfo> {
+        zelf.load_config(vm)
+    }
+
     pub(crate) fn load_config(&self, vm: &VirtualMachine) -> PyRef<PeLoadConfigInfo> {
         PeLoadConfigInfo {
             info: self.summary.load_config.clone(),
@@ -1115,39 +1123,43 @@ impl PeMetadataSummary {
 
     /// Base-relocation directory presence and extent.
     #[pygetset]
-    fn base_relocations(&self, vm: &VirtualMachine) -> PyRef<PeDirectoryInfo> {
+    fn base_relocations(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeDirectoryInfo> {
         PeDirectoryInfo {
-            info: self.summary.base_relocations.clone(),
+            info: zelf.summary.base_relocations.clone(),
         }
         .into_ref(&vm.ctx)
     }
 
     /// TLS directory presence and callback addresses.
     #[pygetset]
-    fn tls(&self, vm: &VirtualMachine) -> PyRef<PeTlsDirectoryInfo> {
+    fn tls(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeTlsDirectoryInfo> {
         PeTlsDirectoryInfo {
-            info: self.summary.tls.clone(),
+            info: zelf.summary.tls.clone(),
         }
         .into_ref(&vm.ctx)
     }
 
     /// Delay-import directory presence and extent.
     #[pygetset]
-    fn delay_imports(&self, vm: &VirtualMachine) -> PyRef<PeDirectoryInfo> {
+    fn delay_imports(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeDirectoryInfo> {
         PeDirectoryInfo {
-            info: self.summary.delay_imports.clone(),
+            info: zelf.summary.delay_imports.clone(),
         }
         .into_ref(&vm.ctx)
     }
 
     /// Bound-import directory presence and extent.
     #[pygetset]
-    fn bound_imports(&self, vm: &VirtualMachine) -> PyRef<PeDirectoryInfo> {
-        PeDirectoryInfo { info: self.summary.bound_imports.clone() }.into_ref(&vm.ctx)
+    fn bound_imports(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeDirectoryInfo> {
+        PeDirectoryInfo { info: zelf.summary.bound_imports.clone() }.into_ref(&vm.ctx)
     }
 
     /// CLR directory presence and extent.
-    #[pygetset]
+    #[pygetset(name = "dotnet")]
+    pub(crate) fn py_dotnet(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PeDotNetDirectoryInfo> {
+        zelf.dotnet(vm)
+    }
+
     pub(crate) fn dotnet(&self, vm: &VirtualMachine) -> PyRef<PeDotNetDirectoryInfo> {
         PeDotNetDirectoryInfo {
             info: self.summary.dotnet.clone(),
@@ -1157,8 +1169,8 @@ impl PeMetadataSummary {
 
     /// Heuristic packer labels with supporting reasons.
     #[pygetset]
-    fn packer_hints(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PePackerHint>> {
-        let hints = self.summary
+    fn packer_hints(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PePackerHint>> {
+        let hints = zelf.summary
             .packer_hints
             .iter()
             .cloned()
@@ -1170,8 +1182,8 @@ impl PeMetadataSummary {
 
     /// Typed structural and metadata anomalies found in the image.
     #[pygetset]
-    fn anomalies(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeImageAnomaly>> {
-        image_anomalies_to_py(&self.summary.anomalies, vm)
+    fn anomalies(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeImageAnomaly>> {
+        image_anomalies_to_py(&zelf.summary.anomalies, vm)
     }
 }
 

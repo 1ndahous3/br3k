@@ -50,7 +50,7 @@ Extent in bytes.
 
 ### OverlayRange
 
-[Source](../../../lib/src/vm/py_pe/image_resources.rs#L40)
+[Source](../../../lib/src/vm/py_pe/image_resources.rs#L32)
 
 Trailing file-layout range beyond the image's section-backed content.
 

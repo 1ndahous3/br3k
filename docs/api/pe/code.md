@@ -57,16 +57,6 @@ Read-only property.
 
 RVA of the instruction or code pattern containing the reference.
 
-#### kind
-
-```python
-kind: br3k.pe.code.ReferenceKind
-```
-
-Read-only property.
-
-Architecture-specific kind of recognized API-reference pattern.
-
 #### target_address
 
 ```python
@@ -127,6 +117,16 @@ Read-only property.
 
 Resolved export ordinal.
 
+#### kind
+
+```python
+kind: br3k.pe.code.ReferenceKind
+```
+
+Read-only property.
+
+Architecture-specific kind of recognized API-reference pattern.
+
 #### uses_iat
 
 ```python
@@ -162,7 +162,7 @@ Recognized instruction-pattern family for an API reference. Recognition depends 
 
 ### Trace
 
-[Source](../../../lib/src/vm/py_pe/code_refs.rs#L154)
+[Source](../../../lib/src/vm/py_pe/code_refs.rs#L126)
 
 API references and work counters from a bounded static code trace. Not a runtime execution trace.
 

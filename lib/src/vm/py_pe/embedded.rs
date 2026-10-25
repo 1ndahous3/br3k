@@ -13,33 +13,33 @@ pub struct PeEmbeddedImage {
 impl PeEmbeddedImage {
     /// Start offset in the parent image's stored byte buffer, not an independent process address.
     #[pygetset]
-    fn offset(&self) -> usize { self.image.offset }
+    fn offset(zelf: &Py<Self>) -> usize { zelf.image.offset }
 
     /// Inferred file-layout extent in bytes.
     #[pygetset]
-    fn file_size(&self) -> usize { self.image.file_size }
+    fn file_size(zelf: &Py<Self>) -> usize { zelf.image.file_size }
 
     /// SizeOfImage of the embedded candidate, in bytes.
     #[pygetset]
-    fn mapped_size(&self) -> u32 { self.image.mapped_size }
+    fn mapped_size(zelf: &Py<Self>) -> u32 { zelf.image.mapped_size }
 
     /// COFF machine value of the embedded candidate.
     #[pygetset]
-    fn machine(&self) -> u16 { self.image.machine }
+    fn machine(zelf: &Py<Self>) -> u16 { zelf.image.machine }
 
     /// Inferred file or mapped layout, or Ambiguous when both interpretations remain plausible.
     #[pygetset]
-    fn layout(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::embedded::EmbeddedImageLayout>> {
-        PyEnumValue::new(self.image.layout, vm)
+    fn layout(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::embedded::EmbeddedImageLayout>> {
+        PyEnumValue::new(zelf.image.layout, vm)
     }
 
     /// Whether the candidate lies within a resource payload.
     #[pygetset]
-    fn resource_backed(&self) -> bool { self.image.resource_backed }
+    fn resource_backed(zelf: &Py<Self>) -> bool { zelf.image.resource_backed }
 
     /// Whether the candidate is treated as embedded file data and excluded from parent-image code analysis.
     #[pygetset]
-    fn excluded_from_parent(&self) -> bool { self.image.excluded_from_parent() }
+    fn excluded_from_parent(zelf: &Py<Self>) -> bool { zelf.image.excluded_from_parent() }
 }
 
 pub(crate) fn embedded_images_to_py(images: Vec<EmbeddedImage>, vm: &VirtualMachine) -> PyListOf<PyRef<PeEmbeddedImage>> {

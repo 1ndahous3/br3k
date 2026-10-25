@@ -20,49 +20,49 @@ pub struct PeBoundImportCheck {
 impl PeBoundImportCheck {
     /// Image-relative location of the bound record being described or checked.
     #[pygetset]
-    fn rva(&self) -> u32 { self.check.rva }
+    fn rva(zelf: &Py<Self>) -> u32 { zelf.check.rva }
 
     /// DLL name of the bound dependency.
     #[pygetset]
-    fn dll_name(&self) -> String { self.check.dll_name.clone() }
+    fn dll_name(zelf: &Py<Self>) -> String { zelf.check.dll_name.clone() }
 
     /// Typed distinction between a bound import and a bound forwarder.
     #[pygetset]
-    fn kind(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::bound_imports::BoundImportKind>> {
-        PyEnumValue::new(self.check.kind, vm)
+    fn kind(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::bound_imports::BoundImportKind>> {
+        PyEnumValue::new(zelf.check.kind, vm)
     }
 
     /// Typed result of the dependency/timestamp check.
     #[pygetset]
-    fn status(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::bound_imports::BoundImportStatus>> {
-        PyEnumValue::new(self.check.status, vm)
+    fn status(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::pe::bound_imports::BoundImportStatus>> {
+        PyEnumValue::new(zelf.check.status, vm)
     }
 
     /// Timestamp declared by the bound record, when usable.
     #[pygetset]
-    fn expected_timestamp(&self) -> Option<u32> { self.check.expected_timestamp }
+    fn expected_timestamp(zelf: &Py<Self>) -> Option<u32> { zelf.check.expected_timestamp }
 
     /// Timestamp from the matched dependency image, when available.
     #[pygetset]
-    fn dependency_timestamp(&self) -> Option<u32> { self.check.dependency_timestamp }
+    fn dependency_timestamp(zelf: &Py<Self>) -> Option<u32> { zelf.check.dependency_timestamp }
 
     /// Export-table source used for the dependency check, when available.
     #[pygetset]
-    fn dependency_source(&self, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
-        export_table_source_to_py(self.check.dependency_source, vm)
+    fn dependency_source(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<Option<PyEnumValue<crate::pe::export_map::ExportTableSource>>> {
+        export_table_source_to_py(zelf.check.dependency_source, vm)
     }
 
     /// Raw reserved forwarder field, when applicable.
     #[pygetset]
-    fn reserved(&self) -> Option<u16> { self.check.reserved }
+    fn reserved(zelf: &Py<Self>) -> Option<u16> { zelf.check.reserved }
 
     /// Forwarder dependencies or their validation results.
     #[pygetset]
-    fn forwarders(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeBoundImportCheck>> { bound_import_checks_to_py(&self.check.forwarders, vm) }
+    fn forwarders(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeBoundImportCheck>> { bound_import_checks_to_py(&zelf.check.forwarders, vm) }
 
     /// Return whether this record and its forwarders match the known dependencies.
     #[pymethod]
-    fn matches_dependencies(&self) -> bool { self.check.matches_dependencies() }
+    fn matches_dependencies(zelf: &Py<Self>) -> bool { zelf.check.matches_dependencies() }
 }
 
 pub(crate) fn bound_import_checks_to_py(checks: &[BoundImportCheck], vm: &VirtualMachine) -> PyListOf<PyRef<PeBoundImportCheck>> {
@@ -80,32 +80,32 @@ pub struct PeBoundForwarderRef {
 impl PeBoundForwarderRef {
     /// Image-relative location of the bound record being described or checked.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.forwarder.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.forwarder.rva
     }
 
     /// DLL-name offset relative to the bound-import directory base.
     #[pygetset]
-    fn module_name_offset(&self) -> u16 {
-        self.forwarder.module_name_offset
+    fn module_name_offset(zelf: &Py<Self>) -> u16 {
+        zelf.forwarder.module_name_offset
     }
 
     /// DLL name of the bound dependency.
     #[pygetset]
-    fn dll_name(&self) -> String {
-        self.forwarder.dll_name.clone()
+    fn dll_name(zelf: &Py<Self>) -> String {
+        zelf.forwarder.dll_name.clone()
     }
 
     /// Timestamp stored when the dependency was bound.
     #[pygetset]
-    fn time_date_stamp(&self) -> u32 {
-        self.forwarder.time_date_stamp
+    fn time_date_stamp(zelf: &Py<Self>) -> u32 {
+        zelf.forwarder.time_date_stamp
     }
 
     /// Raw reserved forwarder field, when applicable.
     #[pygetset]
-    fn reserved(&self) -> u16 {
-        self.forwarder.reserved
+    fn reserved(zelf: &Py<Self>) -> u16 {
+        zelf.forwarder.reserved
     }
 }
 
@@ -120,32 +120,32 @@ pub struct PeBoundImportDescriptor {
 impl PeBoundImportDescriptor {
     /// RVA of the bound-import descriptor.
     #[pygetset]
-    fn descriptor_rva(&self) -> u32 {
-        self.descriptor.descriptor_rva
+    fn descriptor_rva(zelf: &Py<Self>) -> u32 {
+        zelf.descriptor.descriptor_rva
     }
 
     /// DLL-name offset relative to the bound-import directory base.
     #[pygetset]
-    fn module_name_offset(&self) -> u16 {
-        self.descriptor.module_name_offset
+    fn module_name_offset(zelf: &Py<Self>) -> u16 {
+        zelf.descriptor.module_name_offset
     }
 
     /// DLL name of the bound dependency.
     #[pygetset]
-    fn dll_name(&self) -> String {
-        self.descriptor.dll_name.clone()
+    fn dll_name(zelf: &Py<Self>) -> String {
+        zelf.descriptor.dll_name.clone()
     }
 
     /// Timestamp stored when the dependency was bound.
     #[pygetset]
-    fn time_date_stamp(&self) -> u32 {
-        self.descriptor.time_date_stamp
+    fn time_date_stamp(zelf: &Py<Self>) -> u32 {
+        zelf.descriptor.time_date_stamp
     }
 
     /// Forwarder dependencies or their validation results.
     #[pygetset]
-    fn forwarders(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeBoundForwarderRef>> {
-        let forwarders = self.descriptor.forwarders.iter().cloned()
+    fn forwarders(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeBoundForwarderRef>> {
+        let forwarders = zelf.descriptor.forwarders.iter().cloned()
             .map(|forwarder| PeBoundForwarderRef { forwarder }.into_ref(&vm.ctx))
             .collect();
         PyListOf::new(forwarders, vm)

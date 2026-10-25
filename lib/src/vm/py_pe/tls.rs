@@ -13,35 +13,35 @@ pub struct PeTlsCallback {
 impl PeTlsCallback {
     /// Zero-based position in the TLS callback array.
     #[pygetset]
-    fn index(&self) -> usize {
-        self.callback.index
+    fn index(zelf: &Py<Self>) -> usize {
+        zelf.callback.index
     }
 
     /// Callback virtual address recorded in the array.
     #[pygetset]
-    fn address(&self) -> u64 {
-        self.callback.address
+    fn address(zelf: &Py<Self>) -> u64 {
+        zelf.callback.address
     }
 
     /// Callback RVA when its address can be represented relative to the image base; otherwise None.
     #[pygetset]
-    fn rva(&self) -> Option<u32> {
-        self.callback.rva
+    fn rva(zelf: &Py<Self>) -> Option<u32> {
+        zelf.callback.rva
     }
 
     /// Return a compact human-readable summary.
     #[pymethod]
-    fn summary(&self) -> String {
-        match self.callback.rva {
+    fn summary(zelf: &Py<Self>) -> String {
+        match zelf.callback.rva {
             Some(rva) => format!(
                 "#{index} va=0x{address:x} rva=0x{rva:x}",
-                index = self.callback.index,
-                address = self.callback.address,
+                index = zelf.callback.index,
+                address = zelf.callback.address,
             ),
             None => format!(
                 "#{index} va=0x{address:x}",
-                index = self.callback.index,
-                address = self.callback.address,
+                index = zelf.callback.index,
+                address = zelf.callback.address,
             ),
         }
     }
@@ -58,78 +58,78 @@ pub struct PeTlsDirectory {
 impl PeTlsDirectory {
     /// RVA of the TLS directory.
     #[pygetset]
-    fn rva(&self) -> u32 {
-        self.directory.rva
+    fn rva(zelf: &Py<Self>) -> u32 {
+        zelf.directory.rva
     }
 
     /// TLS data-directory size in bytes.
     #[pygetset]
-    fn size(&self) -> u32 {
-        self.directory.size
+    fn size(zelf: &Py<Self>) -> u32 {
+        zelf.directory.size
     }
 
     /// Virtual address of the start of the TLS initialization template.
     #[pygetset]
-    fn start_raw_data(&self) -> u64 {
-        self.directory.start_raw_data
+    fn start_raw_data(zelf: &Py<Self>) -> u64 {
+        zelf.directory.start_raw_data
     }
 
     /// Exclusive end virtual address of the TLS initialization template.
     #[pygetset]
-    fn end_raw_data(&self) -> u64 {
-        self.directory.end_raw_data
+    fn end_raw_data(zelf: &Py<Self>) -> u64 {
+        zelf.directory.end_raw_data
     }
 
     /// Virtual address of the loader-written TLS index.
     #[pygetset]
-    fn address_of_index(&self) -> u64 {
-        self.directory.address_of_index
+    fn address_of_index(zelf: &Py<Self>) -> u64 {
+        zelf.directory.address_of_index
     }
 
     /// Virtual address of the null-terminated TLS callback array.
     #[pygetset]
-    fn address_of_callbacks(&self) -> u64 {
-        self.directory.address_of_callbacks
+    fn address_of_callbacks(zelf: &Py<Self>) -> u64 {
+        zelf.directory.address_of_callbacks
     }
 
     /// Number of zero-initialized bytes following the TLS template.
     #[pygetset]
-    fn size_of_zero_fill(&self) -> u32 {
-        self.directory.size_of_zero_fill
+    fn size_of_zero_fill(zelf: &Py<Self>) -> u32 {
+        zelf.directory.size_of_zero_fill
     }
 
     /// Raw TLS characteristics, including alignment bits.
     #[pygetset]
-    fn characteristics(&self) -> u32 {
-        self.directory.characteristics
+    fn characteristics(zelf: &Py<Self>) -> u32 {
+        zelf.directory.characteristics
     }
 
     /// Number of parsed callback pointers.
     #[pygetset]
-    fn callback_count(&self) -> usize {
-        self.directory.callbacks.len()
+    fn callback_count(zelf: &Py<Self>) -> usize {
+        zelf.directory.callbacks.len()
     }
 
     /// Whether the parsed callback array is nonempty.
     #[pygetset]
-    fn has_callbacks(&self) -> bool {
-        !self.directory.callbacks.is_empty()
+    fn has_callbacks(zelf: &Py<Self>) -> bool {
+        !zelf.directory.callbacks.is_empty()
     }
 
     /// Parsed callback records in array order.
     #[pygetset]
-    fn callbacks(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeTlsCallback>> {
-        tls_callbacks_to_py(&self.directory.callbacks, vm)
+    fn callbacks(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeTlsCallback>> {
+        tls_callbacks_to_py(&zelf.directory.callbacks, vm)
     }
 
     /// Return a compact human-readable summary.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "rva=0x{:x} size=0x{:x} callbacks={}",
-            self.directory.rva,
-            self.directory.size,
-            self.directory.callbacks.len()
+            zelf.directory.rva,
+            zelf.directory.size,
+            zelf.directory.callbacks.len()
         )
     }
 }
@@ -145,43 +145,43 @@ pub struct PeTlsSanitizeResult {
 impl PeTlsSanitizeResult {
     /// Image bytes after the local TLS edit.
     #[pygetset]
-    fn image(&self, vm: &VirtualMachine) -> PyRef<PyBytes> {
-        vm.ctx.new_bytes(self.result.image.clone())
+    fn image(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<PyBytes> {
+        vm.ctx.new_bytes(zelf.result.image.clone())
     }
 
     /// Whether the input image had a TLS directory.
     #[pygetset]
-    fn directory_present(&self) -> bool {
-        self.result.directory_present
+    fn directory_present(zelf: &Py<Self>) -> bool {
+        zelf.result.directory_present
     }
 
     /// Number of callbacks observed before sanitization.
     #[pygetset]
-    fn callback_count(&self) -> usize {
-        self.result.callback_count
+    fn callback_count(zelf: &Py<Self>) -> usize {
+        zelf.result.callback_count
     }
 
     /// Whether the operation cleared the callback pointer.
     #[pygetset]
-    fn cleared_callbacks(&self) -> bool {
-        self.result.cleared_callbacks
+    fn cleared_callbacks(zelf: &Py<Self>) -> bool {
+        zelf.result.cleared_callbacks
     }
 
     /// Whether the operation cleared the TLS data-directory entry.
     #[pygetset]
-    fn cleared_directory(&self) -> bool {
-        self.result.cleared_directory
+    fn cleared_directory(zelf: &Py<Self>) -> bool {
+        zelf.result.cleared_directory
     }
 
     /// Return a compact human-readable summary.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "tls_present={} callbacks={} cleared_callbacks={} cleared_directory={}",
-            self.result.directory_present,
-            self.result.callback_count,
-            self.result.cleared_callbacks,
-            self.result.cleared_directory
+            zelf.result.directory_present,
+            zelf.result.callback_count,
+            zelf.result.cleared_callbacks,
+            zelf.result.cleared_directory
         )
     }
 }

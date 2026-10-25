@@ -14,13 +14,15 @@ pub use crate::ntdef::{
     CLONG, PCCHAR, PCSHORT, PCLONG, PCSZ, PPVOID, PCVOID, KIRQL, PKIRQL,
     KPRIORITY, PKPRIORITY, RTL_ATOM, PRTL_ATOM, PHYSICAL_ADDRESS,
     PPHYSICAL_ADDRESS, PSTRING, ANSI_STRING, PANSI_STRING,
-    OEM_STRING, POEM_STRING, UTF8_STRING, PUTF8_STRING, PCSTRING,
+    OEM_STRING, POEM_STRING, UTF8_STRING, PUTF8_STRING, PCUTF8_STRING, PCSTRING,
     PCANSI_STRING, PCOEM_STRING, PKSYSTEM_TIME, _KSYSTEM_TIME,
-    LOGICAL, PCLIENT_ID, CLIENT_ID64,
+    LOGICAL, PCLIENT_ID, CLIENT_ID64, PCSID, PBYTE,
     PUNICODE_STRING, PCUNICODE_STRING, PUNICODE_STRING64,
     OBJECT_ATTRIBUTES, POBJECT_ATTRIBUTES, PCOBJECT_ATTRIBUTES
 };
 pub use windows_sys::Wdk::Storage::FileSystem::{FILE_DISPOSITION_DELETE, FILE_DISPOSITION_INFORMATION_EX};
+pub use windows_sys::Win32::UI::WindowsAndMessaging::{HHOOK, MSG};
+pub use windows_sys::Win32::UI::Input::KeyboardAndMouse::HKL;
 pub use windows_sys::Win32::System::SystemServices::{
     TRANSACTION_COMMIT, TRANSACTION_ENLIST, TRANSACTION_PROPAGATE, TRANSACTION_QUERY_INFORMATION,
     TRANSACTION_RIGHT_RESERVED1, TRANSACTION_ROLLBACK, TRANSACTION_SET_INFORMATION,
@@ -369,3 +371,24 @@ pub const CONTEXT_FULL: CONTEXT_FLAGS = windows_sys::Win32::System::Diagnostics:
 
 #[cfg(target_arch = "aarch64")]
 pub const CONTEXT_FULL: CONTEXT_FLAGS = windows_sys::Win32::System::Diagnostics::Debug::CONTEXT_FULL_ARM64;
+
+// windows-sys omits the native alignment: https://github.com/microsoft/win32metadata/issues/1044
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Default)]
+pub struct AlignedContext {
+    pub ctx: CONTEXT,
+}
+
+#[repr(C, align(16))]
+#[derive(Default)]
+pub struct AlignedWow64Context {
+    pub ctx: WOW64_CONTEXT,
+}
+
+impl From<i64> for LARGE_INTEGER {
+    fn from(value: i64) -> Self {
+        let mut result = Self::default();
+        unsafe { *result.QuadPart.as_mut() = value; }
+        result
+    }
+}

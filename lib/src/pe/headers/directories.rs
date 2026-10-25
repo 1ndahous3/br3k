@@ -9,6 +9,7 @@ mod exceptions;
 mod metadata;
 
 #[cfg(test)]
+#[path = "../tests/headers/directories.rs"]
 mod tests;
 
 /// Outcome of salvaging a data-directory entry from surviving header evidence.

@@ -127,8 +127,8 @@ impl Constructor for Pe {
 impl Pe {
     /// Return whether the native parser identifies the image as X64. This is not a general machine-enum query.
     #[pymethod]
-    pub fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
-        let arch = self.pe.get_arch()
+    pub fn is_x64(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<bool> {
+        let arch = zelf.pe.get_arch()
             .map_err(map_to_py_system_error(vm, "Unable to read PE architecture"))?;
 
         Ok(arch == types::Arch::X64)
@@ -136,8 +136,8 @@ impl Pe {
 
     /// Return SizeOfImage from the optional header, in bytes.
     #[pymethod]
-    fn image_size(&self, vm: &VirtualMachine) -> PyResult<u32> {
-        let image_size = match self.pe.get_valid_nt_headers()
+    fn image_size(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u32> {
+        let image_size = match zelf.pe.get_valid_nt_headers()
             .map_err(map_to_py_system_error(vm, "Unable to read PE NT headers"))? {
             NTHeaders::NTHeaders32(h32) => h32.optional_header.size_of_image,
             NTHeaders::NTHeaders64(h64) => h64.optional_header.size_of_image,
@@ -148,8 +148,8 @@ impl Pe {
 
     /// Return AddressOfEntryPoint as an RVA, despite the historical method name.
     #[pymethod]
-    fn ep_address(&self, vm: &VirtualMachine) -> PyResult<u32> {
-        let ep = self.pe.get_entrypoint()
+    fn ep_address(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u32> {
+        let ep = zelf.pe.get_entrypoint()
             .map_err(map_to_py_system_error(vm, "Unable to read PE entry point"))?;
 
         Ok(ep.0)
@@ -157,8 +157,8 @@ impl Pe {
 
     /// Recreate mapped-layout bytes from the wrapped image. Does not resolve imports or execute the image.
     #[pymethod]
-    fn build_mem_image(&self, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
-        let data = self.pe.recreate_image(PEType::Memory)
+    fn build_mem_image(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
+        let data = zelf.pe.recreate_image(PEType::Memory)
             .map_err(map_to_py_system_error(vm, "Unable to build memory image"))?;
         let bytes = vm.ctx.new_bytes(data.to_vec());
 

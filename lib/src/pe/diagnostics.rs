@@ -11,6 +11,7 @@ pub(crate) use metadata::load_config_info;
 pub use metadata::inspect_image;
 
 #[cfg(test)]
+#[path = "tests/diagnostics.rs"]
 mod tests;
 
 pub use anomalies::{

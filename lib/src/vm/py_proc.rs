@@ -44,8 +44,8 @@ impl fmt::Debug for CProcessBasicInformation {
 impl CProcessBasicInformation {
     /// Target virtual address of the process environment block.
     #[pygetset(name = "PebBaseAddress")]
-    fn peb_base_address(&self) -> usize {
-        self.data.PebBaseAddress as _
+    fn peb_base_address(zelf: &Py<Self>) -> usize {
+        zelf.data.PebBaseAddress as _
     }
 }
 
@@ -66,8 +66,8 @@ impl fmt::Debug for CPeb {
 impl CPeb {
     /// Target virtual address of the main executable image.
     #[pygetset(name = "ImageBaseAddress")]
-    fn image_base_address(&self) -> usize {
-        self.data.ImageBaseAddress as _
+    fn image_base_address(zelf: &Py<Self>) -> usize {
+        zelf.data.ImageBaseAddress as _
     }
 }
 
@@ -78,8 +78,14 @@ impl CPeb {
 #[pyclass(module = false, name = "PROCESS_MODULE")]
 #[derive(Debug, Clone, PyPayload)]
 pub struct CProcessModule {
+    /// Base virtual address of the loaded module.
+    #[pymember(name = "DllBase")]
     pub dll_base: u64,
+    /// Loader-reported entry-point virtual address; may be zero.
+    #[pymember(name = "EntryPoint")]
     pub entry_point: u64,
+    /// Loader-reported mapped image size in bytes.
+    #[pymember(name = "SizeOfImage")]
     pub size_of_image: u32,
     pub full_dll_name: String,
     pub base_dll_name: String,
@@ -87,34 +93,16 @@ pub struct CProcessModule {
 
 #[pyclass]
 impl CProcessModule {
-    /// Base virtual address of the loaded module.
-    #[pygetset(name = "DllBase")]
-    fn dll_base(&self) -> u64 {
-        self.dll_base
-    }
-
-    /// Loader-reported entry-point virtual address; may be zero.
-    #[pygetset(name = "EntryPoint")]
-    fn entry_point(&self) -> u64 {
-        self.entry_point
-    }
-
-    /// Loader-reported mapped image size in bytes.
-    #[pygetset(name = "SizeOfImage")]
-    fn size_of_image(&self) -> u32 {
-        self.size_of_image
-    }
-
     /// Full module path reported by the loader.
     #[pygetset(name = "FullDllName")]
-    fn full_dll_name(&self) -> String {
-        self.full_dll_name.clone()
+    fn full_dll_name(zelf: &Py<Self>) -> String {
+        zelf.full_dll_name.clone()
     }
 
     /// Module basename reported by the loader.
     #[pygetset(name = "BaseDllName")]
-    fn base_dll_name(&self) -> String {
-        self.base_dll_name.clone()
+    fn base_dll_name(zelf: &Py<Self>) -> String {
+        zelf.base_dll_name.clone()
     }
 }
 
@@ -133,98 +121,98 @@ pub struct CProcessMemoryRegion {
 impl CProcessMemoryRegion {
     /// First virtual address in the region.
     #[pygetset(name = "BaseAddress")]
-    fn base_address(&self) -> u64 {
-        self.data.base_address
+    fn base_address(zelf: &Py<Self>) -> u64 {
+        zelf.data.base_address
     }
 
     /// Exclusive end virtual address of the region.
     #[pygetset(name = "EndAddress")]
-    fn end_address(&self) -> u64 {
-        self.data.end_address()
+    fn end_address(zelf: &Py<Self>) -> u64 {
+        zelf.data.end_address()
     }
 
     /// Base address of the allocation containing this region.
     #[pygetset(name = "AllocationBase")]
-    fn allocation_base(&self) -> u64 {
-        self.data.allocation_base
+    fn allocation_base(zelf: &Py<Self>) -> u64 {
+        zelf.data.allocation_base
     }
 
     /// Original allocation protection flags.
     #[pygetset(name = "AllocationProtect")]
-    fn allocation_protect(&self) -> u32 {
-        self.data.allocation_protect
+    fn allocation_protect(zelf: &Py<Self>) -> u32 {
+        zelf.data.allocation_protect
     }
 
     /// Region length in bytes.
     #[pygetset(name = "RegionSize")]
-    fn region_size(&self) -> usize {
-        self.data.region_size
+    fn region_size(zelf: &Py<Self>) -> usize {
+        zelf.data.region_size
     }
 
     /// Memory state, such as `br3k.mem.MEM_COMMIT` or `MEM_RESERVE`.
     #[pygetset(name = "State")]
-    fn state(&self) -> u32 {
-        self.data.state
+    fn state(zelf: &Py<Self>) -> u32 {
+        zelf.data.state
     }
 
     /// Current page protection and modifier flags.
     #[pygetset(name = "Protect")]
-    fn protect(&self) -> u32 {
-        self.data.protect
+    fn protect(zelf: &Py<Self>) -> u32 {
+        zelf.data.protect
     }
 
     /// Memory type: image, mapped, private, or zero for unallocated memory.
     #[pygetset(name = "Type")]
-    fn memory_type(&self) -> u32 {
-        self.data.memory_type
+    fn memory_type(zelf: &Py<Self>) -> u32 {
+        zelf.data.memory_type
     }
 
     /// Mapped-file path when available; otherwise `None`.
     #[pygetset(name = "MappedPath")]
-    fn mapped_path(&self) -> Option<String> {
-        self.data.mapped_path.clone()
+    fn mapped_path(zelf: &Py<Self>) -> Option<String> {
+        zelf.data.mapped_path.clone()
     }
 
     /// Whether the region state is MEM_COMMIT.
     #[pygetset(name = "IsCommitted")]
-    fn is_committed(&self) -> bool {
-        self.data.is_committed()
+    fn is_committed(zelf: &Py<Self>) -> bool {
+        zelf.data.is_committed()
     }
 
     /// Whether the base protection is executable; does not test commitment or GUARD.
     #[pygetset(name = "IsExecutable")]
-    fn is_executable(&self) -> bool {
-        self.data.is_executable()
+    fn is_executable(zelf: &Py<Self>) -> bool {
+        zelf.data.is_executable()
     }
 
     /// Whether the base protection is writable-executable or executable copy-on-write.
     #[pygetset(name = "IsWritableExecutable")]
-    fn is_writable_executable(&self) -> bool {
-        self.data.is_writable_executable()
+    fn is_writable_executable(zelf: &Py<Self>) -> bool {
+        zelf.data.is_writable_executable()
     }
 
     /// Whether PAGE_GUARD is present in the current protection.
     #[pygetset(name = "IsGuarded")]
-    fn is_guarded(&self) -> bool {
-        self.data.is_guarded()
+    fn is_guarded(zelf: &Py<Self>) -> bool {
+        zelf.data.is_guarded()
     }
 
     /// Whether the region is MEM_IMAGE.
     #[pygetset(name = "IsImage")]
-    fn is_image(&self) -> bool {
-        self.data.is_image()
+    fn is_image(zelf: &Py<Self>) -> bool {
+        zelf.data.is_image()
     }
 
     /// Whether the region is MEM_MAPPED.
     #[pygetset(name = "IsMapped")]
-    fn is_mapped(&self) -> bool {
-        self.data.is_mapped()
+    fn is_mapped(zelf: &Py<Self>) -> bool {
+        zelf.data.is_mapped()
     }
 
     /// Whether the region is MEM_PRIVATE.
     #[pygetset(name = "IsPrivate")]
-    fn is_private(&self) -> bool {
-        self.data.is_private()
+    fn is_private(zelf: &Py<Self>) -> bool {
+        zelf.data.is_private()
     }
 }
 
@@ -243,89 +231,89 @@ pub struct CProcessWorkingSetRegion {
 impl CProcessWorkingSetRegion {
     /// Memory-region snapshot used for this page query.
     #[pygetset(name = "Region")]
-    fn region(&self, vm: &VirtualMachine) -> PyRef<CProcessMemoryRegion> {
-        CProcessMemoryRegion { data: self.data.region.clone() }.into_ref(&vm.ctx)
+    fn region(zelf: &Py<Self>, vm: &VirtualMachine) -> PyRef<CProcessMemoryRegion> {
+        CProcessMemoryRegion { data: zelf.data.region.clone() }.into_ref(&vm.ctx)
     }
 
     /// First virtual address of the queried region.
     #[pygetset(name = "BaseAddress")]
-    fn base_address(&self) -> u64 {
-        self.data.region.base_address
+    fn base_address(zelf: &Py<Self>) -> u64 {
+        zelf.data.region.base_address
     }
 
     /// Exclusive end virtual address of the queried region.
     #[pygetset(name = "EndAddress")]
-    fn end_address(&self) -> u64 {
-        self.data.region.end_address()
+    fn end_address(zelf: &Py<Self>) -> u64 {
+        zelf.data.region.end_address()
     }
 
     /// Queried region length in bytes.
     #[pygetset(name = "RegionSize")]
-    fn region_size(&self) -> usize {
-        self.data.region.region_size
+    fn region_size(zelf: &Py<Self>) -> usize {
+        zelf.data.region.region_size
     }
 
     /// Page size in bytes used for the query.
     #[pygetset(name = "PageSize")]
-    fn page_size(&self) -> usize {
-        self.data.page_size
+    fn page_size(zelf: &Py<Self>) -> usize {
+        zelf.data.page_size
     }
 
     /// Total number of queried pages.
     #[pygetset(name = "PageCount")]
-    fn page_count(&self) -> usize {
-        self.data.page_count
+    fn page_count(zelf: &Py<Self>) -> usize {
+        zelf.data.page_count
     }
 
     /// Pages with valid working-set entries.
     #[pygetset(name = "ValidPageCount")]
-    fn valid_page_count(&self) -> usize {
-        self.data.valid_page_count
+    fn valid_page_count(zelf: &Py<Self>) -> usize {
+        zelf.data.valid_page_count
     }
 
     /// Valid pages marked shared.
     #[pygetset(name = "SharedPageCount")]
-    fn shared_page_count(&self) -> usize {
-        self.data.shared_page_count
+    fn shared_page_count(zelf: &Py<Self>) -> usize {
+        zelf.data.shared_page_count
     }
 
     /// Valid pages not marked shared.
     #[pygetset(name = "PrivatePageCount")]
-    fn private_page_count(&self) -> usize {
-        self.data.private_page_count
+    fn private_page_count(zelf: &Py<Self>) -> usize {
+        zelf.data.private_page_count
     }
 
     /// Pages without a valid working-set entry.
     #[pygetset(name = "InvalidPageCount")]
-    fn invalid_page_count(&self) -> usize {
-        self.data.invalid_page_count
+    fn invalid_page_count(zelf: &Py<Self>) -> usize {
+        zelf.data.invalid_page_count
     }
 
     /// Pages flagged bad by the working-set query.
     #[pygetset(name = "BadPageCount")]
-    fn bad_page_count(&self) -> usize {
-        self.data.bad_page_count
+    fn bad_page_count(zelf: &Py<Self>) -> usize {
+        zelf.data.bad_page_count
     }
 
     /// Whether at least one valid page is private.
     #[pygetset(name = "HasPrivatePages")]
-    fn has_private_pages(&self) -> bool {
-        self.data.has_private_pages()
+    fn has_private_pages(zelf: &Py<Self>) -> bool {
+        zelf.data.has_private_pages()
     }
 
     /// Format region bounds and page counters for display.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "base={} size={} pages={} valid={} shared={} private={} invalid={} bad={}",
-            format_args!("0x{:x}", self.data.region.base_address),
-            format_args!("0x{:x}", self.data.region.region_size),
-            self.data.page_count,
-            self.data.valid_page_count,
-            self.data.shared_page_count,
-            self.data.private_page_count,
-            self.data.invalid_page_count,
-            self.data.bad_page_count,
+            format_args!("0x{:x}", zelf.data.region.base_address),
+            format_args!("0x{:x}", zelf.data.region.region_size),
+            zelf.data.page_count,
+            zelf.data.valid_page_count,
+            zelf.data.shared_page_count,
+            zelf.data.private_page_count,
+            zelf.data.invalid_page_count,
+            zelf.data.bad_page_count,
         )
     }
 }
@@ -344,78 +332,78 @@ pub struct CProcessThreadInfo {
 impl CProcessThreadInfo {
     /// Owning process ID.
     #[pygetset(name = "ProcessId")]
-    fn process_id(&self) -> u32 {
-        self.data.process_id
+    fn process_id(zelf: &Py<Self>) -> u32 {
+        zelf.data.process_id
     }
 
     /// Thread ID.
     #[pygetset(name = "ThreadId")]
-    fn thread_id(&self) -> u32 {
-        self.data.thread_id
+    fn thread_id(zelf: &Py<Self>) -> u32 {
+        zelf.data.thread_id
     }
 
     /// Win32 start address when available, otherwise the system-reported start address.
     #[pygetset(name = "StartAddress")]
-    fn start_address(&self) -> u64 {
-        self.data.start_address()
+    fn start_address(zelf: &Py<Self>) -> u64 {
+        zelf.data.start_address()
     }
 
     /// Start address from the system thread snapshot.
     #[pygetset(name = "SystemStartAddress")]
-    fn system_start_address(&self) -> u64 {
-        self.data.system_start_address
+    fn system_start_address(zelf: &Py<Self>) -> u64 {
+        zelf.data.system_start_address
     }
 
     /// Win32 thread start address, or `None` if the query failed.
     #[pygetset(name = "Win32StartAddress")]
-    fn win32_start_address(&self) -> Option<u64> {
-        self.data.win32_start_address
+    fn win32_start_address(zelf: &Py<Self>) -> Option<u64> {
+        zelf.data.win32_start_address
     }
 
     /// Thread environment block address, or `None` when unavailable.
     #[pygetset(name = "TebAddress")]
-    fn teb_address(&self) -> Option<u64> {
-        self.data.teb_address
+    fn teb_address(zelf: &Py<Self>) -> Option<u64> {
+        zelf.data.teb_address
     }
 
     /// Upper stack boundary, or `None` when unavailable.
     #[pygetset(name = "StackBase")]
-    fn stack_base(&self) -> Option<u64> {
-        self.data.stack_base
+    fn stack_base(zelf: &Py<Self>) -> Option<u64> {
+        zelf.data.stack_base
     }
 
     /// Lower committed stack boundary, or `None` when unavailable.
     #[pygetset(name = "StackLimit")]
-    fn stack_limit(&self) -> Option<u64> {
-        self.data.stack_limit
+    fn stack_limit(zelf: &Py<Self>) -> Option<u64> {
+        zelf.data.stack_limit
     }
 
     /// Whether both stack boundaries are available.
     #[pygetset(name = "HasStackBounds")]
-    fn has_stack_bounds(&self) -> bool {
-        self.data.has_stack_bounds()
+    fn has_stack_bounds(zelf: &Py<Self>) -> bool {
+        zelf.data.has_stack_bounds()
     }
 
     /// Format the TID, start addresses, TEB, and available stack bounds.
     #[pymethod]
-    fn summary(&self) -> String {
+    fn summary(zelf: &Py<Self>) -> String {
         format!(
             "pid={} tid={} start=0x{:x} system_start=0x{:x} win32_start={} teb={} stack={}",
-            self.data.process_id,
-            self.data.thread_id,
-            self.data.start_address(),
-            self.data.system_start_address,
-            self.data
+            zelf.data.process_id,
+            zelf.data.thread_id,
+            zelf.data.start_address(),
+            zelf.data.system_start_address,
+            zelf.data
                 .win32_start_address
                 .map(|address| format!("0x{address:x}"))
                 .unwrap_or_else(|| "none".to_string()),
-            self.data
+            zelf.data
                 .teb_address
                 .map(|address| format!("0x{address:x}"))
                 .unwrap_or_else(|| "none".to_string()),
-            self.data
+            zelf.data
                 .stack_limit
-                .zip(self.data.stack_base)
+                .zip(zelf.data.stack_base)
                 .map(|(limit, base)| format!("0x{limit:x}-0x{base:x}"))
                 .unwrap_or_else(|| "none".to_string()),
         )
@@ -442,21 +430,21 @@ pub struct CProcessMemoryMap {
 impl CProcessMemoryMap {
     /// All regions in this snapshot, including uncommitted ranges.
     #[pygetset]
-    fn regions(&self, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
-        memory_regions_to_py(&self.regions, vm)
+    fn regions(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
+        memory_regions_to_py(&zelf.regions, vm)
     }
 
     /// Regions whose state is MEM_COMMIT.
     #[pygetset]
-    fn committed(&self, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
-        memory_regions_to_py(&filtered_regions(&self.regions, |region| region.is_committed()), vm)
+    fn committed(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
+        memory_regions_to_py(&filtered_regions(&zelf.regions, |region| region.is_committed()), vm)
     }
 
     /// Committed regions with executable protection, excluding guard pages.
     #[pygetset]
-    fn executable(&self, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
+    fn executable(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
         memory_regions_to_py(
-            &filtered_regions(&self.regions, |region| {
+            &filtered_regions(&zelf.regions, |region| {
                 region.is_committed() && region.is_executable() && !region.is_guarded()
             }),
             vm,
@@ -465,10 +453,10 @@ impl CProcessMemoryMap {
 
     /// Deduplicated allocation bases in snapshot order, using region base when allocation base is zero.
     #[pygetset]
-    fn allocation_bases(&self, vm: &VirtualMachine) -> PyListOf<u64> {
+    fn allocation_bases(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<u64> {
         let mut bases = Vec::<u64>::new();
 
-        for region in &self.regions {
+        for region in &zelf.regions {
             let base = memory_region_allocation_key(region);
             if !bases.contains(&base) {
                 bases.push(base);
@@ -480,9 +468,9 @@ impl CProcessMemoryMap {
 
     /// Return snapshot regions grouped under `allocation_base`.
     #[pymethod]
-    fn regions_for_allocation(&self, args: MemoryMapAllocationArgs, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
+    fn regions_for_allocation(zelf: &Py<Self>, args: MemoryMapAllocationArgs, vm: &VirtualMachine) -> PyListOf<PyRef<CProcessMemoryRegion>> {
         memory_regions_to_py(
-            &filtered_regions(&self.regions, |region| {
+            &filtered_regions(&zelf.regions, |region| {
                 memory_region_allocation_key(region) == args.allocation_base
             }),
             vm,
@@ -782,8 +770,8 @@ enum ProcessModuleError {
 impl Process {
     /// Thread created by `create_user()`. Raises `ValueError` before it exists.
     #[pygetset]
-    fn main_thread(&self, vm: &VirtualMachine) -> PyResult<PyRef<Thread>> {
-        let mut thread = self.thread.borrow_mut();
+    fn main_thread(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyRef<Thread>> {
+        let mut thread = zelf.thread.borrow_mut();
         let not_opened = || vm.new_value_error("Process main thread is not opened".to_string());
         let thread = thread.as_mut()
             .ok_or_else(not_opened)?.clone();
@@ -795,22 +783,22 @@ impl Process {
     ///
     /// Requires an explicit open strategy. Does not initialize memory or a main thread.
     #[pymethod]
-    fn open(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let mut process_open_strategy = self.process_open_strategy.borrow_mut();
+    fn open(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let mut process_open_strategy = zelf.process_open_strategy.borrow_mut();
         let missing_strategy = || vm.new_value_error("Process open method is not set".to_string());
         let process_open_strategy = process_open_strategy.as_mut()
             .ok_or_else(missing_strategy)?;
 
         let handle = process_open_strategy
-            .open(*self.pid.borrow(), PROCESS_ALL_ACCESS)
+            .open(*zelf.pid.borrow(), PROCESS_ALL_ACCESS)
             .map_err(map_to_py_system_error(vm, "Unable to open process"))?;
 
         let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
         let basic_info = sysapi::get_process_basic_info(*handle)
             .map_err(read_basic_info_error)?;
 
-        self.process_handle.replace(handle);
-        self.pid.replace(basic_info.UniqueProcessId as _);
+        zelf.process_handle.replace(handle);
+        zelf.pid.replace(basic_info.UniqueProcessId as _);
 
         Ok(())
     }
@@ -849,8 +837,8 @@ impl Process {
     ///
     /// Does not create a thread or install process parameters.
     #[pymethod]
-    fn create(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let mut section_handle = self.section_handle.borrow_mut();
+    fn create(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let mut section_handle = zelf.section_handle.borrow_mut();
         let section_handle = section_handle.as_mut()
             .ok_or_else(|| vm.new_value_error("Process section handle is not set".to_string()))?;
 
@@ -861,16 +849,16 @@ impl Process {
         let basic_info = sysapi::get_process_basic_info(*process_handle)
             .map_err(read_basic_info_error)?;
 
-        self.process_handle.replace(process_handle);
-        self.pid.replace(basic_info.UniqueProcessId as _);
+        zelf.process_handle.replace(process_handle);
+        zelf.pid.replace(basic_info.UniqueProcessId as _);
 
         Ok(())
     }
 
     /// Suspend the opened process. Defaults to `ProcessSuspendStrategy.NtSuspendProcess`.
     #[pymethod]
-    fn suspend(&self, args: ProcessSuspendArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let process_handle = **self.process_handle.borrow();
+    fn suspend(zelf: &Py<Self>, args: ProcessSuspendArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let process_handle = **zelf.process_handle.borrow();
         if process_handle.is_null() {
             return Err(vm.new_system_error("Process is not opened"));
         }
@@ -890,8 +878,8 @@ impl Process {
 
     /// Resume the opened process. Defaults to `ProcessResumeStrategy.NtResumeProcess`.
     #[pymethod]
-    fn resume(&self, args: ProcessResumeArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let process_handle = **self.process_handle.borrow();
+    fn resume(zelf: &Py<Self>, args: ProcessResumeArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let process_handle = **zelf.process_handle.borrow();
         if process_handle.is_null() {
             return Err(vm.new_system_error("Process is not opened"));
         }
@@ -914,15 +902,15 @@ impl Process {
     /// At least one strategy must be set. LiveDumpParse captures a kernel dump and
     /// may require privileges and symbol downloads; it reads a snapshot, not live data.
     #[pymethod]
-    fn init_memory(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let process_vm_read_strategy = self.process_vm_read_strategy.borrow().clone();
-        let process_vm_write_strategy = self.process_vm_write_strategy.borrow().clone();
+    fn init_memory(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let process_vm_read_strategy = zelf.process_vm_read_strategy.borrow().clone();
+        let process_vm_write_strategy = zelf.process_vm_write_strategy.borrow().clone();
 
         if process_vm_read_strategy.is_none() && process_vm_write_strategy.is_none() {
             return Err(vm.new_value_error("Process VM read or write strategy is not set".to_string()));
         }
 
-        let process_handle = **self.process_handle.borrow();
+        let process_handle = **zelf.process_handle.borrow();
 
         if process_vm_read_strategy == Some(api_strategy::ProcessVmReadStrategy::LiveDumpParse) {
             sysapi::adjust_privilege(windef::ntseapi::SE_DEBUG_PRIVILEGE)
@@ -933,7 +921,7 @@ impl Process {
             process_vm_read_strategy.as_ref(),
             process_vm_write_strategy.as_ref(),
             process_handle,
-            *self.pid.borrow()
+            *zelf.pid.borrow()
         )
         .map_err(|e| {
             to_py_system_error(
@@ -943,7 +931,7 @@ impl Process {
             )
         })?;
 
-        self.memory.replace(Some(memory));
+        zelf.memory.replace(Some(memory));
         Ok(())
     }
 
@@ -951,8 +939,8 @@ impl Process {
     ///
     /// Stores the resulting remote base for subsequent memory operations.
     #[pymethod]
-    fn create_memory(&self, args: CreateMemoryArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let mut memory = self.memory.borrow_mut();
+    fn create_memory(zelf: &Py<Self>, args: CreateMemoryArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let mut memory = zelf.memory.borrow_mut();
         let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -967,8 +955,8 @@ impl Process {
     /// `offset` defaults to zero. Requires initialized writing and suitable target
     /// storage; this is not a file write or an automatic allocation.
     #[pymethod]
-    fn write_memory(&self, args: WriteMemoryArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let mut memory = self.memory.borrow_mut();
+    fn write_memory(zelf: &Py<Self>, args: WriteMemoryArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let mut memory = zelf.memory.borrow_mut();
         let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -989,8 +977,8 @@ impl Process {
     ///
     /// `offset` defaults to zero. Requires an initialized read strategy.
     #[pymethod]
-    fn read_memory(&self, args: ReadMemoryArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
-        let memory = self.memory.borrow();
+    fn read_memory(zelf: &Py<Self>, args: ReadMemoryArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
+        let memory = zelf.memory.borrow();
         let memory = memory.as_ref()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -1008,8 +996,8 @@ impl Process {
     ///
     /// Requires an initialized read strategy. Returns mapped bytes, not a rebuilt PE file.
     #[pymethod]
-    fn dump_memory(&self, args: DumpMemoryArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
-        let data = read_process_memory(self, args.base_address, args.size, vm)?;
+    fn dump_memory(zelf: &Py<Self>, args: DumpMemoryArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
+        let data = read_process_memory(zelf, args.base_address, args.size, vm)?;
         Ok(vm.ctx.new_bytes(data))
     }
 
@@ -1018,15 +1006,15 @@ impl Process {
     /// Returns mapped bytes without repairing imports, file offsets, or unreadable
     /// ranges. Use `br3k.pe.ProcessView` and `Capture` for sparse capture and recovery.
     #[pymethod]
-    fn dump_module(&self, args: DumpModuleArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
-        let data = read_process_memory(self, args.module.dll_base, args.module.size_of_image as usize, vm)?;
+    fn dump_module(zelf: &Py<Self>, args: DumpModuleArgs, vm: &VirtualMachine) -> PyResult<PyRef<PyBytes>> {
+        let data = read_process_memory(zelf, args.module.dll_base, args.module.size_of_image as usize, vm)?;
         Ok(vm.ctx.new_bytes(data))
     }
 
     /// Return the current memory context's remote base address.
     #[pymethod]
-    fn get_memory_remote_address(&self, vm: &VirtualMachine) -> PyResult<u64> {
-        let mut memory = self.memory.borrow_mut();
+    fn get_memory_remote_address(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<u64> {
+        let mut memory = zelf.memory.borrow_mut();
         let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -1040,8 +1028,8 @@ impl Process {
     ///
     /// The historical name does not distinguish AMD64 from ARM64.
     #[pymethod]
-    pub fn is_x64(&self, vm: &VirtualMachine) -> PyResult<bool> {
-        match sysapi::get_process_wow64_info(**self.process_handle.borrow()) {
+    pub fn is_x64(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<bool> {
+        match sysapi::get_process_wow64_info(**zelf.process_handle.borrow()) {
             Ok(is_x64) => Ok(is_x64),
             Err(error) => Err(to_py_system_error(vm, "Unable to get Wow64 info", error)),
         }
@@ -1051,8 +1039,8 @@ impl Process {
 
     /// Query native process-basic information from the opened handle.
     #[pymethod]
-    fn get_basic_info(&self, vm: &VirtualMachine) -> PyResult<CProcessBasicInformation> {
-        let basic_info = sysapi::get_process_basic_info(**self.process_handle.borrow())
+    fn get_basic_info(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<CProcessBasicInformation> {
+        let basic_info = sysapi::get_process_basic_info(**zelf.process_handle.borrow())
             .map_err(map_to_py_system_error(vm, "Unable to get process basic info"))?;
 
         Ok(CProcessBasicInformation { data: basic_info })
@@ -1060,8 +1048,8 @@ impl Process {
 
     /// Snapshot modules listed by the target's loader; hidden mappings may be absent.
     #[pymethod]
-    fn modules(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<CProcessModule>>> {
-        let modules = list_process_modules(**self.process_handle.borrow())
+    fn modules(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<CProcessModule>>> {
+        let modules = list_process_modules(**zelf.process_handle.borrow())
             .map_err(map_to_py_system_error(vm, "Unable to list process modules"))?;
         let modules = modules
             .into_iter()
@@ -1073,8 +1061,8 @@ impl Process {
 
     /// Enumerate a fresh list of virtual-memory regions from the opened process.
     #[pymethod]
-    fn memory_regions(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<CProcessMemoryRegion>>> {
-        let process_handle = **self.process_handle.borrow();
+    fn memory_regions(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<CProcessMemoryRegion>>> {
+        let process_handle = **zelf.process_handle.borrow();
         if process_handle.is_null() {
             return Err(vm.new_system_error("Process is not opened"));
         }
@@ -1091,8 +1079,8 @@ impl Process {
 
     /// Capture a fresh virtual-memory map with grouped/filterable region views.
     #[pymethod]
-    fn memory_map(&self, vm: &VirtualMachine) -> PyResult<CProcessMemoryMap> {
-        let process_handle = **self.process_handle.borrow();
+    fn memory_map(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<CProcessMemoryMap> {
+        let process_handle = **zelf.process_handle.borrow();
         if process_handle.is_null() {
             return Err(vm.new_system_error("Process is not opened"));
         }
@@ -1107,8 +1095,8 @@ impl Process {
 
     /// Query page-residency and sharing counters for the supplied region.
     #[pymethod]
-    fn working_set_region(&self, args: WorkingSetRegionArgs, vm: &VirtualMachine) -> PyResult<CProcessWorkingSetRegion> {
-        let process_handle = **self.process_handle.borrow();
+    fn working_set_region(zelf: &Py<Self>, args: WorkingSetRegionArgs, vm: &VirtualMachine) -> PyResult<CProcessWorkingSetRegion> {
+        let process_handle = **zelf.process_handle.borrow();
         if process_handle.is_null() {
             return Err(vm.new_system_error("Process is not opened"));
         }
@@ -1120,8 +1108,8 @@ impl Process {
 
     /// Snapshot process threads with best-effort start addresses and stack bounds.
     #[pymethod]
-    fn threads(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<CProcessThreadInfo>>> {
-        let threads = process_threads(self)
+    fn threads(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<CProcessThreadInfo>>> {
+        let threads = process_threads(zelf)
             .map_err(map_to_py_system_error(vm, "Unable to query process threads"))?;
 
         Ok(process_threads_to_py(&threads, vm))
@@ -1129,8 +1117,8 @@ impl Process {
 
     /// Read the process PEB's API-set namespace for contract-to-host resolution.
     #[pymethod]
-    fn api_set_map(&self, vm: &VirtualMachine) -> PyResult<PeApiSetMap> {
-        let process_handle = **self.process_handle.borrow();
+    fn api_set_map(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PeApiSetMap> {
+        let process_handle = **zelf.process_handle.borrow();
         if process_handle.is_null() {
             return Err(vm.new_system_error("Process is not opened"));
         }
@@ -1142,9 +1130,9 @@ impl Process {
 
     /// Copy the native-layout PEB from the opened process.
     #[pymethod]
-    fn read_peb(&self, vm: &VirtualMachine) -> PyResult<CPeb> {
+    fn read_peb(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<CPeb> {
         unsafe {
-            let process_handle = **self.process_handle.borrow();
+            let process_handle = **zelf.process_handle.borrow();
 
             let read_basic_info_error = map_to_py_system_error(vm, "Unable to read process basic info");
             let basic_info = sysapi::get_process_basic_info(process_handle)
@@ -1165,9 +1153,9 @@ impl Process {
     ///
     /// `peb_address` is an absolute target address. Requires an initialized write strategy.
     #[pymethod]
-    fn write_peb_proc_params(&self, args: WritePebProcParmsArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn write_peb_proc_params(zelf: &Py<Self>, args: WritePebProcParmsArgs, vm: &VirtualMachine) -> PyResult<()> {
         unsafe {
-            let mut memory = self.memory.borrow_mut();
+            let mut memory = zelf.memory.borrow_mut();
             let memory = memory.as_mut()
                 .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -1208,8 +1196,8 @@ impl Process {
     /// Requires allocated target storage and an initialized write strategy. This is
     /// not a complete loader: it does not resolve imports or run TLS callbacks.
     #[pymethod]
-    fn write_mem_image(&self, args: WriteMemImageArgs, vm: &VirtualMachine) -> PyResult<()> {
-        let mut memory = self.memory.borrow_mut();
+    fn write_mem_image(zelf: &Py<Self>, args: WriteMemImageArgs, vm: &VirtualMachine) -> PyResult<()> {
+        let mut memory = zelf.memory.borrow_mut();
         let memory = memory.as_mut()
             .ok_or_else(|| vm.new_value_error("Memory context is not initialized".to_string()))?;
 
@@ -1267,8 +1255,8 @@ impl Process {
     ///
     /// Returns no structured result; inaccessible per-handle details may be omitted.
     #[pymethod]
-    fn log_handles(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let pid = *self.pid.borrow();
+    fn log_handles(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        let pid = *zelf.pid.borrow();
 
         let processes = sysapi::get_processes_pid_name()
             .map_err(map_to_py_system_error(vm, "Unable to get processes info"))?;
@@ -1328,7 +1316,7 @@ fn list_process_modules(process_handle: HANDLE) -> Result<Vec<CProcessModule>, P
 
         modules.push(CProcessModule {
             dll_base: entry.DllBase as u64,
-            entry_point: entry.EntryPoint.map_or(0, |entry_point| entry_point as u64),
+            entry_point: entry.EntryPoint as u64,
             size_of_image: entry.SizeOfImage,
             full_dll_name: read_remote_unicode_string(process_handle, entry.FullDllName.Length, entry.FullDllName.Buffer)?,
             base_dll_name: read_remote_unicode_string(process_handle, entry.BaseDllName.Length, entry.BaseDllName.Buffer)?,

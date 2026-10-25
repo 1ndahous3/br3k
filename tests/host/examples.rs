@@ -127,7 +127,7 @@ fn generate_pe_baseline() {
     let case = Case::new();
     let target = case.target();
     case.run("scripts/pe/generate_pe_baseline.py", &target.process_config());
-    let baseline: Baseline = serde_yaml::from_reader(fs::File::open(case.path().join("pe_baseline.yaml")).unwrap()).unwrap();
+    let baseline: Baseline = serde_norway::from_reader(fs::File::open(case.path().join("pe_baseline.yaml")).unwrap()).unwrap();
     for name in [target.name(), "ucrtbase.dll", "ntdll.dll"] {
         let module = baseline.modules.iter().find(|module| module.name.eq_ignore_ascii_case(name)).expect("missing baseline module");
         assert!(module.error.is_none(), "{name}: {:?}", module.error);

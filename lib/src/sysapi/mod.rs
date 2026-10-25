@@ -31,6 +31,7 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 
 use scopeguard::ScopeGuard;
+use windef::winbase::{AlignedContext, AlignedWow64Context};
 
 use windows::Win32::Foundation::{HMODULE, NTSTATUS};
 use windows::Win32::System::Environment::GetCurrentDirectoryW;
@@ -585,7 +586,7 @@ pub fn create_user_process(name: &str, suspended: bool, command_line: Option<&st
 
         attribute_list.Attributes[0].Attribute = winbase::PS_ATTRIBUTE_IMAGE_NAME as _;
         attribute_list.Attributes[0].Size = nt_name.Length as _;
-        attribute_list.Attributes[0].a1.bindgen_union_field = nt_name.Buffer as _;
+        *attribute_list.Attributes[0].a1.ValuePtr.as_mut() = nt_name.Buffer as _;
 
         let process_handle: HANDLE = ptr::null_mut();
         let thread_handle: HANDLE = ptr::null_mut();
@@ -848,7 +849,7 @@ fn extended_process_threads(
                 thread_id: thread_info.ClientId.UniqueThread as usize as u32,
                 system_start_address: thread_info.StartAddress as usize as u64,
                 win32_start_address: nonzero_address(thread.Win32StartAddress as usize as u64),
-                teb_address: nonzero_address(thread.TebBase as usize as u64),
+                teb_address: nonzero_address(thread.TebBaseAddress as usize as u64),
                 stack_base: nonzero_address(thread.StackBase as u64),
                 stack_limit: nonzero_address(thread.StackLimit as u64),
             }
@@ -1341,20 +1342,6 @@ pub fn get_thread_basic_info(thread_handle: HANDLE) -> NtResult<ntpsapi::THREAD_
     }
 }
 
-// WORKAROUND: https://github.com/microsoft/win32metadata/issues/1044
-
-#[repr(align(16))]
-#[derive(Default)]
-struct AlignedContext {
-    ctx: CONTEXT,
-}
-
-#[repr(align(16))]
-#[derive(Default)]
-struct AlignedWow64Context {
-    ctx: WOW64_CONTEXT,
-}
-
 pub fn get_thread_context(thread_handle: HANDLE) -> NtResult<CONTEXT> {
     unsafe {
         let mut context = AlignedContext::default();
@@ -1456,7 +1443,7 @@ pub fn create_section(size: usize) -> NtResult<UniqueHandle> {
     unsafe {
         let section_handle: HANDLE = ptr::null_mut();
 
-        let maximum_size = ntwin::LARGE_INTEGER { bindgen_union_field: size as _, ..Default::default() };
+        let maximum_size = ntwin::LARGE_INTEGER::from(size as i64);
 
         let status = match api_ctx::sys_api_dispatch().create_section {
             CreateSection::NtCreateSection => {
@@ -1503,7 +1490,7 @@ pub fn create_file_section(
 
         let mut maximum_size = ntwin::LARGE_INTEGER::default();
         if let Some(size) = size {
-            maximum_size.bindgen_union_field = size as _;
+            *maximum_size.QuadPart.as_mut() = size as i64;
         }
 
         let status = match api_ctx::sys_api_dispatch().create_section {
@@ -2013,7 +2000,7 @@ pub fn set_event(event_handle: HANDLE) -> NtResult<()> {
 
 pub fn set_timer2(timer_handle: HANDLE, due_time: i64) -> NtResult<()> {
     unsafe {
-        let mut due_time = ntwin::LARGE_INTEGER { bindgen_union_field: due_time as _, ..Default::default() };
+        let mut due_time = ntwin::LARGE_INTEGER::from(due_time);
         let mut parameters = ntexapi::T2_SET_PARAMETERS::default();
 
         let nt_set_timer2 = require_sys_api(api_ctx::ntdll().NtSetTimer2, "NtSetTimer2")?;
@@ -2203,11 +2190,11 @@ pub fn connect_alpc_port(name: &str, message_size: usize, timeout: i64) -> NtRes
         };
         let mut connection_message = vec![0u8; message_size];
         let mut buffer_length = connection_message.len();
-        let mut timeout = ntwin::LARGE_INTEGER { bindgen_union_field: timeout as _, ..Default::default() };
+        let mut timeout = ntwin::LARGE_INTEGER::from(timeout as i64);
 
         let message = connection_message.as_mut_ptr() as *mut ntlpcapi::PORT_MESSAGE;
         let data_length = message_size.saturating_sub(size_of::<ntlpcapi::PORT_MESSAGE>()) as u32;
-        (*message).u1.bindgen_union_field = ((message_size as u32) << 16) | data_length;
+        *(*message).u1.Length.as_mut() = ((message_size as u32) << 16) | data_length;
 
         let nt_alpc_connect_port = require_sys_api(api_ctx::ntdll().NtAlpcConnectPort, "NtAlpcConnectPort")?;
         let status = NTSTATUS(nt_alpc_connect_port(
@@ -2302,8 +2289,7 @@ pub fn create_named_pipe(name: &str, sd: PVOID) -> NtResult<UniqueHandle> {
             ..Default::default()
         };
 
-        let mut default_timeout: ntwin::LARGE_INTEGER = mem::zeroed();
-        default_timeout.bindgen_union_field = -1200000000 as _; // 120 seconds
+        let default_timeout = ntwin::LARGE_INTEGER::from(-1_200_000_000); // 120 seconds
 
         let nt_create_named_pipe_file = require_sys_api(api_ctx::ntdll().NtCreateNamedPipeFile, "NtCreateNamedPipeFile")?;
         let status = NTSTATUS(nt_create_named_pipe_file(
@@ -2465,8 +2451,7 @@ pub fn create_file_by_nt_create_file_with_options(
             ..Default::default()
         };
 
-        let allocation_size = allocation_size
-            .map(|size| ntwin::LARGE_INTEGER { bindgen_union_field: size as _, ..Default::default() });
+        let allocation_size = allocation_size.map(|size| ntwin::LARGE_INTEGER::from(size as i64));
         let allocation_size_ptr = allocation_size
             .as_ref()
             .map_or(ptr::null(), |allocation_size| addr_of!(*allocation_size)) as _;
@@ -2790,7 +2775,7 @@ pub fn create_file(path: &str, access_mask: u32, share_access: u32, size: usize)
         let io_status_block = ntioapi::IO_STATUS_BLOCK::default();
         let file_handle: HANDLE = ptr::null_mut();
 
-        let allocation_size = ntwin::LARGE_INTEGER { bindgen_union_field: size as _, ..Default::default() };
+        let allocation_size = ntwin::LARGE_INTEGER::from(size as i64);
 
         let nt_create_file = require_sys_api(api_ctx::ntdll().NtCreateFile, "NtCreateFile")?;
         let status = NTSTATUS(nt_create_file(
@@ -2836,10 +2821,7 @@ pub fn write_file_at(file_handle: HANDLE, data: PVOID, size: usize, byte_offset:
     unsafe {
         let nt_write_file = require_sys_api(api_ctx::ntdll().NtWriteFile, "NtWriteFile")?;
         let io_status_block = Box::into_raw(Box::new(ntioapi::IO_STATUS_BLOCK::default()));
-        let byte_offset = Box::into_raw(Box::new(ntwin::LARGE_INTEGER {
-            bindgen_union_field: byte_offset as _,
-            ..Default::default()
-        }));
+        let byte_offset = Box::into_raw(Box::new(ntwin::LARGE_INTEGER::from(byte_offset as i64)));
 
         let status = NTSTATUS(nt_write_file(
             file_handle,
@@ -2900,7 +2882,7 @@ pub fn get_file_size(file_handle: HANDLE) -> NtResult<usize> {
             ntioapi::FILE_INFORMATION_CLASS::FileStandardInformation,
         ));
 
-        if !status.is_ok() { Err(status.into()) } else { Ok(file_information.EndOfFile.bindgen_union_field as _) }
+        if !status.is_ok() { Err(status.into()) } else { Ok(*file_information.EndOfFile.QuadPart.as_ref() as _) }
     }
 }
 
@@ -2973,7 +2955,7 @@ pub fn dump_live_system(file_handle: HANDLE) -> NtResult<()> {
         live_dump_control.DumpFileHandle = file_handle;
         // live_dump_control.Flags.CompressMemoryPagesData = 1;
         // live_dump_control.Flags.IncludeUserSpaceMemoryPages = 1;
-        live_dump_control.Flags.bindgen_union_field = 6;
+        *live_dump_control.Flags.AsUlong.as_mut() = 6;
 
         let nt_system_debug_control = require_sys_api(api_ctx::ntdll().NtSystemDebugControl, "NtSystemDebugControl")?;
         let status = NTSTATUS(nt_system_debug_control(
@@ -3195,7 +3177,7 @@ pub fn process_open_alertable_thread(process_handle: HANDLE) -> NtResult<UniqueH
                 continue;
             }
 
-            let mut timeout = ntwin::LARGE_INTEGER { bindgen_union_field: (-10_000_000i64) as u64, ..Default::default() };
+            let mut timeout = ntwin::LARGE_INTEGER::from(-10_000_000);
 
             let status = NTSTATUS(nt_wait_for_single_object(*local_event, FALSE as _, &mut timeout));
             if status.is_err() {

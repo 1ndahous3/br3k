@@ -12,28 +12,20 @@ use crate::pe::image::{
 #[pyclass(module = "br3k.pe.headers", name = "DataDirectory")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeDataDirectory {
+    /// Raw directory address: an RVA except for the security directory's file offset.
+    #[pymember]
     virtual_address: u32,
+    /// Directory, overlay, or resource-data size in bytes.
+    #[pymember]
     size: u32,
 }
 
 #[pyclass]
 impl PeDataDirectory {
-    /// Raw directory address: an RVA except for the security directory's file offset.
-    #[pygetset]
-    fn virtual_address(&self) -> u32 {
-        self.virtual_address
-    }
-
-    /// Directory, overlay, or resource-data size in bytes.
-    #[pygetset]
-    fn size(&self) -> u32 {
-        self.size
-    }
-
     /// Whether the directory address or size is zero.
     #[pygetset]
-    fn empty(&self) -> bool {
-        self.virtual_address == 0 || self.size == 0
+    fn empty(zelf: &Py<Self>) -> bool {
+        zelf.virtual_address == 0 || zelf.size == 0
     }
 }
 
@@ -41,205 +33,111 @@ impl PeDataDirectory {
 #[pyclass(module = "br3k.pe.security", name = "OverlayRange")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeOverlayRange {
-    offset: usize,
-    size: usize,
+    /// File byte offset where the overlay begins.
+    #[pymember]
+    offset: PyRef<PyInt>,
+    /// Directory, overlay, or resource-data size in bytes.
+    #[pymember]
+    size: PyRef<PyInt>,
 }
 
 #[pyclass]
-impl PeOverlayRange {
-    /// File byte offset where the overlay begins.
-    #[pygetset]
-    fn offset(&self) -> usize {
-        self.offset
-    }
-
-    /// Directory, overlay, or resource-data size in bytes.
-    #[pygetset]
-    fn size(&self) -> usize {
-        self.size
-    }
-}
+impl PeOverlayRange {}
 
 /// Resource-tree extent and aggregate counts from parsing.
 #[pyclass(module = "br3k.pe.resources", name = "DirectoryInfo")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeResourceDirectoryInfo {
+    /// RVA of the resource directory.
+    #[pymember]
     virtual_address: u32,
+    /// Directory, overlay, or resource-data size in bytes.
+    #[pymember]
     size: u32,
-    directory_count: usize,
-    named_entry_count: usize,
-    id_entry_count: usize,
-    data_entry_count: usize,
+    /// Number of resource-directory nodes.
+    #[pymember]
+    directory_count: PyRef<PyInt>,
+    /// Number of named resource-tree entries.
+    #[pymember]
+    named_entry_count: PyRef<PyInt>,
+    /// Number of numeric-ID resource-tree entries.
+    #[pymember]
+    id_entry_count: PyRef<PyInt>,
+    /// Number of resource-data leaves.
+    #[pymember]
+    data_entry_count: PyRef<PyInt>,
+    /// Aggregate resource-data size in bytes.
+    #[pymember]
     data_size: u64,
-    max_depth: usize,
+    /// Maximum observed resource-tree nesting depth.
+    #[pymember]
+    max_depth: PyRef<PyInt>,
 }
 
 #[pyclass]
-impl PeResourceDirectoryInfo {
-    /// RVA of the resource directory.
-    #[pygetset]
-    fn virtual_address(&self) -> u32 {
-        self.virtual_address
-    }
-
-    /// Directory, overlay, or resource-data size in bytes.
-    #[pygetset]
-    fn size(&self) -> u32 {
-        self.size
-    }
-
-    /// Number of resource-directory nodes.
-    #[pygetset]
-    fn directory_count(&self) -> usize {
-        self.directory_count
-    }
-
-    /// Number of named resource-tree entries.
-    #[pygetset]
-    fn named_entry_count(&self) -> usize {
-        self.named_entry_count
-    }
-
-    /// Number of numeric-ID resource-tree entries.
-    #[pygetset]
-    fn id_entry_count(&self) -> usize {
-        self.id_entry_count
-    }
-
-    /// Number of resource-data leaves.
-    #[pygetset]
-    fn data_entry_count(&self) -> usize {
-        self.data_entry_count
-    }
-
-    /// Aggregate resource-data size in bytes.
-    #[pygetset]
-    fn data_size(&self) -> u64 {
-        self.data_size
-    }
-
-    /// Maximum observed resource-tree nesting depth.
-    #[pygetset]
-    fn max_depth(&self) -> usize {
-        self.max_depth
-    }
-}
+impl PeResourceDirectoryInfo {}
 
 /// One named or numeric component of a resource path.
 #[pyclass(module = "br3k.pe.resources", name = "PathEntry")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeResourcePathEntry {
-    name: Option<String>,
-    id: Option<u32>,
-    text: String,
+    /// Text name of this path component, when named.
+    #[pymember]
+    name: Option<PyStrRef>,
+    /// Numeric ID of this path component, when ID-based.
+    #[pymember]
+    id: Option<PyRef<PyInt>>,
+    /// Display form of the path component, using # for numeric IDs.
+    #[pymember]
+    text: PyStrRef,
 }
 
 #[pyclass]
-impl PeResourcePathEntry {
-    /// Text name of this path component, when named.
-    #[pygetset]
-    fn name(&self) -> Option<String> {
-        self.name.clone()
-    }
-
-    /// Numeric ID of this path component, when ID-based.
-    #[pygetset]
-    fn id(&self) -> Option<u32> {
-        self.id
-    }
-
-    /// Display form of the path component, using # for numeric IDs.
-    #[pygetset]
-    fn text(&self) -> String {
-        self.text.clone()
-    }
-}
+impl PeResourcePathEntry {}
 
 /// A resource leaf's path, data location, size, and code-page metadata.
+#[py_api]
 #[pyclass(module = "br3k.pe.resources", name = "DataEntry")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeResourceDataEntry {
-    path: PyListOf<PyRef<PeResourcePathEntry>>,
-    path_text: String,
-    type_name: Option<String>,
-    type_id: Option<u32>,
-    resource_name: Option<String>,
-    resource_id: Option<u32>,
-    language_id: Option<u32>,
+    /// Cached typed resource-path components.
+    #[pyi(ty = "list[br3k.pe.resources.PathEntry]")]
+    #[pymember]
+    path: PyListRef,
+    /// Slash-separated display form of the resource path.
+    #[pymember]
+    path_text: PyStrRef,
+    /// Named resource type from the first path component, when present.
+    #[pymember]
+    type_name: Option<PyStrRef>,
+    /// Numeric resource type from the first path component, when present.
+    #[pymember]
+    type_id: Option<PyRef<PyInt>>,
+    /// Named resource identity from the second path component, when present.
+    #[pymember]
+    resource_name: Option<PyStrRef>,
+    /// Numeric resource identity from the second path component, when present.
+    #[pymember]
+    resource_id: Option<PyRef<PyInt>>,
+    /// Numeric language identifier from the third path component, when present.
+    #[pymember]
+    language_id: Option<PyRef<PyInt>>,
+    /// RVA of the resource leaf's payload bytes.
+    #[pymember]
     data_rva: u32,
+    /// Directory, overlay, or resource-data size in bytes.
+    #[pymember]
     size: u32,
+    /// Declared resource-data code page.
+    #[pymember]
     code_page: u32,
+    /// Raw reserved field from IMAGE_RESOURCE_DATA_ENTRY.
+    #[pymember]
     reserved: u32,
 }
 
 #[pyclass]
-impl PeResourceDataEntry {
-    /// Cached typed resource-path components.
-    #[pygetset]
-    fn path(&self) -> PyListOf<PyRef<PeResourcePathEntry>> {
-        self.path.clone()
-    }
-
-    /// Slash-separated display form of the resource path.
-    #[pygetset]
-    fn path_text(&self) -> String {
-        self.path_text.clone()
-    }
-
-    /// Named resource type from the first path component, when present.
-    #[pygetset]
-    fn type_name(&self) -> Option<String> {
-        self.type_name.clone()
-    }
-
-    /// Numeric resource type from the first path component, when present.
-    #[pygetset]
-    fn type_id(&self) -> Option<u32> {
-        self.type_id
-    }
-
-    /// Named resource identity from the second path component, when present.
-    #[pygetset]
-    fn resource_name(&self) -> Option<String> {
-        self.resource_name.clone()
-    }
-
-    /// Numeric resource identity from the second path component, when present.
-    #[pygetset]
-    fn resource_id(&self) -> Option<u32> {
-        self.resource_id
-    }
-
-    /// Numeric language identifier from the third path component, when present.
-    #[pygetset]
-    fn language_id(&self) -> Option<u32> {
-        self.language_id
-    }
-
-    /// RVA of the resource leaf's payload bytes.
-    #[pygetset]
-    fn data_rva(&self) -> u32 {
-        self.data_rva
-    }
-
-    /// Directory, overlay, or resource-data size in bytes.
-    #[pygetset]
-    fn size(&self) -> u32 {
-        self.size
-    }
-
-    /// Declared resource-data code page.
-    #[pygetset]
-    fn code_page(&self) -> u32 {
-        self.code_page
-    }
-
-    /// Raw reserved field from IMAGE_RESOURCE_DATA_ENTRY.
-    #[pygetset]
-    fn reserved(&self) -> u32 {
-        self.reserved
-    }
-}
+impl PeResourceDataEntry {}
 
 pub(crate) fn data_directory_to_py(directory: DataDirectory, vm: &VirtualMachine) -> PyRef<PeDataDirectory> {
     PeDataDirectory {
@@ -251,8 +149,8 @@ pub(crate) fn data_directory_to_py(directory: DataDirectory, vm: &VirtualMachine
 
 pub(crate) fn overlay_range_to_py(range: OverlayRange, vm: &VirtualMachine) -> PyRef<PeOverlayRange> {
     PeOverlayRange {
-        offset: range.offset,
-        size: range.size,
+        offset: vm.ctx.new_int(range.offset),
+        size: vm.ctx.new_int(range.size),
     }
     .into_ref(&vm.ctx)
 }
@@ -264,12 +162,12 @@ pub(crate) fn resource_directory_info_to_py(
     PeResourceDirectoryInfo {
         virtual_address: info.virtual_address,
         size: info.size,
-        directory_count: info.directory_count,
-        named_entry_count: info.named_entry_count,
-        id_entry_count: info.id_entry_count,
-        data_entry_count: info.data_entry_count,
+        directory_count: vm.ctx.new_int(info.directory_count),
+        named_entry_count: vm.ctx.new_int(info.named_entry_count),
+        id_entry_count: vm.ctx.new_int(info.id_entry_count),
+        data_entry_count: vm.ctx.new_int(info.data_entry_count),
         data_size: info.data_size,
-        max_depth: info.max_depth,
+        max_depth: vm.ctx.new_int(info.max_depth),
     }
     .into_ref(&vm.ctx)
 }
@@ -288,13 +186,13 @@ pub(crate) fn resource_data_entry_to_py(
     let language_entry = entry.path.get(2);
 
     PeResourceDataEntry {
-        path: PyListOf::new(path_entries, vm),
-        path_text: resource_path_text(&entry.path),
-        type_name: type_entry.and_then(|entry| entry.name.clone()),
-        type_id: type_entry.and_then(|entry| entry.id),
-        resource_name: name_entry.and_then(|entry| entry.name.clone()),
-        resource_id: name_entry.and_then(|entry| entry.id),
-        language_id: language_entry.and_then(|entry| entry.id),
+        path: PyListOf::new(path_entries, vm).into(),
+        path_text: vm.ctx.new_str(resource_path_text(&entry.path)),
+        type_name: type_entry.and_then(|entry| entry.name.as_deref()).map(|value| vm.ctx.new_str(value)),
+        type_id: type_entry.and_then(|entry| entry.id).map(|value| vm.ctx.new_int(value)),
+        resource_name: name_entry.and_then(|entry| entry.name.as_deref()).map(|value| vm.ctx.new_str(value)),
+        resource_id: name_entry.and_then(|entry| entry.id).map(|value| vm.ctx.new_int(value)),
+        language_id: language_entry.and_then(|entry| entry.id).map(|value| vm.ctx.new_int(value)),
         data_rva: entry.data_rva,
         size: entry.size,
         code_page: entry.code_page,
@@ -320,9 +218,9 @@ pub(crate) fn resource_path_text(path: &[ResourcePathEntry]) -> String {
 
 pub(crate) fn resource_path_entry_to_py(entry: &ResourcePathEntry, vm: &VirtualMachine) -> PyRef<PeResourcePathEntry> {
     PeResourcePathEntry {
-        name: entry.name.clone(),
-        id: entry.id,
-        text: resource_path_entry_text(entry),
+        name: entry.name.as_deref().map(|value| vm.ctx.new_str(value)),
+        id: entry.id.map(|value| vm.ctx.new_int(value)),
+        text: vm.ctx.new_str(resource_path_entry_text(entry)),
     }
     .into_ref(&vm.ctx)
 }

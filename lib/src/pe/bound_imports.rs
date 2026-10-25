@@ -4,9 +4,6 @@ use crate::pe::image::{DataDirectory, Error as ImageError, Image};
 mod validation;
 pub use validation::{BoundImportCheck, BoundImportKind, BoundImportStatus};
 
-#[cfg(test)]
-mod validation_tests;
-
 const RECORD_SIZE: usize = 8;
 
 #[derive(Debug, thiserror::Error)]
@@ -186,4 +183,5 @@ fn read_name(data: &[u8], offset: u16) -> Result<String, BoundImportError> {
 }
 
 #[cfg(test)]
+#[path = "tests/bound_imports/mod.rs"]
 mod tests;

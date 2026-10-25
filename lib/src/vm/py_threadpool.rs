@@ -99,32 +99,32 @@ impl fmt::Debug for CWorkerFactoryBasicInformation {
 impl CWorkerFactoryBasicInformation {
     /// Worker-factory start-routine virtual address in the target process.
     #[pygetset(name = "StartRoutine")]
-    fn start_routine(&self) -> usize {
-        self.data.StartRoutine as _
+    fn start_routine(zelf: &Py<Self>) -> usize {
+        zelf.data.StartRoutine as _
     }
 
     /// Target address passed as the worker-factory startup parameter.
     #[pygetset(name = "StartParameter")]
-    fn start_parameter(&self) -> usize {
-        self.data.StartParameter as _
+    fn start_parameter(zelf: &Py<Self>) -> usize {
+        zelf.data.StartParameter as _
     }
 
     /// Number of workers reported by the snapshot.
     #[pygetset(name = "TotalWorkerCount")]
-    fn total_worker_count(&self) -> u32 {
-        self.data.TotalWorkerCount
+    fn total_worker_count(zelf: &Py<Self>) -> u32 {
+        zelf.data.TotalWorkerCount
     }
 
     /// Configured minimum worker count.
     #[pygetset(name = "ThreadMinimum")]
-    fn thread_minimum(&self) -> u32 {
-        self.data.ThreadMinimum
+    fn thread_minimum(zelf: &Py<Self>) -> u32 {
+        zelf.data.ThreadMinimum
     }
 
     /// Configured maximum worker count.
     #[pygetset(name = "ThreadMaximum")]
-    fn thread_maximum(&self) -> u32 {
-        self.data.ThreadMaximum
+    fn thread_maximum(zelf: &Py<Self>) -> u32 {
+        zelf.data.ThreadMaximum
     }
 }
 
@@ -185,7 +185,11 @@ impl Constructor for ThreadPool {
 #[pyclass(with(Constructor))]
 impl ThreadPool {
     /// Duplicate and retain a target TpWorkerFactory handle. Raises on missing or inaccessible handles.
-    #[pymethod]
+    #[pymethod(name = "open_worker_factory")]
+    fn py_open_worker_factory(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.open_worker_factory(vm)
+    }
+
     fn open_worker_factory(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.hijack_handle("TpWorkerFactory", ntexapi::WORKER_FACTORY_ALL_ACCESS, vm)?;
         self.worker_factory_handle.replace(Some(Handle { handle }.into_ref(&vm.ctx)));
@@ -193,7 +197,11 @@ impl ThreadPool {
     }
 
     /// Duplicate and retain a target IoCompletion handle.
-    #[pymethod]
+    #[pymethod(name = "open_io_completion")]
+    fn py_open_io_completion(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.open_io_completion(vm)
+    }
+
     fn open_io_completion(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.hijack_handle("IoCompletion", ntioapi::IO_COMPLETION_ALL_ACCESS, vm)?;
         self.io_completion_handle.replace(Some(Handle { handle }.into_ref(&vm.ctx)));
@@ -201,7 +209,11 @@ impl ThreadPool {
     }
 
     /// Duplicate and retain a target IRTimer handle.
-    #[pymethod]
+    #[pymethod(name = "open_timer")]
+    fn py_open_timer(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.open_timer(vm)
+    }
+
     fn open_timer(&self, vm: &VirtualMachine) -> PyResult<()> {
         let handle = self.hijack_handle("IRTimer", TIMER_ALL_ACCESS, vm)?;
         self.timer_handle.replace(Some(Handle { handle }.into_ref(&vm.ctx)));
@@ -210,8 +222,8 @@ impl ThreadPool {
 
     /// Query a worker-factory snapshot, opening its handle if necessary.
     #[pymethod]
-    fn get_worker_factory_basic_info(&self, vm: &VirtualMachine) -> PyResult<CWorkerFactoryBasicInformation> {
-        let worker_factory_handle = self.ensure_worker_factory_handle(vm)?;
+    fn get_worker_factory_basic_info(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<CWorkerFactoryBasicInformation> {
+        let worker_factory_handle = zelf.ensure_worker_factory_handle(vm)?;
         let data = sysapi::get_worker_factory_basic_info(worker_factory_handle)
             .map_err(map_to_py_system_error(vm, "Unable to get worker factory basic information"))?;
 
@@ -224,21 +236,21 @@ impl ThreadPool {
     /// compatible callback ABI and remain valid for asynchronous execution.
     /// Invalid work-item values raise `ValueError`; native failures raise `SystemError`.
     #[pymethod]
-    fn set_ep(&self, args: ThreadPoolSetEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+    fn set_ep(zelf: &Py<Self>, args: ThreadPoolSetEpArgs, vm: &VirtualMachine) -> PyResult<()> {
         let work_item_type = ThreadPoolWorkItem::from_repr(args.work_item_type)
             .ok_or_else(|| vm.new_value_error("Invalid ThreadPoolWorkItem".to_string()))?;
 
         match work_item_type {
             ThreadPoolWorkItem::WorkerFactoryStartRoutine => {
-                self.set_worker_factory_start_routine_ep_impl(args.ep as _, vm)
+                zelf.set_worker_factory_start_routine_ep_impl(args.ep as _, vm)
             }
-            ThreadPoolWorkItem::TP_WORK => self.queue_tp_work_impl(args.ep as _, vm),
-            ThreadPoolWorkItem::TP_WAIT => self.queue_tp_wait_impl(args.ep as _, vm),
-            ThreadPoolWorkItem::TP_IO => self.queue_tp_io_impl(args.ep as _, vm),
-            ThreadPoolWorkItem::TP_ALPC => self.queue_tp_alpc_impl(args.ep as _, vm),
-            ThreadPoolWorkItem::TP_JOB => self.queue_tp_job_impl(args.ep as _, vm),
-            ThreadPoolWorkItem::TP_DIRECT => self.queue_tp_direct_impl(args.ep as _, vm),
-            ThreadPoolWorkItem::TP_TIMER => self.queue_tp_timer_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_WORK => zelf.queue_tp_work_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_WAIT => zelf.queue_tp_wait_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_IO => zelf.queue_tp_io_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_ALPC => zelf.queue_tp_alpc_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_JOB => zelf.queue_tp_job_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_DIRECT => zelf.queue_tp_direct_impl(args.ep as _, vm),
+            ThreadPoolWorkItem::TP_TIMER => zelf.queue_tp_timer_impl(args.ep as _, vm),
         }
     }
 
@@ -246,50 +258,50 @@ impl ThreadPool {
     ///
     /// Modifies existing executable code; the original routine is not restored.
     #[pymethod]
-    fn set_worker_factory_start_routine_ep(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.set_worker_factory_start_routine_ep_impl(args.ep as _, vm)
+    fn set_worker_factory_start_routine_ep(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.set_worker_factory_start_routine_ep_impl(args.ep as _, vm)
     }
 
     /// Insert and trigger a TP_WORK item with target callback address `ep`.
     #[pymethod]
-    fn queue_tp_work(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_work_impl(args.ep as _, vm)
+    fn queue_tp_work(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_work_impl(args.ep as _, vm)
     }
 
     /// Prepare a TP_WAIT callback and trigger its associated wait-completion path.
     #[pymethod]
-    fn queue_tp_wait(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_wait_impl(args.ep as _, vm)
+    fn queue_tp_wait(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_wait_impl(args.ep as _, vm)
     }
 
     /// Prepare a TP_IO callback and trigger completion through a temporary file.
     #[pymethod]
-    fn queue_tp_io(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_io_impl(args.ep as _, vm)
+    fn queue_tp_io(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_io_impl(args.ep as _, vm)
     }
 
     /// Prepare a TP_ALPC callback and trigger an ALPC connection attempt.
     #[pymethod]
-    fn queue_tp_alpc(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_alpc_impl(args.ep as _, vm)
+    fn queue_tp_alpc(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_alpc_impl(args.ep as _, vm)
     }
 
     /// Prepare a TP_JOB callback and associate the process with the notification job.
     #[pymethod]
-    fn queue_tp_job(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_job_impl(args.ep as _, vm)
+    fn queue_tp_job(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_job_impl(args.ep as _, vm)
     }
 
     /// Post a TP_DIRECT callback through the target I/O completion port.
     #[pymethod]
-    fn queue_tp_direct(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_direct_impl(args.ep as _, vm)
+    fn queue_tp_direct(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_direct_impl(args.ep as _, vm)
     }
 
     /// Insert a TP_TIMER callback into the target pool's timer structures and arm the timer.
     #[pymethod]
-    fn queue_tp_timer(&self, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
-        self.queue_tp_timer_impl(args.ep as _, vm)
+    fn queue_tp_timer(zelf: &Py<Self>, args: ThreadPoolEpArgs, vm: &VirtualMachine) -> PyResult<()> {
+        zelf.queue_tp_timer_impl(args.ep as _, vm)
     }
 }
 
@@ -304,7 +316,7 @@ impl ThreadPool {
     }
 
     fn ensure_native_bitness(&self, vm: &VirtualMachine) -> PyResult<()> {
-        let is_64 = self.process.is_x64(vm)?;
+        let is_64 = Process::is_x64(&self.process, vm)?;
 
         #[cfg(target_arch = "x86_64")]
         if !is_64 {

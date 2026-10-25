@@ -9,5 +9,5 @@ proc-macro = true
 
 [dependencies]
 br3k-python-api = { path = "../python-api" }
-syn = { version = "2.0", features = ["full"] }
+syn = { version = "3.0", features = ["full"] }
 quote = "1.0"

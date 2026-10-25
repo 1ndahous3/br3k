@@ -13,14 +13,14 @@ pub struct PeApiSetEntry {
 impl PeApiSetEntry {
     /// API-set contract name.
     #[pygetset]
-    fn contract(&self) -> String {
-        self.entry.contract.clone()
+    fn contract(zelf: &Py<Self>) -> String {
+        zelf.entry.contract.clone()
     }
 
     /// Host DLL names recorded for this contract.
     #[pygetset]
-    fn hosts(&self, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
-        string_list_to_py(&self.entry.hosts, vm)
+    fn hosts(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyStrRef> {
+        string_list_to_py(&zelf.entry.hosts, vm)
     }
 }
 
@@ -51,14 +51,14 @@ pub struct ResolveContractArgs {
 impl PeApiSetMap {
     /// Number of contracts in the map.
     #[pygetset]
-    fn count(&self) -> usize {
-        self.map.entries().len()
+    fn count(zelf: &Py<Self>) -> usize {
+        zelf.map.entries().len()
     }
 
     /// Contract records in the parsed namespace.
     #[pygetset]
-    fn entries(&self, vm: &VirtualMachine) -> PyListOf<PyRef<PeApiSetEntry>> {
-        let entries = self
+    fn entries(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<PeApiSetEntry>> {
+        let entries = zelf
             .map
             .entries()
             .iter()
@@ -71,16 +71,16 @@ impl PeApiSetMap {
 
     /// Return the selected host for a known contract, or None when no host is available.
     #[pymethod]
-    fn resolve_contract(&self, args: ResolveContractArgs) -> Option<String> {
-        self.map
+    fn resolve_contract(zelf: &Py<Self>, args: ResolveContractArgs) -> Option<String> {
+        zelf.map
             .resolve_contract(&args.contract_name.to_string())
             .map(|host| host.to_string())
     }
 
     /// Resolve a contract to its host, leaving an unresolved ordinary module name unchanged.
     #[pymethod]
-    fn resolve_module_name(&self, args: ResolveContractArgs) -> String {
-        self.map
+    fn resolve_module_name(zelf: &Py<Self>, args: ResolveContractArgs) -> String {
+        zelf.map
             .resolve_module_name(&args.contract_name.to_string())
             .to_string()
     }

@@ -62,7 +62,7 @@ Target virtual address of the process environment block.
 
 ### MemoryMap
 
-[Source](../../lib/src/vm/py_proc.rs#L431)
+[Source](../../lib/src/vm/py_proc.rs#L419)
 
 A captured virtual-memory map with reusable filters.
 
@@ -118,7 +118,7 @@ Return snapshot regions grouped under `allocation_base`.
 
 ### MemoryRegion
 
-[Source](../../lib/src/vm/py_proc.rs#L121)
+[Source](../../lib/src/vm/py_proc.rs#L109)
 
 A virtual-memory region snapshot from the target process.
 
@@ -360,7 +360,7 @@ Target virtual address of the main executable image.
 
 ### Process
 
-[Source](../../lib/src/vm/py_proc.rs#L524)
+[Source](../../lib/src/vm/py_proc.rs#L512)
 
 A process selection, native handle, and independent memory read/write strategies.
 
@@ -641,7 +641,7 @@ How to acquire a process handle for the selected PID.
 
 ### ProcessParameters
 
-[Source](../../lib/src/vm/py_proc.rs#L493)
+[Source](../../lib/src/vm/py_proc.rs#L481)
 
 Owned native process parameters initialized from an executable path.
 
@@ -786,7 +786,7 @@ The three optional pointer-sized arguments default to zero. Uses the system API 
 
 ### ThreadInfo
 
-[Source](../../lib/src/vm/py_proc.rs#L333)
+[Source](../../lib/src/vm/py_proc.rs#L321)
 
 A thread snapshot with best-effort start-address, TEB, and stack information.
 
@@ -1151,7 +1151,7 @@ Configured maximum worker count.
 
 ### WorkingSetRegion
 
-[Source](../../lib/src/vm/py_proc.rs#L231)
+[Source](../../lib/src/vm/py_proc.rs#L219)
 
 Page-residency and sharing counts for a memory-region snapshot.
 

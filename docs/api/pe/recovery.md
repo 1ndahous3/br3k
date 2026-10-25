@@ -290,6 +290,16 @@ Source-bound recovery analysis with an editable, target-sized import model.
 
 model edits affect the next validate() and build(); recovered is never a cached count from an older model revision. diagnostics describe analysis stages, while validate() recomputes model issues. build() never accepts a different source image.
 
+#### model
+
+```python
+model: br3k.pe.imports.Model
+```
+
+Read-only property.
+
+Editable, target-pointer-sized import model shared with this plan.
+
 #### diagnostics
 
 ```python
@@ -319,16 +329,6 @@ header_prefix: int
 Read-only property.
 
 Bytes preceding the recovered header, or zero when no prefix was identified.
-
-#### model
-
-```python
-model: br3k.pe.imports.Model
-```
-
-Read-only property.
-
-Editable, target-pointer-sized import model shared with this plan.
 
 #### validate
 

@@ -161,22 +161,22 @@ impl Constructor for PeImportRecoveryOptions {
 impl PeImportRecoveryOptions {
     /// Selected recovery preset, before explicit option overrides.
     #[pygetset]
-    fn strength(&self, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::vm::py_pe::types::ImportRecoveryStrength>> {
-        PyEnumValue::new(self.strength, vm)
+    fn strength(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyEnumValue<crate::vm::py_pe::types::ImportRecoveryStrength>> {
+        PyEnumValue::new(zelf.strength, vm)
     }
 
     /// Whether address resolution may consider the nearest export instead of an exact match.
     #[pygetset]
-    fn nearest(&self) -> bool { self.nearest }
+    fn nearest(zelf: &Py<Self>) -> bool { zelf.nearest }
 
     /// Whether resolution follows export forwarders.
     #[pygetset]
-    fn forwarders(&self) -> bool { self.forwarders }
+    fn forwarders(zelf: &Py<Self>) -> bool { zelf.forwarders }
 
     /// Number of API-set contracts supplied for resolving forwarded module names.
     #[pygetset]
-    fn api_set_count(&self) -> usize {
-        self.api_set_map
+    fn api_set_count(zelf: &Py<Self>) -> usize {
+        zelf.api_set_map
             .as_ref()
             .map(|map| map.entries().len())
             .unwrap_or(0)
@@ -184,74 +184,74 @@ impl PeImportRecoveryOptions {
 
     /// Whether unresolved import slots remain in the recovery model.
     #[pygetset]
-    fn keep_unresolved(&self) -> bool { self.keep_unresolved }
+    fn keep_unresolved(zelf: &Py<Self>) -> bool { zelf.keep_unresolved }
 
     /// Whether mapped thunk code may be followed while resolving an import address.
     #[pygetset]
-    fn trace_mapped_thunks(&self) -> bool { self.trace_mapped_thunks }
+    fn trace_mapped_thunks(zelf: &Py<Self>) -> bool { zelf.trace_mapped_thunks }
 
     /// Maximum number of thunk-tracing steps per address.
     #[pygetset]
-    fn max_trace_depth(&self) -> usize { self.max_trace_depth }
+    fn max_trace_depth(zelf: &Py<Self>) -> usize { zelf.max_trace_depth }
 
     /// Whether to scan for candidate IAT ranges even when declarations are available.
     #[pygetset]
-    fn force_iat_scan(&self) -> bool { self.force_iat_scan }
+    fn force_iat_scan(zelf: &Py<Self>) -> bool { zelf.force_iat_scan }
 
     /// Minimum number of entries required for an IAT scan candidate.
     #[pygetset]
-    fn iat_scan_min_entries(&self) -> usize { self.iat_scan_min_entries }
+    fn iat_scan_min_entries(zelf: &Py<Self>) -> usize { zelf.iat_scan_min_entries }
 
     /// Whether recovery uses every accepted scanned IAT range instead of the preferred range.
     #[pygetset]
-    fn recover_all_iat_ranges(&self) -> bool { self.recover_all_iat_ranges }
+    fn recover_all_iat_ranges(zelf: &Py<Self>) -> bool { zelf.recover_all_iat_ranges }
 
     /// Whether to trace code reachable from the entry point for API-reference evidence.
     #[pygetset]
-    fn trace_entry_point(&self) -> bool { self.trace_entry_point }
+    fn trace_entry_point(zelf: &Py<Self>) -> bool { zelf.trace_entry_point }
 
     /// Maximum number of code blocks visited by entry-point tracing.
     #[pygetset]
-    fn entry_point_trace_max_blocks(&self) -> usize { self.entry_point_trace_max_blocks }
+    fn entry_point_trace_max_blocks(zelf: &Py<Self>) -> usize { zelf.entry_point_trace_max_blocks }
 
     /// Maximum number of bytes examined by entry-point tracing.
     #[pygetset]
-    fn entry_point_trace_max_bytes(&self) -> usize { self.entry_point_trace_max_bytes }
+    fn entry_point_trace_max_bytes(zelf: &Py<Self>) -> usize { zelf.entry_point_trace_max_bytes }
 
     /// Whether entry-point tracing follows direct calls into the image.
     #[pygetset]
-    fn entry_point_trace_follow_calls(&self) -> bool { self.entry_point_trace_follow_calls }
+    fn entry_point_trace_follow_calls(zelf: &Py<Self>) -> bool { zelf.entry_point_trace_follow_calls }
 
     /// Whether API references found by entry-point tracing contribute to import recovery.
     #[pygetset]
-    fn recover_entry_point_code_references(&self) -> bool { self.recover_entry_point_code_references }
+    fn recover_entry_point_code_references(zelf: &Py<Self>) -> bool { zelf.recover_entry_point_code_references }
 
     /// Whether entry-point reference evidence is used to recover IAT ranges.
     #[pygetset]
-    fn recover_entry_point_iat_ranges(&self) -> bool { self.recover_entry_point_iat_ranges }
+    fn recover_entry_point_iat_ranges(zelf: &Py<Self>) -> bool { zelf.recover_entry_point_iat_ranges }
 
     /// Whether to scan executable sections for API references beyond entry-point reachability.
     #[pygetset]
-    fn full_code_scan(&self) -> bool { self.full_code_scan }
+    fn full_code_scan(zelf: &Py<Self>) -> bool { zelf.full_code_scan }
 
     /// Whether references from the full executable-section scan contribute to import recovery.
     #[pygetset]
-    fn recover_full_code_references(&self) -> bool { self.recover_full_code_references }
+    fn recover_full_code_references(zelf: &Py<Self>) -> bool { zelf.recover_full_code_references }
 
     /// Whether building may rewrite supported direct API branches using recovered import stubs.
     #[pygetset]
-    fn patch_direct_code_references(&self) -> bool { self.patch_direct_code_references }
+    fn patch_direct_code_references(zelf: &Py<Self>) -> bool { zelf.patch_direct_code_references }
 
     /// Return a short list of selected option values for logging; not a serialized configuration.
     #[pymethod]
-    fn describe(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyStrRef>> {
-        let strength: &'static str = self.strength.into();
+    fn describe(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyStrRef>> {
+        let strength: &'static str = zelf.strength.into();
         let lines = [
             format!("strength={strength}"),
-            format!("nearest={}", self.nearest),
-            format!("forwarders={}", self.forwarders),
-            format!("keep_unresolved={}", self.keep_unresolved),
-            format!("trace_mapped_thunks={} depth={}", self.trace_mapped_thunks, self.max_trace_depth),
+            format!("nearest={}", zelf.nearest),
+            format!("forwarders={}", zelf.forwarders),
+            format!("keep_unresolved={}", zelf.keep_unresolved),
+            format!("trace_mapped_thunks={} depth={}", zelf.trace_mapped_thunks, zelf.max_trace_depth),
         ]
         .into_iter()
         .map(|line| vm.ctx.new_str(line))
@@ -269,6 +269,8 @@ impl PeImportRecoveryOptions {
 #[pyclass(module = "br3k.pe.recovery", name = "Plan")]
 #[derive(Clone, Debug, PyPayload)]
 pub struct PeImportRecoveryResult {
+    /// Editable, target-pointer-sized import model shared with this plan.
+    #[pymember(name = "model")]
     builder: PyRef<PeImportBuilder>,
     pub(crate) plan: crate::pe::recovery::imports::Plan,
 
@@ -320,20 +322,16 @@ pub(crate) fn analyze(args: AnalyzeArgs, vm: &VirtualMachine) -> PyResult<PeImpo
 impl PeImportRecoveryResult {
     /// Diagnostics collected during analysis. Call validate() to check the current edited model.
     #[pygetset]
-    fn diagnostics(&self, vm: &VirtualMachine) -> PyListOf<PyRef<super::diagnostic::Diagnostic>> { super::diagnostic::to_py(&self.plan.diagnostics, vm) }
+    fn diagnostics(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<super::diagnostic::Diagnostic>> { super::diagnostic::to_py(&zelf.plan.diagnostics, vm) }
     /// Whether analysis reconstructed synthetic PE headers.
     #[pygetset]
-    fn synthetic_headers(&self) -> bool { self.plan.header_recovery.as_ref().is_some_and(|recovery| recovery.synthetic) }
+    fn synthetic_headers(zelf: &Py<Self>) -> bool { zelf.plan.header_recovery.as_ref().is_some_and(|recovery| recovery.synthetic) }
     /// Bytes preceding the recovered header, or zero when no prefix was identified.
     #[pygetset]
-    fn header_prefix(&self) -> u32 { self.plan.header_recovery.as_ref().map_or(0, |recovery| recovery.header_prefix) }
-    /// Editable, target-pointer-sized import model shared with this plan.
-    #[pygetset]
-    fn model(&self) -> PyRef<super::imports::PeImportBuilder> { self.builder.clone() }
-
+    fn header_prefix(zelf: &Py<Self>) -> u32 { zelf.plan.header_recovery.as_ref().map_or(0, |recovery| recovery.header_prefix) }
     /// Recompute diagnostics from the currently edited model.
     #[pymethod]
-    fn validate(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportIssue>>> { self.issues(vm) }
+    fn validate(zelf: &Py<Self>, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportIssue>>> { zelf.issues(vm) }
 
     /// Build only against the original capture. Partial output requires explicit opt-in.
     ///
@@ -342,8 +340,8 @@ impl PeImportRecoveryResult {
     /// succeeded, not that Windows can load or execute the reconstructed image.
     /// Raises ValueError for rejected partial output or an unsuccessful rebuild.
     #[pymethod]
-    fn build(&self, args: BuildArgs, vm: &VirtualMachine) -> PyResult<super::editor::BuildResult> {
-        let result = self.plan.build(&self.builder.model_clone(), crate::pe::recovery::BuildPolicy {
+    fn build(zelf: &Py<Self>, args: BuildArgs, vm: &VirtualMachine) -> PyResult<super::editor::BuildResult> {
+        let result = zelf.plan.build(&zelf.builder.model_clone(), crate::pe::recovery::BuildPolicy {
             allow_partial: args.allow_partial.unwrap_or(false), sanitize_headers: args.sanitize_headers.unwrap_or(true),
             preserve_resources: args.preserve_resources.unwrap_or(true), discover_relocations: args.discover_relocations.unwrap_or(false),
         }).map_err(map_to_py_value_error(vm, "Unable to build recovery plan"))?;
@@ -351,19 +349,19 @@ impl PeImportRecoveryResult {
     }
     /// Delay-import recovery evidence collected during analysis.
     #[pygetset]
-    fn delay_imports(&self) -> super::delay_imports::PeDelayImportRecovery {
-        super::delay_imports::PeDelayImportRecovery { recovery: self.plan.delay_imports.clone() }
+    fn delay_imports(zelf: &Py<Self>) -> super::delay_imports::PeDelayImportRecovery {
+        super::delay_imports::PeDelayImportRecovery { recovery: zelf.plan.delay_imports.clone() }
     }
 
     /// Failure encountered while reading declared imports, or None when that step succeeded.
     #[pygetset]
-    fn declaration_error(&self) -> Option<String> { self.plan.declaration_error.clone() }
+    fn declaration_error(zelf: &Py<Self>) -> Option<String> { zelf.plan.declaration_error.clone() }
 
 
     /// Current number of functions in the editable import model, including unresolved entries retained by policy.
     #[pygetset]
-    fn recovered(&self) -> usize {
-        self.builder.model_clone().function_count()
+    fn recovered(zelf: &Py<Self>) -> usize {
+        zelf.builder.model_clone().function_count()
     }
 
     fn issues(&self, vm: &VirtualMachine) -> PyResult<PyListOf<PyRef<super::import_records::PeImportIssue>>> {
@@ -373,28 +371,27 @@ impl PeImportRecoveryResult {
 
     /// API references discovered by entry-point tracing.
     #[pygetset]
-    fn entry_references(&self, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
-        import_code_references_to_py(&self.plan.entry_references, vm)
+    fn entry_references(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
+        import_code_references_to_py(&zelf.plan.entry_references, vm)
     }
 
     /// API references discovered by the executable-section scan.
     #[pygetset]
-    fn full_references(&self, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
-        import_code_references_to_py(&self.plan.full_references, vm)
+    fn full_references(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
+        import_code_references_to_py(&zelf.plan.full_references, vm)
     }
 
     /// Direct API-reference evidence collected for possible branch rewriting.
     #[pygetset]
-    fn direct_references(&self, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
-        import_code_references_to_py(&self.plan.direct_references, vm)
+    fn direct_references(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
+        import_code_references_to_py(&zelf.plan.direct_references, vm)
     }
 
     /// Return the merged entry-point and full-scan reference evidence.
     #[pymethod]
-    fn all_references(&self, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
-        import_code_references_to_py(&crate::pe::recovery::imports::all_references(&self.plan.entry_references, &self.plan.full_references), vm)
+    fn all_references(zelf: &Py<Self>, vm: &VirtualMachine) -> PyListOf<PyRef<super::code_refs::PeImportCodeReference>> {
+        import_code_references_to_py(&crate::pe::recovery::imports::all_references(&zelf.plan.entry_references, &zelf.plan.full_references), vm)
     }
-
 }
 
 fn import_issues_to_py(issues: &[ImportIssue], vm: &VirtualMachine) -> PyListOf<PyRef<super::import_records::PeImportIssue>> {
