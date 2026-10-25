@@ -25,16 +25,15 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             execute: true
-            rust-test-args: ''
           - target: i686-pc-windows-msvc
             execute: true
-            # Temporary containment of the tracked parallel RustPython crash.
-            rust-test-args: '-- --test-threads=1'
           - target: aarch64-pc-windows-msvc
             execute: false
-            rust-test-args: ''
 
     steps:
+      - name: Enable long Git paths
+        run: git config --global core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -54,7 +53,7 @@ jobs:
 
       - name: Run release unit and host/VM tests
         if: matrix.execute
-        run: cargo test --release --workspace --no-fail-fast --target ${{ matrix.target }} ${{ matrix.rust-test-args }}
+        run: cargo test --release --workspace --no-fail-fast --target ${{ matrix.target }}
 
       - name: Upload failed-case artifacts
         if: ${{ always() && matrix.execute }}

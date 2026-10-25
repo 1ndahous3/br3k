@@ -52,6 +52,6 @@ VM tests check functional results and important invariants. Example smoke tests 
 
 The `tests` workflow runs on pull requests, branch pushes, and manual dispatch. A shared Python tooling job checks generated files and script types, validates the installed stub wheel, and builds the HTML reference. Native jobs build release artifacts and run Rust plus host/VM tests on x64 and x86. ARM64 artifacts and test binaries are cross-compiled but not executed on the x64 runner. The release-packaging workflow uses the same tooling job and attaches the stub wheel alongside native archives. See [Development](../docs/development.md) for tooling commands.
 
-x86 Rust tests currently run serially (`-- --test-threads=1`) because an intermittent parallel RustPython crash remains under investigation. This is a temporary workaround, not a fix. Host tests use separate CLI processes. Injection scenarios are not part of the host suite and are never implicitly selected.
+Rust tests use Cargo's default parallel execution on both x64 and x86. Host tests use separate CLI processes. Injection scenarios are not part of the host suite and are never implicitly selected.
 
 Git hooks are not installed automatically. Keep pre-commit checks static; use the same Cargo commands for an optional pre-push or manual smoke run after building release artifacts.

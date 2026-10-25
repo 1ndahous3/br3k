@@ -53,13 +53,13 @@ The configuration and build-hook live in `tools/docs/`; the commands above run f
 
 ## Release Tests
 
-On Windows with the project's Rust/MSVC toolchain:
+On Windows with the project's Rust/MSVC toolchain, enable long Git paths before Cargo fetches dependencies: `git config --global core.longpaths true`. RustPython's dependencies can have deeply nested paths, which may cause build failures due to Windows path length limits.
 
 ```powershell
 cargo build --release --workspace
 cargo test --release --workspace --no-fail-fast
 ```
 
-Build native artifacts before host tests, using the same target architecture. x86 tests currently require `-- --test-threads=1`; ARM64 tests can only be compiled with `--no-run` on the x64 runner. See [Testing](https://github.com/1ndahous3/br3k/blob/main/tests/README.md) for fixture ownership and failure artifacts.
+Build native artifacts before host tests, using the same target architecture. ARM64 tests can only be compiled with `--no-run` on the x64 runner. See [Testing](https://github.com/1ndahous3/br3k/blob/main/tests/README.md) for fixture ownership and failure artifacts.
 
 CI runs static checks, packaging validation, and documentation separately from native release tests. Normal builds upload the wheel and HTML; tag releases additionally attach the wheel to the GitHub release. PyPI and documentation hosting are not enabled.

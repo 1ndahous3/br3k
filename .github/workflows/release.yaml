@@ -26,6 +26,9 @@ jobs:
             arch: aarch64
 
     steps:
+      - name: Enable long Git paths
+        run: git config --global core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

@@ -164,7 +164,6 @@ fn python_delay_recovery_returns_typed_candidates_and_restores_file_and_mapped_l
     let source = image.mapped_to_file_image().unwrap();
     image.clear_data_directory_if_present(PE_DIRECTORY_ENTRY_DELAY_IMPORT).unwrap();
     image.write_bytes(0x1200, &[0; 64]).unwrap();
-    // Byte strings avoid exhausting RustPython's 32-bit refcount with repeated integer constants.
     let hex = |data: &[u8]| data.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let script = format!(r#"
 import br3k
