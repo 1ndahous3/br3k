@@ -51,6 +51,8 @@ uv run --locked --group docs ty check --config "src.include=['tools/docs']"
 
 The configuration and build-hook live in `tools/docs/`; the commands above run from the repository root. `docs/` contains only hand-written Markdown. The static site is written to `target/docs/`. The `tools/docs/reference.py` build-hook reads the stub modules and their `__all__` lists to create virtual `api/` pages; there are no intermediate Markdown files under `docs/api/`. MkDocs uses its bundled theme; mkdocstrings parses the stubs without importing br3k or starting a VM. `mkdocs serve` watches the stubs for changes. API signatures and docstrings come from the same generated files used by ty and the wheel. Hand-written Markdown covers workflows and architecture, not a second API reference.
 
+[Published documentation](https://1ndahous3.github.io/br3k/) follows `main`. After a successful push or manual `tests` workflow run on `main`, the `deploy-docs` job publishes the existing HTML artifact to GitHub Pages without rebuilding it. Deployment waits for Python tooling and the full native test matrix; pull requests, other branches, and release tags do not publish. Pages uses GitHub Actions as its source and the `github-pages` environment, with serialized deployments and no separate HTML branch or versioned sites. Local `mkdocs serve` also mounts the site under `/br3k/`.
+
 ## Release Tests
 
 On Windows with the project's Rust/MSVC toolchain, enable long Git paths before Cargo fetches dependencies: `git config --global core.longpaths true`. RustPython's dependencies can have deeply nested paths, which may cause build failures due to Windows path length limits.
@@ -62,4 +64,4 @@ cargo test --release --workspace --no-fail-fast
 
 Build native artifacts before host tests, using the same target architecture. ARM64 tests can only be compiled with `--no-run` on the x64 runner. See [Testing](https://github.com/1ndahous3/br3k/blob/main/tests/README.md) for fixture ownership and failure artifacts.
 
-CI runs static checks, packaging validation, and documentation separately from native release tests. Normal builds upload the wheel and HTML; tag releases additionally attach the wheel to the GitHub release. PyPI and documentation hosting are not enabled.
+CI runs static checks, packaging validation, and documentation separately from native release tests. Normal builds upload the wheel and HTML; tag releases additionally attach the wheel to the GitHub release. PyPI publishing is not enabled.

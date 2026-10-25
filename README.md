@@ -4,7 +4,7 @@
 
 It provides many options to vary the pentest flow: selecting different strategies, choosing the system API backend, and configuring dispatch for specific low-level functions. Some features are documented in [core](docs/core.md) notes.
 
-The Python API reference covers all `br3k` namespaces, with signatures, source docstrings, strategy enums, and compatibility aliases. [Editor stubs](stubs/br3k/__init__.pyi) are generated from Rust declarations with `cargo api`; MkDocs renders their documentation. CI provides the HTML reference and a `br3k-stubs` wheel. See [Development](docs/development.md) for uv setup, ty checks, prek hooks, packaging, and local documentation builds.
+The [Python API reference](https://1ndahous3.github.io/br3k/api/) covers all `br3k` namespaces, with signatures, source docstrings, strategy enums, and compatibility aliases. [Editor stubs](stubs/br3k/__init__.pyi) are generated from Rust declarations with `cargo api`; MkDocs renders their documentation. CI provides the HTML reference and a `br3k-stubs` wheel. See [Development](docs/development.md) for uv setup, ty checks, prek hooks, packaging, and local documentation builds.
 
 The repository includes many well-known pentest techniques (process injection, payload delivery between targets) and other scripts (see [scripts](docs/scripts.md) notes).
 

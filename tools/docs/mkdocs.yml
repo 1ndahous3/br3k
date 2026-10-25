@@ -1,6 +1,8 @@
 site_name: br3k
 site_description: Python API and research workflows
+site_url: https://1ndahous3.github.io/br3k/
 repo_url: https://github.com/1ndahous3/br3k
+edit_uri: edit/main/docs/
 docs_dir: ../../docs
 site_dir: ../../target/docs
 
