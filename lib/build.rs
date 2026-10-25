@@ -5,10 +5,11 @@ const PATCH_VERSION: u32 = 0;
 const SEQ_YEAR: i32 = 2025;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=BR3K_VERSION");
     let epoch = NaiveDate::from_ymd_opt(SEQ_YEAR, 1, 1).unwrap();
     let today = Utc::now().date_naive();
     let seq = (today - epoch).num_days();
 
-    let version = format!("{MAJOR_VERSION}.{seq}.{PATCH_VERSION}");
+    let version = std::env::var("BR3K_VERSION").unwrap_or_else(|_| format!("{MAJOR_VERSION}.{seq}.{PATCH_VERSION}"));
     println!("cargo:rustc-env=BR3K_VERSION={version}");
 }

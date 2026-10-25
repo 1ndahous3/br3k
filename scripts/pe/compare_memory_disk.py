@@ -9,15 +9,18 @@
 #
 # Config globals: PROCESS_NAME / PROCESS_ID, MODULE_NAME.
 
+from collections.abc import Callable, Iterable
+from typing import Any
+
 import br3k
 
-PROCESS_NAME = globals().get("PROCESS_NAME", "notepad.exe")
-PROCESS_ID = globals().get("PROCESS_ID", None)
-MODULE_NAME = globals().get("MODULE_NAME", None)
+PROCESS_NAME: str = globals().get("PROCESS_NAME", "notepad.exe")
+PROCESS_ID: int | None = globals().get("PROCESS_ID", None)
+MODULE_NAME: str | None = globals().get("MODULE_NAME", None)
 
 
-def open_process(process_name, process_id):
-    args = {
+def open_process(process_name: str, process_id: int | None) -> br3k.proc.Process:
+    args: dict[str, Any] = {
         "process_open_strategy": br3k.proc.ProcessOpenStrategy.OpenProcess,
         "process_vm_read_strategy": br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory,
     }
@@ -31,7 +34,7 @@ def open_process(process_name, process_id):
     return process
 
 
-def selected_modules(modules, module_name):
+def selected_modules(modules: list[br3k.proc.Module], module_name: str | None) -> list[br3k.proc.Module]:
     if module_name is None or module_name == "":
         if len(modules) == 0:
             raise RuntimeError("The target process has no loaded modules")
@@ -54,11 +57,11 @@ def selected_modules(modules, module_name):
     return selected
 
 
-def bytes_hex(data):
+def bytes_hex(data: bytes) -> str:
     return " ".join(f"{byte:02x}" for byte in data)
 
 
-def bytes_sample_text(data, truncated):
+def bytes_sample_text(data: bytes, truncated: bool) -> str:
     text = bytes_hex(data)
     if truncated:
         text += " ..."
@@ -66,7 +69,7 @@ def bytes_sample_text(data, truncated):
     return text
 
 
-def hash_text(value):
+def hash_text(value: int | None) -> str:
     if value is None:
         return "unavailable"
 
@@ -80,7 +83,7 @@ def enum_text(value):
     return str(value)
 
 
-def import_target_text(module_name, name, ordinal):
+def import_target_text(module_name: str, name: str | None, ordinal: int | None) -> str:
     if name is not None:
         return f"{module_name}!{name}"
     if ordinal is not None:
@@ -89,32 +92,32 @@ def import_target_text(module_name, name, ordinal):
     return f"{module_name}!<unknown>"
 
 
-def resolved_address_text(module_name, name, ordinal, address):
+def resolved_address_text(module_name: str | None, name: str | None, ordinal: int | None, address: int) -> str:
     if module_name is None:
         return hex(address)
 
     return f"{import_target_text(module_name, name, ordinal)}@{hex(address)}"
 
 
-def image_has_data_directory(image, index):
+def image_has_data_directory(image: br3k.pe.Image, index: int) -> bool:
     try:
         return not image.headers.directory(index).empty
     except Exception:
         return False
 
 
-def append_report_line(lines, line, emit=None):
+def append_report_line(lines: list[str], line: str, emit: Callable[[str], object] | None = None) -> None:
     lines.append(line)
     if emit is not None:
         emit(line)
 
 
-def append_report_lines(lines, source_lines, emit=None):
+def append_report_lines(lines: list[str], source_lines: Iterable[str], emit: Callable[[str], object] | None = None) -> None:
     for line in source_lines:
         append_report_line(lines, line, emit)
 
 
-def data_directory_lines(image, title):
+def data_directory_lines(image: br3k.pe.Image, title: str) -> list[str]:
     lines = [f"{title}:"]
     any_directory = False
 
@@ -137,7 +140,7 @@ def data_directory_lines(image, title):
     return lines
 
 
-def resource_info_line(info):
+def resource_info_line(info: br3k.pe.resources.DirectoryInfo) -> str:
     return (
         f"rva={hex(info.virtual_address)} size={hex(info.size)} "
         f"dirs={info.directory_count} named={info.named_entry_count} ids={info.id_entry_count} "
@@ -145,21 +148,21 @@ def resource_info_line(info):
     )
 
 
-def directory_info_line(info):
+def directory_info_line(info) -> str:
     if not info.present:
         return "none"
 
     return f"rva={hex(info.rva)} size={hex(info.size)}"
 
 
-def optional_hex(value):
+def optional_hex(value: int | None) -> str:
     if value is None:
         return "none"
 
     return hex(value)
 
 
-def load_config_line(load_config):
+def load_config_line(load_config: br3k.pe.load_config.Info) -> str:
     if not load_config.present:
         return "none"
 
@@ -200,7 +203,7 @@ def load_config_line(load_config):
     return text
 
 
-def bound_check_lines(check, indent="    "):
+def bound_check_lines(check: br3k.pe.imports.BoundCheck, indent: str = "    ") -> list[str]:
     source = "none" if check.dependency_source is None else enum_text(check.dependency_source)
     text = (
         f"{indent}{check.dll_name}: {enum_text(check.kind)} {enum_text(check.status)} "
@@ -215,7 +218,7 @@ def bound_check_lines(check, indent="    "):
     return lines
 
 
-def metadata_lines(title, image, export_map=None):
+def metadata_lines(title: str, image: br3k.pe.Image, export_map: br3k.pe.exports.Symbols | None = None) -> list[str]:
     try:
         metadata = image.inspect()
     except Exception as exc:
@@ -273,7 +276,7 @@ def metadata_lines(title, image, export_map=None):
 
     return lines
 
-def compare_module(view, module):
+def compare_module(view: br3k.pe.ProcessView, module: br3k.proc.Module) -> None:
     print(f"\n{'=' * 78}\n{module.BaseDllName}: base={hex(module.DllBase)} size={hex(module.SizeOfImage)}")
     capture = view.capture(module)
     print(f"  source={capture.path} captured_complete={capture.complete}")

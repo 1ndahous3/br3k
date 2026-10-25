@@ -2,12 +2,11 @@
 """
 COM IRundown research bindings with explicit build-specific addresses.
 
-This is not general COM automation. The caller supplies matching COM
-module symbols and an initialized process read context. See IRundown for
-the constructor's base-address/RVA distinction and operation order.
+This is not general COM automation. The caller supplies matching COM module symbols and an initialized process read context. See IRundown for the constructor's base-address/RVA distinction and operation order.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 import br3k.proc
 
@@ -15,9 +14,7 @@ class IRundown:
     """
     A low-level COM IRundown callback context for an opened process.
 
-    Requires an initialized process-memory read strategy and build-matched COM
-    symbol RVAs and layout offsets. Call `read_ipid_entries()` before `execute()`.
-    The constructor only stores addresses; it does not validate symbol provenance.
+    Requires an initialized process-memory read strategy and build-matched COM symbol RVAs and layout offsets. Call `read_ipid_entries()` before `execute()`. The constructor only stores addresses; it does not validate symbol provenance.
     """
     def __init__(self, process: br3k.proc.Process, ole32_address: int, ole32_secret_rva: int, ole32_palloc_rva: int, ole32_emptyctx_rva: int, moxid_offset: int) -> None:
         """
@@ -41,10 +38,13 @@ class IRundown:
         """
         Try `IRundown::DoCallback` with target entry point `ep` and optional `arg1` (default zero).
 
-        Returns `True` on a successful callback and `False` if no entry succeeds.
-        Requires previously read IPID entries and an initialized read context;
-        connection, memory, and COM failures may raise `SystemError`.
+        Returns `True` on a successful callback and `False` if no entry succeeds. Requires previously read IPID entries and an initialized read context; connection, memory, and COM failures may raise `SystemError`.
         """
         ...
 
-from br3k.com import IRundown as ComIRundown
+ComIRundown = IRundown
+
+__all__ = [
+    "IRundown",
+    "ComIRundown",
+]

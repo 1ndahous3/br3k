@@ -9,12 +9,12 @@
 # =============================================================================
 
 # Read-only process queries. This fixture does not require a hidden candidate.
-PROCESS_ID = PROCESS_ID
+PROCESS_ID: int = globals()["PROCESS_ID"]
 
 import br3k
 
 
-def open_process(process_id):
+def open_process(process_id: int) -> br3k.proc.Process:
     process = br3k.proc.Process(pid=str(process_id),
         process_open_strategy=br3k.proc.ProcessOpenStrategy.OpenProcess,
         process_vm_read_strategy=br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory)
@@ -23,7 +23,7 @@ def open_process(process_id):
     return process
 
 
-def check_scan(view):
+def check_scan(view: br3k.pe.ProcessView) -> None:
     scan = view.scan()
     assert isinstance(scan, br3k.pe.analysis.ProcessScan)
     assert scan.module_count == len(view.modules)

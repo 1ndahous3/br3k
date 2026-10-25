@@ -2,9 +2,7 @@
 """
 Process/thread lifecycle, memory strategies, snapshots, and thread-pool experiments.
 
-Constructors configure wrappers; opening/creating and memory initialization
-are separate steps. Snapshot records are returned by query methods and
-generally have no public constructor. They are not live views of the target.
+Constructors configure wrappers; opening/creating and memory initialization are separate steps. Snapshot records are returned by query methods and generally have no public constructor. They are not live views of the target.
 
 Example (requires an already running notepad.exe and sufficient access):
 ```python
@@ -20,6 +18,7 @@ regions = process.memory_map().executable
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 import br3k.pe.exports
 import br3k.proc
@@ -40,8 +39,7 @@ class MemoryMap:
     """
     A captured virtual-memory map with reusable filters.
 
-    Properties return lists derived from the same snapshot; they do not re-query
-    the target. Call `Process.memory_map()` again to refresh the snapshot.
+    Properties return lists derived from the same snapshot; they do not re-query the target. Call `Process.memory_map()` again to refresh the snapshot.
     """
     @property
     def regions(self) -> list[br3k.proc.MemoryRegion]:
@@ -77,9 +75,7 @@ class MemoryRegion:
     """
     A virtual-memory region snapshot from the target process.
 
-    Addresses are target virtual addresses and sizes are bytes. State, Type,
-    and protection values use `br3k.mem` constants. These are observations, not
-    promises that a later read will succeed.
+    Addresses are target virtual addresses and sizes are bytes. State, Type, and protection values use `br3k.mem` constants. These are observations, not promises that a later read will succeed.
     """
     @property
     def BaseAddress(self) -> int:
@@ -182,8 +178,7 @@ class Module:
     """
     A loader-listed module snapshot. Addresses are target virtual addresses.
 
-    This record comes from the process loader lists; manually mapped or unlinked
-    images may not appear. Names and ranges describe the moment of enumeration.
+    This record comes from the process loader lists; manually mapped or unlinked images may not appear. Names and ranges describe the moment of enumeration.
     """
     @property
     def DllBase(self) -> int:
@@ -231,22 +226,15 @@ class Process:
     """
     A process selection, native handle, and independent memory read/write strategies.
 
-    Select an existing process with `name`, decimal-string `pid`, or `current=True`;
-    select a new one with `image_path` or an image `section_handle`. Selection
-    precedence is current, PID, name, path, section. Construction does not open
-    or create the process. Call `open()`, `create_user()`, or `create()` as appropriate,
-    then `init_memory()` before strategy-based memory operations.
+    Select an existing process with `name`, decimal-string `pid`, or `current=True`; select a new one with `image_path` or an image `section_handle`. Selection precedence is current, PID, name, path, section. Construction does not open or create the process. Call `open()`, `create_user()`, or `create()` as appropriate, then `init_memory()` before strategy-based memory operations.
 
-    Strategies omitted from the constructor remain unset. Read and write choices
-    are independent; read-only analysis need not configure writing. A supplied
-    section handle is borrowed: keep its owning `Handle` alive through `create()`.
+    Strategies omitted from the constructor remain unset. Read and write choices are independent; read-only analysis need not configure writing. A supplied section handle is borrowed: keep its owning `Handle` alive through `create()`.
     """
     def __init__(self, *, current: bool = ..., name: str = ..., pid: str = ..., image_path: str = ..., section_handle: br3k.resource.Handle = ..., process_vm_read_strategy: br3k.proc.ProcessVmReadStrategy | int = ..., process_vm_write_strategy: br3k.proc.ProcessVmWriteStrategy | int = ..., process_open_strategy: br3k.proc.ProcessOpenStrategy | int = ..., thread_open_strategy: br3k.proc.ThreadOpenStrategy | int = ...) -> None:
         """
         Select a target and store strategies without opening a handle.
 
-        `pid` must be a decimal string, not an integer. Missing selection, an invalid
-        PID, a failed name lookup, or an unknown strategy value raises `ValueError`.
+        `pid` must be a decimal string, not an integer. Missing selection, an invalid PID, a failed name lookup, or an unknown strategy value raises `ValueError`.
 
         Parameters:
             current: Select the current process when True; takes precedence over other selectors.
@@ -277,8 +265,7 @@ class Process:
         """
         Create a user process from `image_path` and retain its main thread.
 
-        `suspended` controls initial thread suspension. Native failures raise `SystemError`.
-        Optional `command_line` is passed verbatim; no shell is invoked. Omission preserves the native default.
+        `suspended` controls initial thread suspension. Native failures raise `SystemError`. Optional `command_line` is passed verbatim; no shell is invoked. Omission preserves the native default.
 
         Parameters:
             command_line: Full Windows command line, including the executable name. Quote paths containing spaces.
@@ -311,8 +298,7 @@ class Process:
         """
         Initialize the configured read and/or write strategies.
 
-        At least one strategy must be set. LiveDumpParse captures a kernel dump and
-        may require privileges and symbol downloads; it reads a snapshot, not live data.
+        At least one strategy must be set. LiveDumpParse captures a kernel dump and may require privileges and symbol downloads; it reads a snapshot, not live data.
         """
         ...
     def create_memory(self, size: int) -> None:
@@ -326,8 +312,7 @@ class Process:
         """
         Write byte values at an offset from the memory context's remote base.
 
-        `offset` defaults to zero. Requires initialized writing and suitable target
-        storage; this is not a file write or an automatic allocation.
+        `offset` defaults to zero. Requires initialized writing and suitable target storage; this is not a file write or an automatic allocation.
         """
         ...
     def read_memory(self, size: int, offset: int = ...) -> bytes:
@@ -348,8 +333,7 @@ class Process:
         """
         Read the loader module's complete mapped address range.
 
-        Returns mapped bytes without repairing imports, file offsets, or unreadable
-        ranges. Use `br3k.pe.ProcessView` and `Capture` for sparse capture and recovery.
+        Returns mapped bytes without repairing imports, file offsets, or unreadable ranges. Use `br3k.pe.ProcessView` and `Capture` for sparse capture and recovery.
         """
         ...
     def get_memory_remote_address(self) -> int:
@@ -415,8 +399,7 @@ class Process:
         """
         Relocate mapped PE bytes to the memory context's base and write them there.
 
-        Requires allocated target storage and an initialized write strategy. This is
-        not a complete loader: it does not resolve imports or run TLS callbacks.
+        Requires allocated target storage and an initialized write strategy. This is not a complete loader: it does not resolve imports or run TLS callbacks.
         """
         ...
     def log_handles(self) -> None:
@@ -444,8 +427,7 @@ class ProcessParameters:
     """
     Owned native process parameters initialized from an executable path.
 
-    Used by `Process.write_peb_proc_params()` when setting up an image-section
-    process. Creating this object does not start a process.
+    Used by `Process.write_peb_proc_params()` when setting up an image-section process. Creating this object does not start a process.
     """
     def __init__(self, filepath: str) -> None:
         """
@@ -521,10 +503,7 @@ class Thread:
     """
     A thread associated with a `br3k.proc.Process`.
 
-    Construction only stores the process and optional TID or handle. Call `open()`
-    or `create()` to acquire a handle, unless one was supplied. Native addresses
-    refer to the target process. Context and callback operations require matching
-    architecture and calling conventions; they do not validate executable code.
+    Construction only stores the process and optional TID or handle. Call `open()` or `create()` to acquire a handle, unless one was supplied. Native addresses refer to the target process. Context and callback operations require matching architecture and calling conventions; they do not validate executable code.
     """
     def __init__(self, process: br3k.proc.Process, tid: int = ..., thread_handle: br3k.resource.Handle = ...) -> None:
         """
@@ -535,24 +514,21 @@ class Thread:
         """
         Change a suspended thread's entry point to `ep`.
 
-        Set `new_thread=True` for initial startup-context handling, or `False` to
-        replace the current instruction pointer. Does not suspend or resume the thread.
+        Set `new_thread=True` for initial startup-context handling, or `False` to replace the current instruction pointer. Does not suspend or resume the thread.
         """
         ...
     def create(self, ep: int, arg: int = ...) -> None:
         """
         Create a thread at target address `ep`, using the configured system API dispatch.
 
-        `arg` defaults to a null pointer. Requires an opened process; retains the
-        returned thread handle. Creation does not imply that the callback completed.
+        `arg` defaults to a null pointer. Requires an opened process; retains the returned thread handle. Creation does not imply that the callback completed.
         """
         ...
     def open(self) -> None:
         """
         Open a thread using the parent process's `ThreadOpenStrategy`.
 
-        The TID strategy requires `tid`; other strategies use the opened process or
-        its PID/window. An omitted strategy raises `ValueError`.
+        The TID strategy requires `tid`; other strategies use the opened process or its PID/window. An omitted strategy raises `ValueError`.
         """
         ...
     def open_alertable(self) -> None:
@@ -582,8 +558,7 @@ class Thread:
         """
         Queue a user APC at target address `ep` on the opened thread.
 
-        The three optional pointer-sized arguments default to zero. Uses the system
-        API `QueueApcThread` dispatch; successful queueing does not guarantee delivery.
+        The three optional pointer-sized arguments default to zero. Uses the system API `QueueApcThread` dispatch; successful queueing does not guarantee delivery.
         """
         ...
 
@@ -591,8 +566,7 @@ class ThreadInfo:
     """
     A thread snapshot with best-effort start-address, TEB, and stack information.
 
-    Optional fields are `None` when unavailable. `StartAddress` prefers the Win32
-    start address and otherwise uses the system-reported address.
+    Optional fields are `None` when unavailable. `StartAddress` prefers the Win32 start address and otherwise uses the system-reported address.
     """
     @property
     def ProcessId(self) -> int:
@@ -675,11 +649,7 @@ class ThreadPool:
     """
     A process thread-pool context for native work-item experiments.
 
-    Requires an opened process and initialized memory strategies. Work-item
-    insertion requires a native-bitness target and cannot use the local-only
-    `CreateSectionMapLocalMap` write strategy. Internal layouts are Windows-build
-    dependent. Operations modify the target and are not a portable task scheduler;
-    returning successfully does not prove the callback executed.
+    Requires an opened process and initialized memory strategies. Work-item insertion requires a native-bitness target and cannot use the local-only `CreateSectionMapLocalMap` write strategy. Internal layouts are Windows-build dependent. Operations modify the target and are not a portable task scheduler; returning successfully does not prove the callback executed.
     """
     def __init__(self, process: br3k.proc.Process) -> None:
         """
@@ -710,9 +680,7 @@ class ThreadPool:
         """
         Prepare and trigger the selected `ThreadPoolWorkItem` using target address `ep`.
 
-        Dispatches to the corresponding named method. The entry point must have a
-        compatible callback ABI and remain valid for asynchronous execution.
-        Invalid work-item values raise `ValueError`; native failures raise `SystemError`.
+        Dispatches to the corresponding named method. The entry point must have a compatible callback ABI and remain valid for asynchronous execution. Invalid work-item values raise `ValueError`; native failures raise `SystemError`.
 
         Parameters:
             work_item_type: Selects the work-item preparation and trigger path.
@@ -887,9 +855,7 @@ class WorkingSetRegion:
     """
     Page-residency and sharing counts for a memory-region snapshot.
 
-    Private pages can include copy-on-write modifications; they are evidence for
-    analysis, not proof of malicious changes. Invalid pages are not necessarily
-    unmapped and may simply be nonresident.
+    Private pages can include copy-on-write modifications; they are evidence for analysis, not proof of malicious changes. Invalid pages are not necessarily unmapped and may simply be nonresident.
     """
     @property
     def Region(self) -> br3k.proc.MemoryRegion:
@@ -968,3 +934,28 @@ class WorkingSetRegion:
         Format region bounds and page counters for display.
         """
         ...
+
+
+__all__ = [
+    "BasicInformation",
+    "MemoryMap",
+    "MemoryRegion",
+    "Module",
+    "PEB",
+    "Process",
+    "ProcessOpenStrategy",
+    "ProcessParameters",
+    "ProcessResumeStrategy",
+    "ProcessSuspendStrategy",
+    "ProcessVmReadStrategy",
+    "ProcessVmWriteStrategy",
+    "Thread",
+    "ThreadInfo",
+    "ThreadOpenStrategy",
+    "ThreadPool",
+    "ThreadPoolWorkItem",
+    "ThreadResumeStrategy",
+    "ThreadSuspendStrategy",
+    "WorkerFactoryBasicInformation",
+    "WorkingSetRegion",
+]

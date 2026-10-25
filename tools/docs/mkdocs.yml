@@ -1,0 +1,66 @@
+site_name: br3k
+site_description: Python API and research workflows
+repo_url: https://github.com/1ndahous3/br3k
+docs_dir: ../../docs
+site_dir: ../../target/docs
+
+hooks:
+  - reference.py
+watch:
+  - ../../stubs
+theme:
+  name: mkdocs
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [../../stubs]
+          options:
+            allow_inspection: false
+            docstring_style: google
+            show_root_heading: true
+            show_source: false
+            show_signature_annotations: true
+            show_if_no_docstring: true
+            members_order: source
+            inherited_members: false
+            filters: ["!^_", "^__init__$"]
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+nav:
+  - Overview: index.md
+  - Core: core.md
+  - PE Workflows: pe_recovery.md
+  - Scripts: scripts.md
+  - Development: development.md
+  - Python API:
+      - Overview: api/index.md
+      - Processes and Threads: api/proc.md
+      - Memory: api/mem.md
+      - Files: api/fs.md
+      - System API: api/sysapi.md
+      - Resources: api/resource.md
+      - PDB: api/pdb.md
+      - COM: api/com.md
+      - IPC: api/ipc.md
+      - Shellcode: api/shellcode.md
+      - Transactions: api/tx.md
+      - Configuration: api/config.md
+      - PE:
+          - Overview: api/pe/index.md
+          - Analysis: api/pe/analysis.md
+          - Headers: api/pe/headers.md
+          - Imports: api/pe/imports.md
+          - Exports: api/pe/exports.md
+          - Recovery: api/pe/recovery.md
+          - Code: api/pe/code.md
+          - Relocations: api/pe/relocations.md
+          - Resources: api/pe/resources.md
+          - TLS: api/pe/tls.md
+          - Load Configuration: api/pe/load_config.md
+          - CLR: api/pe/clr.md
+          - Security: api/pe/security.md
+          - Native Views: api/pe/native.md

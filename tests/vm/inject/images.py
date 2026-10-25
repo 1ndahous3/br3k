@@ -9,8 +9,8 @@
 # =============================================================================
 
 # globals (config)
-ORIGINAL_IMAGE_FILEPATH = ORIGINAL_IMAGE_FILEPATH
-INJECTED_IMAGE_FILEPATH = INJECTED_IMAGE_FILEPATH
+ORIGINAL_IMAGE_FILEPATH: str = globals()["ORIGINAL_IMAGE_FILEPATH"]
+INJECTED_IMAGE_FILEPATH: str = globals()["INJECTED_IMAGE_FILEPATH"]
 
 # script
 from enum import IntEnum

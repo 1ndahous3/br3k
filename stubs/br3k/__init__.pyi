@@ -2,26 +2,15 @@
 """
 Windows research primitives for the embedded br3k Python VM.
 
-Use only for authorized, non-malicious education, research, and testing.
-Import feature namespaces (`proc`, `fs`, `pe`, and others) for new scripts;
-the root also retains older names for compatibility. This is an embedded
-module provided by br3k-cli/br3k-dll, not a package installed into CPython.
+Use only for authorized, non-malicious education, research, and testing. Import feature namespaces (`proc`, `fs`, `pe`, and others) for new scripts; the root also retains older names for compatibility. This is an embedded module provided by br3k-cli/br3k-dll, not a package installed into CPython.
 
-Addresses are integers in the address space specified by each operation;
-lengths and offsets are bytes unless documented otherwise. Native resources
-and executable addresses require valid lifetimes and matching target ABIs.
-Invalid pointers may crash the host rather than produce a Python exception.
-Most OS failures become `SystemError`; argument/state errors commonly become
-`ValueError` or `TypeError`. Availability depends on Windows build, access
-rights, target architecture, and the chosen system API backend.
+Addresses are integers in the address space specified by each operation; lengths and offsets are bytes unless documented otherwise. Native resources and executable addresses require valid lifetimes and matching target ABIs. Invalid pointers may crash the host rather than produce a Python exception. Most OS failures become `SystemError`; argument/state errors commonly become `ValueError` or `TypeError`. Availability depends on Windows build, access rights, target architecture, and the chosen system API backend.
 
-`= ...` in generated signatures means optional, not a literal Ellipsis value.
-Omission and `None` are different: only nullable parameters accept `None`.
-Root and namespaced strategy enums are separately created IntEnum classes
-with matching values; use one namespace consistently rather than testing identity.
+`= ...` in generated signatures means optional, not a literal Ellipsis value. Omission and `None` are different: only nullable parameters accept `None`. Root and namespaced strategy enums are separately created IntEnum classes with matching values; use one namespace consistently rather than testing identity.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 import br3k.fs
 import br3k.pe.native
@@ -297,8 +286,7 @@ def adjust_debug_privilege() -> None:
     """
     Enable SeDebugPrivilege on the current process token.
 
-    Does not grant privileges absent from the token or bypass protected-process
-    restrictions. Native failures raise `SystemError`.
+    Does not grant privileges absent from the token or bypass protected-process restrictions. Native failures raise `SystemError`.
     """
     ...
 
@@ -306,9 +294,7 @@ def config_read_variables(filepath: str) -> dict[Any, Any]:
     """
     Read the `variables` mapping from a YAML script configuration.
 
-    Returns a dictionary of supported scalar/container values. YAML null becomes
-    Python `None`. Invalid files or unsupported config values raise `ValueError`;
-    conversion failures raise `SystemError`. Does not inject globals into a VM.
+    Returns a dictionary of supported scalar/container values. YAML null becomes Python `None`. Invalid files or unsupported config values raise `ValueError`; conversion failures raise `SystemError`. Does not inject globals into a VM.
     """
     ...
 
@@ -316,8 +302,7 @@ def excepthook(exc_type: Any, exc_val: Any, exc_tb: Any, /) -> None:
     """
     Format an exception and traceback through the br3k error logger.
 
-    Intended as the embedded VM's exception hook; accepts an exception type,
-    value, and traceback (`None` when absent).
+    Intended as the embedded VM's exception hook; accepts an exception type, value, and traceback (`None` when absent).
     """
     ...
 
@@ -325,8 +310,7 @@ def execute_rop_local(ep: int, arg: int | None) -> None:
     """
     Call local address `ep` with one pointer-sized argument (`None` means null).
 
-    The caller owns address validity, lifetime, and ABI compatibility. Despite the
-    historical name, this wrapper directly calls the supplied address.
+    The caller owns address validity, lifetime, and ABI compatibility. Despite the historical name, this wrapper directly calls the supplied address.
     """
     ...
 
@@ -334,9 +318,7 @@ def fs_change_file(filepath: str, *, file_change_strategy: br3k.fs.ChangeStrateg
     """
     Delete a file or overwrite its content with zeros using the selected strategy.
 
-    Defaults to `ChangeStrategy.DeleteFile`, `DeleteStrategy.NtDeleteFile`, and
-    `OpenStrategy.NtOpenFile`. The delete/open strategies apply to their respective
-    change modes. Zeroing is destructive but is not guaranteed secure erasure.
+    Defaults to `ChangeStrategy.DeleteFile`, `DeleteStrategy.NtDeleteFile`, and `OpenStrategy.NtOpenFile`. The delete/open strategies apply to their respective change modes. Zeroing is destructive but is not guaranteed secure erasure.
 
     Parameters:
         file_change_strategy: Defaults to ChangeStrategy.DeleteFile.
@@ -349,8 +331,7 @@ def fs_create_file(filepath: str, *, file_mode: br3k.fs.FileMode | int) -> br3k.
     """
     Create or overwrite a file with the requested `FileMode` and return an owning handle.
 
-    The native create disposition is FILE_OVERWRITE_IF: existing content can
-    be lost. Invalid modes raise `ValueError`, native errors `SystemError`.
+    The native create disposition is FILE_OVERWRITE_IF: existing content can be lost. Invalid modes raise `ValueError`, native errors `SystemError`.
 
     Parameters:
         file_mode: File access/share mode, independent of creation disposition.
@@ -361,8 +342,7 @@ def fs_create_file_section(handle: br3k.resource.Handle, *, sect_mode: br3k.fs.S
     """
     Create an image section from an open file handle.
 
-    `sect_mode` selects section-handle access rights; it does not change the
-    read-only page-protection argument used by this wrapper. Returns an owning handle.
+    `sect_mode` selects section-handle access rights; it does not change the read-only page-protection argument used by this wrapper. Returns an owning handle.
 
     Parameters:
         sect_mode: Section-handle access rights, not page-protection flags.
@@ -373,8 +353,7 @@ def fs_delete_file(filepath: str, *, file_delete_strategy: br3k.fs.DeleteStrateg
     """
     Delete the named file using `DeleteStrategy.NtDeleteFile` by default.
 
-    SetInformationFile uses the configured SetInformation_Delete dispatch.
-    Deletion may be deferred until open handles close; native failures raise `SystemError`.
+    SetInformationFile uses the configured SetInformation_Delete dispatch. Deletion may be deferred until open handles close; native failures raise `SystemError`.
 
     Parameters:
         file_delete_strategy: Defaults to DeleteStrategy.NtDeleteFile.
@@ -391,8 +370,7 @@ def fs_get_temp_path(filename: str = ...) -> str:
     """
     Return the temporary-directory path, optionally joined with `filename`.
 
-    Does not create a file or choose a unique name. An absolute filename can
-    replace the directory when joined; this is not a path-sanitization function.
+    Does not create a file or choose a unique name. An absolute filename can replace the directory when joined; this is not a path-sanitization function.
     """
     ...
 
@@ -400,8 +378,7 @@ def fs_open_file(filepath: str, *, file_mode: br3k.fs.FileMode | int = ..., file
     """
     Open an existing file and return an owning handle.
 
-    Defaults to `FileMode.Read` and `OpenStrategy.NtOpenFile`. The NtCreateFile
-    strategy also uses an existing-file disposition, not automatic file creation.
+    Defaults to `FileMode.Read` and `OpenStrategy.NtOpenFile`. The NtCreateFile strategy also uses an existing-file disposition, not automatic file creation.
 
     Parameters:
         file_mode: Defaults to FileMode.Read.
@@ -419,8 +396,7 @@ def fs_rename_file(filepath: str, new_filepath: str, *, file_rename_strategy: br
     """
     Rename or copy/delete a file to `new_filepath`.
 
-    Defaults to `RenameStrategy.Rename`, which uses SetInformation_Rename dispatch.
-    `CopyDelete` is not atomic: a failure can leave a destination copy.
+    Defaults to `RenameStrategy.Rename`, which uses SetInformation_Rename dispatch. `CopyDelete` is not atomic: a failure can leave a destination copy.
 
     Parameters:
         file_rename_strategy: Defaults to RenameStrategy.Rename.
@@ -439,8 +415,7 @@ def fs_write_file(handle: br3k.resource.Handle, data: int, size: int) -> None:
     """
     Write `size` bytes from local pointer `data` to an open file handle.
 
-    The caller must keep readable backing storage alive. `data` is an address,
-    not Python bytes; prefer `write_bytes()` for ordinary file output.
+    The caller must keep readable backing storage alive. `data` is an address, not Python bytes; prefer `write_bytes()` for ordinary file output.
     """
     ...
 
@@ -462,8 +437,7 @@ def get_module_handle(module_name: str) -> int | None:
     """
     Return a locally loaded module's base address, or `None` if not found.
 
-    Does not open a remote module or load a missing DLL. Interior NUL characters
-    in `module_name` raise `ValueError`.
+    Does not open a remote module or load a missing DLL. Interior NUL characters in `module_name` raise `ValueError`.
     """
     ...
 
@@ -471,8 +445,7 @@ def get_proc_address(module: str, proc: str) -> int:
     """
     Resolve a named export in a module loaded in the current process.
 
-    The returned address is local, not automatically valid in another process.
-    Missing modules/exports and invalid names raise `SystemError`.
+    The returned address is local, not automatically valid in another process. Missing modules/exports and invalid names raise `SystemError`.
     """
     ...
 
@@ -480,11 +453,7 @@ def init_sysapi(*, sys_api_backend: str = ..., sys_api_dispatch: dict[str, str] 
     """
     Configure the engine-wide system API backend and dispatch choices.
 
-    `sys_api_backend` accepts `Dll` (default), `DllCopy`, or `DirectSyscall`.
-    `sys_api_dispatch` is a string-to-string mapping. Omitted entries use defaults;
-    unknown keys, variants, or backend names raise `ValueError`. A selected call
-    that is unavailable fails instead of retrying another variant. Configure this
-    before creating native resources; it is not a per-object or per-call setting.
+    `sys_api_backend` accepts `Dll` (default), `DllCopy`, or `DirectSyscall`. `sys_api_dispatch` is a string-to-string mapping. Omitted entries use defaults; unknown keys, variants, or backend names raise `ValueError`. A selected call that is unavailable fails instead of retrying another variant. Configure this before creating native resources; it is not a per-object or per-call setting.
 
     Dispatch keys and variants (default first):
     - CreateProcess: NtCreateProcessEx, NtCreateProcess
@@ -508,8 +477,7 @@ def pdb_download(pe: br3k.pe.native.PtrImage, folder_path: str) -> str:
     """
     Obtain the matching PDB for a native `br3k.pe.native.PtrImage` in `folder_path`.
 
-    Uses PE debug identity and the core's download cache. Returns the local PDB
-    path; lookup, download, and filesystem failures raise `SystemError`.
+    Uses PE debug identity and the core's download cache. Returns the local PDB path; lookup, download, and filesystem failures raise `SystemError`.
     """
     ...
 
@@ -517,8 +485,7 @@ def print(*objects: Any, sep: str | None = ..., end: str | None = ..., flush: bo
     """
     Log the string representation of each object through the br3k script logger.
 
-    `sep` defaults to a space. The compatibility arguments `end`, `flush`, and
-    `file` are accepted but ignored; this function does not redirect output.
+    `sep` defaults to a space. The compatibility arguments `end`, `flush`, and `file` are accepted but ignored; this function does not redirect output.
     """
     ...
 
@@ -526,8 +493,7 @@ def rw_cave() -> br3k.resource.BufferView:
     """
     Find a writable local code/data cave and return a non-owning buffer view.
 
-    The result borrows a loaded module's memory, not newly allocated storage.
-    Raises `SystemError` when no suitable cave is available.
+    The result borrows a loaded module's memory, not newly allocated storage. Raises `SystemError` when no suitable cave is available.
     """
     ...
 
@@ -535,8 +501,7 @@ def shellcode_execute(ep: int) -> None:
     """
     Call local address `ep` with the native zero-argument calling convention.
 
-    The address must be executable and ABI-compatible. This is an unsafe native
-    call: invalid code can crash or hang the host rather than raise a Python exception.
+    The address must be executable and ABI-compatible. This is an unsafe native call: invalid code can crash or hang the host rather than raise a Python exception.
     """
     ...
 
@@ -552,9 +517,7 @@ def shellcode_write_exec_via_rop_gadget(process: br3k.proc.Process, ep: int | No
     """
     Build and write an architecture-specific ROP-call payload through the process memory context.
 
-    Requires an initialized write strategy. `ep=None` selects the built-in test
-    function; `args` defaults to an empty list. This prepares memory but does not
-    start a thread. Unsupported gadget generation raises `SystemError`.
+    Requires an initialized write strategy. `ep=None` selects the built-in test function; `args` defaults to an empty list. This prepares memory but does not start a thread. Unsupported gadget generation raises `SystemError`.
     """
     ...
 
@@ -576,3 +539,77 @@ from br3k.proc import Thread as Thread
 from br3k.proc import ThreadPool as ThreadPool
 from br3k.tx import Transaction as Transaction
 from br3k.proc import WorkerFactoryBasicInformation as WORKER_FACTORY_BASIC_INFORMATION
+
+__all__ = [
+    "com",
+    "config",
+    "fs",
+    "ipc",
+    "mem",
+    "pdb",
+    "pe",
+    "proc",
+    "resource",
+    "shellcode",
+    "sysapi",
+    "tx",
+    "FileChangeStrategy",
+    "FileDeleteStrategy",
+    "FileOpenStrategy",
+    "FileRenameStrategy",
+    "FsFileMode",
+    "FsSectionMode",
+    "ProcessOpenStrategy",
+    "ProcessResumeStrategy",
+    "ProcessSuspendStrategy",
+    "ProcessVmReadStrategy",
+    "ProcessVmWriteStrategy",
+    "ThreadOpenStrategy",
+    "ThreadPoolWorkItem",
+    "ThreadResumeStrategy",
+    "ThreadSuspendStrategy",
+    "adjust_debug_privilege",
+    "config_read_variables",
+    "excepthook",
+    "execute_rop_local",
+    "fs_change_file",
+    "fs_create_file",
+    "fs_create_file_section",
+    "fs_delete_file",
+    "fs_get_temp_folder",
+    "fs_get_temp_path",
+    "fs_open_file",
+    "fs_read_bytes",
+    "fs_rename_file",
+    "fs_write_bytes",
+    "fs_write_file",
+    "gadget_KiUserCallForwarder",
+    "gadget_inf_loop",
+    "get_module_handle",
+    "get_proc_address",
+    "init_sysapi",
+    "pdb_download",
+    "print",
+    "rw_cave",
+    "shellcode_execute",
+    "shellcode_get_messageboxw",
+    "shellcode_write_exec_via_rop_gadget",
+    "Br3kIPC",
+    "BufferView",
+    "ComIRundown",
+    "FileMapping",
+    "Handle",
+    "PEB",
+    "PROCESS_BASIC_INFORMATION",
+    "PROCESS_MEMORY_REGION",
+    "PROCESS_MODULE",
+    "PROCESS_WORKING_SET_REGION",
+    "PRTL_USER_PROCESS_PARAMETERS",
+    "Pdb",
+    "Process",
+    "ProcessMemoryMap",
+    "Thread",
+    "ThreadPool",
+    "Transaction",
+    "WORKER_FACTORY_BASIC_INFORMATION",
+]

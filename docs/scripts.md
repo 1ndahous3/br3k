@@ -14,7 +14,7 @@ Test-oriented scenarios live in `tests/vm/` and run inside the br3k VM with expl
 | `tests/fixtures/` | Cargo package for native test fixtures. |
 | `target/test-runs/` | Isolated case directories; failed cases retain configs, dumps, and logs. Not committed. |
 
-See [Testing](../tests/README.md) for build and test commands.
+See [Testing](https://github.com/1ndahous3/br3k/blob/main/tests/README.md) for build and test commands.
 
 ## Injection
 

@@ -9,12 +9,12 @@
 # =============================================================================
 
 # Bound code-reference traversal by explicit byte/block limits.
-PROCESS_ID = PROCESS_ID
+PROCESS_ID: int = globals()["PROCESS_ID"]
 
 import br3k
 
 
-def open_process(process_id):
+def open_process(process_id: int) -> br3k.proc.Process:
     process = br3k.proc.Process(pid=str(process_id),
         process_open_strategy=br3k.proc.ProcessOpenStrategy.OpenProcess,
         process_vm_read_strategy=br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory)
@@ -23,7 +23,7 @@ def open_process(process_id):
     return process
 
 
-def check_trace(view, module):
+def check_trace(view: br3k.pe.ProcessView, module: br3k.proc.Module) -> None:
     image = view.capture(module).image()
     trace = image.code.trace(image.headers.entry_point, view.symbols, max_blocks=16, max_bytes=4096)
     assert isinstance(trace, br3k.pe.code.Trace)

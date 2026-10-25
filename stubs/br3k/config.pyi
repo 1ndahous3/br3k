@@ -8,22 +8,22 @@ variables:
   PROCESS_NAME: notepad.exe
   OPTIONAL_PATH: null
 ```
-`read_variables(path)` returns values without changing script globals.
-Passing `--config path` to the CLI applies them before script execution.
-Values support strings, booleans, null, unsigned 32-bit integers, lists,
-and recursively nested string-keyed mappings. Floats, negative integers,
-integers above 0xffffffff, and custom YAML tags are rejected.
+`read_variables(path)` returns values without changing script globals. Passing `--config path` to the CLI applies them before script execution. Values support strings, booleans, null, unsigned 32-bit integers, lists, and recursively nested string-keyed mappings. Floats, negative integers, integers above 0xffffffff, and custom YAML tags are rejected.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 
 def read_variables(filepath: str) -> dict[Any, Any]:
     """
     Read the `variables` mapping from a YAML script configuration.
 
-    Returns a dictionary of supported scalar/container values. YAML null becomes
-    Python `None`. Invalid files or unsupported config values raise `ValueError`;
-    conversion failures raise `SystemError`. Does not inject globals into a VM.
+    Returns a dictionary of supported scalar/container values. YAML null becomes Python `None`. Invalid files or unsupported config values raise `ValueError`; conversion failures raise `SystemError`. Does not inject globals into a VM.
     """
     ...
+
+
+__all__ = [
+    "read_variables",
+]

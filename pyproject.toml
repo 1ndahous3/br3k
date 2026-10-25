@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "br3k-stubs"
+dynamic = ["version"]
+description = "Type information for the br3k embedded Python API"
+readme = "stubs/README.md"
+requires-python = ">=3.11"
+dependencies = []
+classifiers = ["Typing :: Stubs Only", "Operating System :: OS Independent"]
+
+[project.urls]
+Repository = "https://github.com/1ndahous3/br3k"
+
+[dependency-groups]
+dev = ["ty>=0.0.76,<0.1", "prek>=0.5,<0.6"]
+docs = ["mkdocs>=1.6,<2", "mkdocstrings[python]>=1.0,<2"]
+
+[tool.uv]
+required-version = ">=0.13,<0.14"
+# Tooling consumes the source stubs; a changing staging version must not churn uv.lock.
+package = false
+
+[tool.hatch.version]
+source = "code"
+path = "tools/python/version.py"
+expression = "get_version()"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["stubs/br3k"]
+sources = { "stubs/br3k" = "br3k-stubs" }
+
+[tool.hatch.build.targets.sdist]
+only-include = ["stubs", "tools/python/version.py", "pyproject.toml"]
+
+[tool.ty.environment]
+# Embedded RustPython language target, independent of the host interpreter.
+python-version = "3.15"
+python-platform = "win32"
+extra-paths = ["stubs"]
+
+[tool.ty.src]
+include = ["scripts", "tests/vm", "stubs", "tools/python"]

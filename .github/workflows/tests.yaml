@@ -10,9 +10,15 @@ permissions:
   contents: read
 
 jobs:
+  python:
+    uses: ./.github/workflows/python.yaml
+
   release-tests:
+    needs: python
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      BR3K_VERSION: ${{ needs.python.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -45,10 +51,6 @@ jobs:
       - name: Compile ARM64 release tests (no execution on x64)
         if: ${{ !matrix.execute }}
         run: cargo test --release --workspace --target ${{ matrix.target }} --no-run
-
-      - name: Check generated Python API
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        run: cargo api --check
 
       - name: Run release unit and host/VM tests
         if: matrix.execute

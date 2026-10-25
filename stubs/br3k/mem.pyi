@@ -2,12 +2,11 @@
 """
 Virtual-memory state/type/protection constants and display predicates.
 
-These helpers interpret metadata; they do not read memory or query a process.
-Use Process.memory_regions() for fresh metadata. Protection predicates alone
-cannot establish that a read is safe or that a region contains executable code.
+These helpers interpret metadata; they do not read memory or query a process. Use Process.memory_regions() for fresh metadata. Protection predicates alone cannot establish that a read is safe or that a region contains executable code.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 
 def is_executable_protection(protect: int, /) -> bool:
@@ -20,8 +19,7 @@ def is_readable_protection(protect: int, /) -> bool:
     """
     Return whether GUARD is clear and the base protection is not NOACCESS.
 
-    This is a protection-only heuristic, not a memory read or a guarantee that
-    an address is committed or accessible.
+    This is a protection-only heuristic, not a memory read or a guarantee that an address is committed or accessible.
     """
     ...
 
@@ -71,3 +69,29 @@ PAGE_READONLY: int
 PAGE_READWRITE: int
 PAGE_WRITECOMBINE: int
 PAGE_WRITECOPY: int
+
+__all__ = [
+    "is_executable_protection",
+    "is_readable_protection",
+    "is_writable_executable_protection",
+    "protection_base",
+    "protection_text",
+    "state_text",
+    "type_text",
+    "MEM_COMMIT",
+    "MEM_IMAGE",
+    "MEM_MAPPED",
+    "MEM_PRIVATE",
+    "MEM_RESERVE",
+    "PAGE_EXECUTE",
+    "PAGE_EXECUTE_READ",
+    "PAGE_EXECUTE_READWRITE",
+    "PAGE_EXECUTE_WRITECOPY",
+    "PAGE_GUARD",
+    "PAGE_NOACCESS",
+    "PAGE_NOCACHE",
+    "PAGE_READONLY",
+    "PAGE_READWRITE",
+    "PAGE_WRITECOMBINE",
+    "PAGE_WRITECOPY",
+]

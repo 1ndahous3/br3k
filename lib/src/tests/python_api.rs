@@ -56,6 +56,14 @@ for module_name, source in STUBS.items():
         elif isinstance(node, ast.AnnAssign):
             assert hasattr(module, node.target.id), node.target.id
             names.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if target.id == "__all__":
+                    assert set(ast.literal_eval(node.value)) == {name for name in dir(module) if not name.startswith("_")}, module_name
+                else:
+                    assert isinstance(node.value, ast.Name), (module_name, target.id)
+                    assert getattr(module, target.id) is getattr(module, node.value.id), (module_name, target.id)
+                    names.add(target.id)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 1 and node.module is None:
                 names.update(alias.asname or alias.name for alias in node.names)

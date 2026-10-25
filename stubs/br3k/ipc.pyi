@@ -2,11 +2,11 @@
 """
 Named-pipe communication with the br3k component in a selected process.
 
-Channel and Br3kIPC refer to the same class. This protocol is specific
-to br3k; it is not a general named-pipe or RPC library.
+Channel and Br3kIPC refer to the same class. This protocol is specific to br3k; it is not a general named-pipe or RPC library.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 import br3k.proc
 
@@ -14,9 +14,7 @@ class Channel:
     """
     The process-specific br3k named-pipe channel, not a general IPC abstraction.
 
-    The process PID selects the pipe name. Constructing the wrapper does not
-    connect it: call `create()` for the server side or `open()` for an existing
-    pipe, then `send_data()`. Native failures raise `SystemError`.
+    The process PID selects the pipe name. Constructing the wrapper does not connect it: call `create()` for the server side or `open()` for an existing pipe, then `send_data()`. Native failures raise `SystemError`.
     """
     def __init__(self, process: br3k.proc.Process) -> None:
         """
@@ -32,8 +30,7 @@ class Channel:
         """
         Send byte values to the pipe.
 
-        Retries a listening pipe up to ten times with one-second waits for a client.
-        Other errors, or an absent client after the retries, raise `SystemError`.
+        Retries a listening pipe up to ten times with one-second waits for a client. Other errors, or an absent client after the retries, raise `SystemError`.
         """
         ...
     def open(self) -> None:
@@ -42,4 +39,9 @@ class Channel:
         """
         ...
 
-from br3k.ipc import Channel as Br3kIPC
+Br3kIPC = Channel
+
+__all__ = [
+    "Channel",
+    "Br3kIPC",
+]

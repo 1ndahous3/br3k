@@ -8,11 +8,13 @@
 # Headerless output is an analysis image, not a reconstructed original program.
 # Set RECOVER_HIDDEN_CANDIDATES to True to write all reported candidates.
 
+from typing import Any
+
 import br3k
 
-PROCESS_NAME = globals().get("PROCESS_NAME", "notepad.exe")
-PROCESS_ID = globals().get("PROCESS_ID", None)
-RECOVER_HIDDEN_CANDIDATES = globals().get("RECOVER_HIDDEN_CANDIDATES", False)
+PROCESS_NAME: str = globals().get("PROCESS_NAME", "notepad.exe")
+PROCESS_ID: int | None = globals().get("PROCESS_ID", None)
+RECOVER_HIDDEN_CANDIDATES: bool = globals().get("RECOVER_HIDDEN_CANDIDATES", False)
 
 
 def enum_text(value):
@@ -22,8 +24,8 @@ def enum_text(value):
     return str(value)
 
 
-def open_process(process_name, process_id):
-    args = {
+def open_process(process_name: str, process_id: int | None) -> br3k.proc.Process:
+    args: dict[str, Any] = {
         "process_open_strategy": br3k.proc.ProcessOpenStrategy.OpenProcess,
         "process_vm_read_strategy": br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory,
     }
@@ -37,7 +39,7 @@ def open_process(process_name, process_id):
     return process
 
 
-def region_line(region):
+def region_line(region: br3k.proc.MemoryRegion) -> str:
     line = (
         f"{hex(region.BaseAddress)}-{hex(region.EndAddress)} "
         f"size={hex(region.RegionSize)} state={br3k.mem.state_text(region.State)} "
@@ -49,7 +51,7 @@ def region_line(region):
     return line
 
 
-def candidate_report_lines(candidate, index):
+def candidate_report_lines(candidate: br3k.pe.analysis.HiddenModuleCandidate, index: int) -> list[str]:
     regions = candidate.regions
     span = candidate.span()
     types = sorted(set(br3k.mem.type_text(region.Type) for region in regions))

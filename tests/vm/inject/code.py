@@ -9,16 +9,18 @@
 # =============================================================================
 
 # globals (config)
-TARGET_PROCESS = TARGET_PROCESS
-TARGET_PROCESS_NEW = TARGET_PROCESS_NEW
-TARGET_PROCESS_GUI = TARGET_PROCESS_GUI
-INJECT_BR3K_DLL = INJECT_BR3K_DLL
-BR3K_DLL_PATH = BR3K_DLL_PATH
-BR3K_SCRIPT_PATH = BR3K_SCRIPT_PATH
+TARGET_PROCESS: str = globals()["TARGET_PROCESS"]
+TARGET_PROCESS_NEW: bool = globals()["TARGET_PROCESS_NEW"]
+TARGET_PROCESS_GUI: bool = globals()["TARGET_PROCESS_GUI"]
+INJECT_BR3K_DLL: bool | None = globals()["INJECT_BR3K_DLL"]
+BR3K_DLL_PATH: str | None = globals()["BR3K_DLL_PATH"]
+BR3K_SCRIPT_PATH: str | None = globals()["BR3K_SCRIPT_PATH"]
 
 # script
 import time
+from collections.abc import Iterable
 from enum import IntEnum
+from typing import Any, TypeVar
 
 import br3k
 from br3k import (
@@ -41,6 +43,8 @@ class PayloadType(IntEnum):
     LoadBr3kDll = 1
     WriteMessageBoxShellcode = 2
     CallMessageBox = 3
+
+EnumT = TypeVar("EnumT", bound=IntEnum)
 
 THREAD_OPEN_INJECT_TYPES = (
     ThreadInjectType.HijackThread,
@@ -76,16 +80,16 @@ SYS_API_DISPATCH_CASES = (
     ("alternative", SYS_API_DISPATCH_ALTERNATIVE),
 )
 
-IRUNDOWN_METADATA = None
+IRUNDOWN_METADATA: dict[str, int] | None = None
 
-def enum_items(enum_type, exclude=()):
+def enum_items(enum_type: type[EnumT], exclude: Iterable[EnumT] = ()) -> list[EnumT]:
     return [
         value
         for value in enum_type
         if value not in exclude
     ]
 
-def payload_options():
+def payload_options() -> list[PayloadType]:
     payloads = [
         PayloadType.WriteMessageBoxShellcode,
         PayloadType.CallMessageBox,
@@ -99,10 +103,10 @@ def payload_options():
 def process_open_strategy_options():
     return [None] if TARGET_PROCESS_NEW else enum_items(ProcessOpenStrategy)
 
-def process_vm_read_strategy_options():
+def process_vm_read_strategy_options() -> list[ProcessVmReadStrategy]:
     return enum_items(ProcessVmReadStrategy, exclude=(ProcessVmReadStrategy.CreateSectionMapLocalMap,))
 
-def thread_open_strategy_options():
+def thread_open_strategy_options() -> list[ThreadOpenStrategy]:
     exclude = [ThreadOpenStrategy.ThreadOpenByTid]
 
     if not TARGET_PROCESS_GUI:
@@ -110,7 +114,7 @@ def thread_open_strategy_options():
 
     return enum_items(ThreadOpenStrategy, exclude=exclude)
 
-def thread_inject(thread_inject_type, thread, ep, arg):
+def thread_inject(thread_inject_type: ThreadInjectType, thread: br3k.Thread, ep: int, arg: int) -> None:
     if thread_inject_type == ThreadInjectType.CreateThread:
         thread.create(ep=ep, arg=arg)
     elif thread_inject_type == ThreadInjectType.HijackThread:
@@ -127,7 +131,7 @@ def thread_inject(thread_inject_type, thread, ep, arg):
     else:
         raise Exception("unknown thread injection type")
 
-def iter_thread_cases(thread_inject_type):
+def iter_thread_cases(thread_inject_type: ThreadInjectType):
     if thread_inject_type == ThreadInjectType.QueueApcEarlyBird and not TARGET_PROCESS_NEW:
         return
 
@@ -195,7 +199,7 @@ def iter_cases():
         else:
             yield from iter_thread_cases(thread_inject_type)
 
-def enum_case_name(value):
+def enum_case_name(value: IntEnum | None) -> str | None:
     return value.name if value is not None else None
 
 def format_case(
@@ -219,23 +223,23 @@ def format_case(
         f"thread_pool_work_item={enum_case_name(thread_pool_work_item)}"
     )
 
-def init_sysapi(sys_api_dispatch):
+def init_sysapi(sys_api_dispatch: dict[str, str] | None) -> None:
     if sys_api_dispatch is None:
         br3k.init_sysapi()
     else:
         br3k.init_sysapi(sys_api_dispatch=sys_api_dispatch)
 
 def create_process(
-    thread_inject_type,
-    process_open_strategy,
-    process_vm_read_strategy,
-    process_vm_write_strategy,
-    thread_open_strategy,
-):
+    thread_inject_type: ThreadInjectType,
+    process_open_strategy: ProcessOpenStrategy | None,
+    process_vm_read_strategy: ProcessVmReadStrategy | None,
+    process_vm_write_strategy: ProcessVmWriteStrategy | None,
+    thread_open_strategy: ThreadOpenStrategy | None,
+) -> br3k.Process:
     if thread_inject_type == ThreadInjectType.QueueApcEarlyBird and not TARGET_PROCESS_NEW:
         raise Exception("QueueApcEarlyBird requires TARGET_PROCESS_NEW")
 
-    process_args = {
+    process_args: dict[str, Any] = {
         "image_path" if TARGET_PROCESS_NEW else "name": TARGET_PROCESS,
     }
 
@@ -267,8 +271,9 @@ def create_process(
 
     return process
 
-def prepare_payload(process, payload_type):
+def prepare_payload(process: br3k.Process, payload_type: PayloadType) -> tuple[int, int]:
     if payload_type == PayloadType.LoadBr3kDll:
+        assert BR3K_DLL_PATH is not None, "BR3K_DLL_PATH is required for DLL cases"
         write_data = bytes(BR3K_DLL_PATH, encoding="utf-8")
         process.create_memory(size=len(write_data))
         process.write_memory(data=write_data)
@@ -293,17 +298,18 @@ def prepare_payload(process, payload_type):
 
     raise Exception("unknown payload type")
 
-def send_br3k_script(process, payload_type):
+def send_br3k_script(process: br3k.Process, payload_type: PayloadType) -> None:
     if payload_type != PayloadType.LoadBr3kDll:
         return
 
     br3k_ipc = br3k.Br3kIPC(process)
     br3k_ipc.create()
 
+    assert BR3K_SCRIPT_PATH is not None, "BR3K_SCRIPT_PATH is required for DLL cases"
     script_data = br3k.FileMapping(BR3K_SCRIPT_PATH)
     br3k_ipc.send_data(script_data.bytes())
 
-def get_com_dll():
+def get_com_dll() -> int:
     com_dll = br3k.get_module_handle(module_name="combase")
     if com_dll is None:
         com_dll = br3k.get_module_handle(module_name="ole32")
@@ -312,7 +318,7 @@ def get_com_dll():
 
     return com_dll
 
-def get_irundown_metadata():
+def get_irundown_metadata() -> dict[str, int]:
     global IRUNDOWN_METADATA
 
     if IRUNDOWN_METADATA is not None:

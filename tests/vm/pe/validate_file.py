@@ -9,15 +9,15 @@
 # =============================================================================
 
 # Validate a scenario's output as a file-layout PE without executing it.
-PROCESS_ID = PROCESS_ID
-MODULE_NAME = MODULE_NAME
-IMAGE_PATH = IMAGE_PATH
-REQUIRE_IMPORTS = REQUIRE_IMPORTS
+PROCESS_ID: int | None = globals()["PROCESS_ID"]
+MODULE_NAME: str | None = globals()["MODULE_NAME"]
+IMAGE_PATH: str = globals()["IMAGE_PATH"]
+REQUIRE_IMPORTS: bool = globals()["REQUIRE_IMPORTS"]
 
 import br3k
 
 
-def open_process(process_id):
+def open_process(process_id: int) -> br3k.proc.Process:
     process = br3k.proc.Process(pid=str(process_id),
         process_open_strategy=br3k.proc.ProcessOpenStrategy.OpenProcess,
         process_vm_read_strategy=br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory)
@@ -26,7 +26,7 @@ def open_process(process_id):
     return process
 
 
-def select_module(view, name):
+def select_module(view: br3k.pe.ProcessView, name: str | None) -> br3k.proc.Module:
     if name is None:
         return view.modules[0]
     return next(module for module in view.modules if module.BaseDllName.lower() == name.lower())
@@ -47,6 +47,7 @@ if __name__ == "__main__":
         assert imports, "the fixture output must retain imports"
     for descriptor in imports:
         for entry in descriptor.imports:
+            assert entry.import_address_table_rva is not None
             assert 0 < entry.import_address_table_rva < image.headers.image_size
     for section in image.sections:
         assert section.virtual_address < image.headers.image_size

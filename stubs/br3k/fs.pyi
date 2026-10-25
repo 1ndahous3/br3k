@@ -2,10 +2,7 @@
 """
 File I/O, native mappings, and explicit open/delete/rename/change strategies.
 
-Native path-based operations expect Windows filesystem paths; prefer
-absolute paths. `create_file` can overwrite existing content, `write_bytes`
-truncates, and change/delete operations are destructive. Mapping and
-section APIs expose local addresses and owning handles, not Python streams.
+Native path-based operations expect Windows filesystem paths; prefer absolute paths. `create_file` can overwrite existing content, `write_bytes` truncates, and change/delete operations are destructive. Mapping and section APIs expose local addresses and owning handles, not Python streams.
 
 Example (read-only):
 ```python
@@ -17,6 +14,7 @@ size = mapping.size
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 import br3k.fs
 import br3k.resource
@@ -80,9 +78,7 @@ class Mapping:
     """
     A read-only file section mapped into the current process.
 
-    Construction opens and maps the file. Native handles are owned by the object;
-    `data` is a local address, not an offset or a remote address. Prefer `bytes()`
-    when an independent copy is needed.
+    Construction opens and maps the file. Native handles are owned by the object; `data` is a local address, not an offset or a remote address. Prefer `bytes()` when an independent copy is needed.
     """
     @property
     def handle(self) -> int:
@@ -108,7 +104,7 @@ class Mapping:
         Size of the local mapped view in bytes.
         """
         ...
-    def bytes(self) -> bytes:
+    def bytes(self) -> builtins.bytes:
         """
         Copy the mapped view into an independent Python `bytes` object.
         """
@@ -174,9 +170,7 @@ def change_file(filepath: str, *, file_change_strategy: br3k.fs.ChangeStrategy |
     """
     Delete a file or overwrite its content with zeros using the selected strategy.
 
-    Defaults to `ChangeStrategy.DeleteFile`, `DeleteStrategy.NtDeleteFile`, and
-    `OpenStrategy.NtOpenFile`. The delete/open strategies apply to their respective
-    change modes. Zeroing is destructive but is not guaranteed secure erasure.
+    Defaults to `ChangeStrategy.DeleteFile`, `DeleteStrategy.NtDeleteFile`, and `OpenStrategy.NtOpenFile`. The delete/open strategies apply to their respective change modes. Zeroing is destructive but is not guaranteed secure erasure.
 
     Parameters:
         file_change_strategy: Defaults to ChangeStrategy.DeleteFile.
@@ -189,8 +183,7 @@ def create_file(filepath: str, *, file_mode: br3k.fs.FileMode | int) -> br3k.res
     """
     Create or overwrite a file with the requested `FileMode` and return an owning handle.
 
-    The native create disposition is FILE_OVERWRITE_IF: existing content can
-    be lost. Invalid modes raise `ValueError`, native errors `SystemError`.
+    The native create disposition is FILE_OVERWRITE_IF: existing content can be lost. Invalid modes raise `ValueError`, native errors `SystemError`.
 
     Parameters:
         file_mode: File access/share mode, independent of creation disposition.
@@ -201,8 +194,7 @@ def create_file_section(handle: br3k.resource.Handle, *, sect_mode: br3k.fs.Sect
     """
     Create an image section from an open file handle.
 
-    `sect_mode` selects section-handle access rights; it does not change the
-    read-only page-protection argument used by this wrapper. Returns an owning handle.
+    `sect_mode` selects section-handle access rights; it does not change the read-only page-protection argument used by this wrapper. Returns an owning handle.
 
     Parameters:
         sect_mode: Section-handle access rights, not page-protection flags.
@@ -213,8 +205,7 @@ def delete_file(filepath: str, *, file_delete_strategy: br3k.fs.DeleteStrategy |
     """
     Delete the named file using `DeleteStrategy.NtDeleteFile` by default.
 
-    SetInformationFile uses the configured SetInformation_Delete dispatch.
-    Deletion may be deferred until open handles close; native failures raise `SystemError`.
+    SetInformationFile uses the configured SetInformation_Delete dispatch. Deletion may be deferred until open handles close; native failures raise `SystemError`.
 
     Parameters:
         file_delete_strategy: Defaults to DeleteStrategy.NtDeleteFile.
@@ -231,8 +222,7 @@ def get_temp_path(filename: str = ...) -> str:
     """
     Return the temporary-directory path, optionally joined with `filename`.
 
-    Does not create a file or choose a unique name. An absolute filename can
-    replace the directory when joined; this is not a path-sanitization function.
+    Does not create a file or choose a unique name. An absolute filename can replace the directory when joined; this is not a path-sanitization function.
     """
     ...
 
@@ -240,8 +230,7 @@ def open_file(filepath: str, *, file_mode: br3k.fs.FileMode | int = ..., file_op
     """
     Open an existing file and return an owning handle.
 
-    Defaults to `FileMode.Read` and `OpenStrategy.NtOpenFile`. The NtCreateFile
-    strategy also uses an existing-file disposition, not automatic file creation.
+    Defaults to `FileMode.Read` and `OpenStrategy.NtOpenFile`. The NtCreateFile strategy also uses an existing-file disposition, not automatic file creation.
 
     Parameters:
         file_mode: Defaults to FileMode.Read.
@@ -259,8 +248,7 @@ def rename_file(filepath: str, new_filepath: str, *, file_rename_strategy: br3k.
     """
     Rename or copy/delete a file to `new_filepath`.
 
-    Defaults to `RenameStrategy.Rename`, which uses SetInformation_Rename dispatch.
-    `CopyDelete` is not atomic: a failure can leave a destination copy.
+    Defaults to `RenameStrategy.Rename`, which uses SetInformation_Rename dispatch. `CopyDelete` is not atomic: a failure can leave a destination copy.
 
     Parameters:
         file_rename_strategy: Defaults to RenameStrategy.Rename.
@@ -279,9 +267,30 @@ def write_file(handle: br3k.resource.Handle, data: int, size: int) -> None:
     """
     Write `size` bytes from local pointer `data` to an open file handle.
 
-    The caller must keep readable backing storage alive. `data` is an address,
-    not Python bytes; prefer `write_bytes()` for ordinary file output.
+    The caller must keep readable backing storage alive. `data` is an address, not Python bytes; prefer `write_bytes()` for ordinary file output.
     """
     ...
 
-from br3k.fs import Mapping as FileMapping
+FileMapping = Mapping
+
+__all__ = [
+    "ChangeStrategy",
+    "DeleteStrategy",
+    "FileMode",
+    "Mapping",
+    "OpenStrategy",
+    "RenameStrategy",
+    "SectionMode",
+    "change_file",
+    "create_file",
+    "create_file_section",
+    "delete_file",
+    "get_temp_folder",
+    "get_temp_path",
+    "open_file",
+    "read_bytes",
+    "rename_file",
+    "write_bytes",
+    "write_file",
+    "FileMapping",
+]

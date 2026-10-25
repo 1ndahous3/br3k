@@ -9,14 +9,16 @@
 #
 # Config globals: PROCESS_NAME / PROCESS_ID.
 
+from typing import Any
+
 import br3k
 
-PROCESS_NAME = globals().get("PROCESS_NAME", "notepad.exe")
-PROCESS_ID = globals().get("PROCESS_ID", None)
+PROCESS_NAME: str = globals().get("PROCESS_NAME", "notepad.exe")
+PROCESS_ID: int | None = globals().get("PROCESS_ID", None)
 
 
-def open_process(process_name, process_id):
-    args = {
+def open_process(process_name: str, process_id: int | None) -> br3k.proc.Process:
+    args: dict[str, Any] = {
         "process_open_strategy": br3k.proc.ProcessOpenStrategy.OpenProcess,
         "process_vm_read_strategy": br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory,
     }
@@ -30,11 +32,11 @@ def open_process(process_name, process_id):
     return process
 
 
-def quote_yaml(value):
+def quote_yaml(value: object) -> str:
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def baseline_for_module(view, module):
+def baseline_for_module(view: br3k.pe.ProcessView, module: br3k.proc.Module) -> list[str]:
     if module.FullDllName is None or module.FullDllName == "":
         return [
             f"- name: {quote_yaml(module.BaseDllName)}",

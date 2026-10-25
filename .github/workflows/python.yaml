@@ -1,0 +1,77 @@
+name: Python tooling
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Optional explicit version; otherwise use the normal staging version
+        required: false
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: Version shared by the wheel and native artifacts
+        value: ${{ jobs.tooling.outputs.version }}
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          version: '0.13.5'
+          enable-cache: true
+
+      - name: Prepare locked tooling environment
+        run: uv sync --locked --group docs
+
+      - name: Select artifact version
+        id: version
+        env:
+          BR3K_VERSION: ${{ inputs.version }}
+        run: |
+          version=$(uv run --locked python tools/python/version.py)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "BR3K_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Check stubs, Python consumers, and documentation
+        run: uv run --locked prek run --all-files
+
+      - name: Test the API generator (release)
+        run: cargo test --release -p br3k-python-api -p br3k-python-api-macros
+
+      - name: Build stub wheel
+        run: uv build --wheel
+
+      - name: Validate the installed wheel without source stubs
+        run: uv run --locked python tools/python/check_wheel.py dist/*.whl
+
+      - name: Type-check documentation tooling
+        run: uv run --locked --group docs ty check --config "src.include=['tools/docs']"
+
+      - name: Upload stub wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: br3k-stubs
+          path: dist/*.whl
+          if-no-files-found: error
+
+      - name: Upload Python API documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-api-docs
+          path: target/docs/
+          if-no-files-found: error

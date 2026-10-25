@@ -1,6 +1,6 @@
 # Python API Generation
 
-`cargo api` generates the complete registered br3k API inventory, stubs, and namespace reference from Rust declarations. `cargo api --check` checks the same output without writing files. Run it before committing binding changes. Release generator tests also check for stale files.
+`cargo api` collects the complete registered br3k API inventory and generates stubs from Rust declarations. `cargo api --check` checks the stubs without writing files. Run it before committing binding changes. Release generator tests also check for stale stubs.
 
 The inventory covers the root module and every registered namespace: PE, processes, threads/thread pools, memory, files, PDBs, COM, br3k IPC, shellcode, system API configuration, transactions, resources, and YAML configuration. Source contracts document every exported class, enum variant, method, property, and function. `cargo api --coverage` reports declarations without source prose without writing files; a signature alone is not counted as prose.
 
@@ -15,7 +15,7 @@ The inventory covers the root module and every registered namespace: PE, process
 
 There is no second override dictionary in the generator. It parses Rust syntax with `syn`, resolves local argument-record imports, validates registration/type references, and emits deterministic LF output. Unknown metadata keys and duplicate hints fail; ambiguous declarations require disambiguation, not a guessed type.
 
-Class aliases are rendered as re-exports, not duplicate definitions. Feature namespaces are preferred over root aliases, with the shortest exported name used within those namespaces. Classes declared with `module = false` retain their runtime metadata; generated import paths describe where they are exported, not a change to `__module__` or `__name__`. Root and namespaced non-PE enums are separate IntEnum objects created by the runtime and are documented separately, not as aliases.
+Class aliases are rendered as re-exports or same-module assignments, not duplicate definitions. Explicit `__all__` lists keep renamed exports visible to type checkers. Built-in annotation types are qualified when a class member shadows their names. Feature namespaces are preferred over root aliases, with the shortest exported name used within those namespaces. Classes declared with `module = false` retain their runtime metadata; generated import paths describe where they are exported, not a change to `__module__` or `__name__`. Root and namespaced non-PE enums are separate IntEnum objects created by the runtime and are documented separately, not as aliases.
 
 ## Concrete Returns
 
@@ -69,7 +69,7 @@ The pinned RustPython version exposes Rust `///` comments on classes, methods, c
 
 Both `#[pygetset]` getter comments and `#[pymember]` field comments are available on the class descriptor's `__doc__` and in generated stubs/reference. Inspect the descriptor on the class, not the property's value on an instance.
 
-Write detailed contracts beside Rust declarations. Keep hand-written Markdown for workflow examples, architecture, and limitations. The generated namespace reference links back to those declarations and includes parameter documentation from `FromArgs`.
+Write detailed contracts beside Rust declarations. Keep hand-written Markdown for workflow examples, architecture, and limitations. The generator embeds these contracts and parameter documentation from `FromArgs` in the stubs. During a documentation build, the MkDocs hook creates virtual namespace pages from the stubs and their `__all__` lists; mkdocstrings renders the API without importing br3k. No intermediate Markdown pages are written or tracked.
 
 Upstream implementation: [class and member macros](https://github.com/RustPython/RustPython/blob/5bccf31156996d42882485ba70f17edbc77a713e/crates/derive-impl/src/pyclass.rs), [get/set descriptor](https://github.com/RustPython/RustPython/blob/5bccf31156996d42882485ba70f17edbc77a713e/crates/vm/src/builtins/getset.rs), [member descriptor](https://github.com/RustPython/RustPython/blob/5bccf31156996d42882485ba70f17edbc77a713e/crates/vm/src/builtins/descriptor.rs).
 
@@ -77,9 +77,8 @@ Upstream implementation: [class and member macros](https://github.com/RustPython
 
 Generation is an explicit Cargo target, not a side effect of a procedural macro or `lib/build.rs`. Ordinary builds never rewrite checked-in files. The generator does not link br3k, instantiate a Python VM, or need to run the target architecture. Its parser/renderer library can also be called from a future build script if an `OUT_DIR` artifact is needed.
 
-Outputs:
+Outputs are limited to `stubs/br3k/__init__.pyi`, `stubs/br3k/*.pyi`, and `stubs/br3k/pe/*.pyi`: signatures, source docstrings, and public exports for editors and documentation tooling.
 
-- `stubs/br3k/__init__.pyi`, `stubs/br3k/*.pyi`, and `stubs/br3k/pe/*.pyi`: signatures and source docstrings for editors.
-- `docs/api/index.md`, `docs/api/*.md`, and `docs/api/pe/*.md`: namespace/class/member reference.
+The root uv project also packages these stubs as a PEP 561 `br3k-stubs` wheel, checks Python consumers with ty/prek, and builds the HTML reference. See [Development](../../docs/development.md) for commands, staging versions, and isolated installed-wheel validation. The tools run on CPython; the scripts still execute inside br3k's RustPython VM.
 
 Checks cover metadata validation, import resolution, duplicate Rust short names, type inference, generated-file drift, Python syntax, and runtime registration. The runtime inventory test checks every namespace, class member, function, constant, and class alias, including undocumented extra exports. Prose coverage is enforced across the full API to prevent newly exposed members losing their contracts. Dynamic/external types without a declaration or hint remain `Any`; the tool is not a Rust compiler or a complete type checker.

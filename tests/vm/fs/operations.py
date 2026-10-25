@@ -9,7 +9,7 @@
 # =============================================================================
 
 # globals (config)
-TARGET_FILE = TARGET_FILE
+TARGET_FILE: str = globals()["TARGET_FILE"]
 
 # script
 from enum import IntEnum

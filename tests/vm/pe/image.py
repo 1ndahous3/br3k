@@ -9,13 +9,15 @@
 # =============================================================================
 
 # Capture, typed PE views, layout conversion, and memory/disk comparisons.
-PROCESS_ID = PROCESS_ID
-MODULE_NAME = MODULE_NAME
+PROCESS_ID: int = globals()["PROCESS_ID"]
+MODULE_NAME: str | None = globals()["MODULE_NAME"]
+
+from collections.abc import Callable
 
 import br3k
 
 
-def open_process(process_id):
+def open_process(process_id: int) -> br3k.proc.Process:
     process = br3k.proc.Process(pid=str(process_id),
         process_open_strategy=br3k.proc.ProcessOpenStrategy.OpenProcess,
         process_vm_read_strategy=br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory)
@@ -24,13 +26,13 @@ def open_process(process_id):
     return process
 
 
-def select_module(view, name):
+def select_module(view: br3k.pe.ProcessView, name: str | None) -> br3k.proc.Module:
     if name is None:
         return view.modules[0]
     return next(module for module in view.modules if module.BaseDllName.lower() == name.lower())
 
 
-def expect_error(error_type, operation):
+def expect_error(error_type: type[Exception], operation: Callable[[], object]) -> None:
     try:
         operation()
     except error_type:
@@ -38,7 +40,7 @@ def expect_error(error_type, operation):
     raise AssertionError(f"expected {error_type.__name__}")
 
 
-def check_image(image):
+def check_image(image: br3k.pe.Image) -> None:
     assert isinstance(image, br3k.pe.Image)
     assert image.headers.pointer_size in (4, 8)
     assert image.headers.image_size > 0
@@ -65,7 +67,7 @@ def check_image(image):
     expect_error(ValueError, lambda: image.read(image.headers.image_size + 1, 1))
 
 
-def check_module(view, module):
+def check_module(view: br3k.pe.ProcessView, module: br3k.proc.Module) -> None:
     capture = view.capture(module)
     assert isinstance(capture, br3k.pe.Capture)
     assert capture.base == module.DllBase and capture.generation == view.generation

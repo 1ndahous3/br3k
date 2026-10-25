@@ -13,14 +13,14 @@ A view does not retain `data` or grant permission to mutate immutable bytes.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 
 class BufferView:
     """
     A non-owning view of Python bytes as a local address and byte length.
 
-    Keep the original bytes object alive for every use of the view. The view does
-    not retain its owner, copy the data, or make the storage writable.
+    Keep the original bytes object alive for every use of the view. The view does not retain its owner, copy the data, or make the storage writable.
     """
     @property
     def ptr(self) -> int:
@@ -44,6 +44,11 @@ class Handle:
     """
     An owning native handle returned by br3k operations.
 
-    The handle closes when its last owning reference is released. Obtain instances
-    from APIs such as `br3k.fs.open_file`; this class has no Python constructor.
+    The handle closes when its last owning reference is released. Obtain instances from APIs such as `br3k.fs.open_file`; this class has no Python constructor.
     """
+
+
+__all__ = [
+    "BufferView",
+    "Handle",
+]

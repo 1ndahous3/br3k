@@ -1,0 +1,28 @@
+minimum_prek_version = "0.5.0"
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "python-api"
+name = "Check generated Python API"
+entry = "cargo api --check"
+language = "system"
+pass_filenames = false
+files = '^(lib/src/(vm/|pe/|fs\.rs$)|tools/python-api/|tools/python-api-macros/|stubs/|prek\.toml$)'
+
+[[repos.hooks]]
+id = "ty"
+name = "Check Python scripts and stubs"
+entry = "uv run --locked ty check"
+language = "system"
+pass_filenames = false
+files = '^(scripts/|tests/vm/|stubs/|tools/python/|tools/python-api/|tools/python-api-macros/|lib/src/(vm/|pe/|fs\.rs$)|pyproject\.toml$|uv\.lock$|prek\.toml$)'
+
+[[repos.hooks]]
+id = "docs"
+name = "Build documentation and virtual API pages"
+entry = "uv run --locked --group docs mkdocs build -f tools/docs/mkdocs.yml --strict"
+language = "system"
+pass_filenames = false
+files = '^(docs/|stubs/|tools/docs/|pyproject\.toml$|uv\.lock$|prek\.toml$)'

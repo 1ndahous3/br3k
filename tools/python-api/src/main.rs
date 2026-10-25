@@ -4,7 +4,7 @@ use std::{env, fs, path::Path, result::Result};
 fn run() -> Result<(), Error> {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help") {
-        println!("cargo api [--check] [--coverage]\nGenerate all br3k stubs and API reference from Rust declarations. --check never writes files.\n--coverage lists declarations without source documentation and never writes files.");
+        println!("cargo api [--check] [--coverage]\nGenerate all br3k stubs from Rust declarations. --check never writes files.\n--coverage lists declarations without source documentation and never writes files.");
         return Ok(());
     }
     if args.iter().any(|arg| !["--check", "--coverage"].contains(&arg.as_str())) { return Err("expected cargo api [--check] [--coverage]".into()); }

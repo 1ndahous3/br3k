@@ -1,6 +1,6 @@
 # Core
 
-PE workflows are described in [PE analysis and recovery](pe_recovery.md). The [Python API reference](api/index.md) and [editor stubs](../stubs/br3k/__init__.pyi) cover every registered namespace and are generated from Rust declarations and doc comments with `cargo api`. The `tests` suite scripts cover framework strategies and configuration flags.
+PE workflows are described in [PE analysis and recovery](pe_recovery.md). The [editor stubs](https://github.com/1ndahous3/br3k/blob/main/stubs/br3k/__init__.pyi) cover every registered namespace and are generated from Rust declarations and doc comments with `cargo api`; MkDocs builds the Python API reference from these stubs (see [build instructions](development.md#documentation)). The `tests` suite scripts cover framework strategies and configuration flags.
 
 ## Python module and core features
 

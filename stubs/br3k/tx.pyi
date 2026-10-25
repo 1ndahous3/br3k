@@ -2,21 +2,18 @@
 """
 Native transactions with explicit thread attachment and rollback.
 
-Transaction participation depends on the filesystem and operation. Use
-`try/finally` to clear the calling thread's transaction, including after
-errors. This wrapper does not provide a context manager or commit method.
+Transaction participation depends on the filesystem and operation. Use `try/finally` to clear the calling thread's transaction, including after errors. This wrapper does not provide a context manager or commit method.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 
 class Transaction:
     """
     A named native transaction with explicit creation and thread attachment.
 
-    Call `create()` before `set()` or `rollback()`. `set()` affects the calling
-    thread, not every process thread; use `unset()` in a `finally` block. This
-    wrapper exposes rollback but no commit operation.
+    Call `create()` before `set()` or `rollback()`. `set()` affects the calling thread, not every process thread; use `unset()` in a `finally` block. This wrapper exposes rollback but no commit operation.
     """
     def __init__(self, name: str) -> None:
         """
@@ -43,3 +40,8 @@ class Transaction:
         Clear the calling thread's current transaction; does not roll it back.
         """
         ...
+
+
+__all__ = [
+    "Transaction",
+]

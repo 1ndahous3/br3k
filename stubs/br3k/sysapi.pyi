@@ -2,11 +2,7 @@
 """
 Engine-wide system API configuration and local export lookup.
 
-The CLI and DLL initialize default Dll dispatch before running scripts.
-Use `init()` at the start of a scenario to replace those choices.
-Backend selection only covers managed calls; helper calls without a
-syscall equivalent remain DLL calls. No selected dispatch variant silently
-falls back to another variant on failure.
+The CLI and DLL initialize default Dll dispatch before running scripts. Use `init()` at the start of a scenario to replace those choices. Backend selection only covers managed calls; helper calls without a syscall equivalent remain DLL calls. No selected dispatch variant silently falls back to another variant on failure.
 
 Example:
 ```python
@@ -16,14 +12,14 @@ sysapi.init(sys_api_backend="Dll", sys_api_dispatch={"CreateThread": "NtCreateTh
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 
 def adjust_debug_privilege() -> None:
     """
     Enable SeDebugPrivilege on the current process token.
 
-    Does not grant privileges absent from the token or bypass protected-process
-    restrictions. Native failures raise `SystemError`.
+    Does not grant privileges absent from the token or bypass protected-process restrictions. Native failures raise `SystemError`.
     """
     ...
 
@@ -31,8 +27,7 @@ def get_module_handle(module_name: str) -> int | None:
     """
     Return a locally loaded module's base address, or `None` if not found.
 
-    Does not open a remote module or load a missing DLL. Interior NUL characters
-    in `module_name` raise `ValueError`.
+    Does not open a remote module or load a missing DLL. Interior NUL characters in `module_name` raise `ValueError`.
     """
     ...
 
@@ -40,8 +35,7 @@ def get_proc_address(module: str, proc: str) -> int:
     """
     Resolve a named export in a module loaded in the current process.
 
-    The returned address is local, not automatically valid in another process.
-    Missing modules/exports and invalid names raise `SystemError`.
+    The returned address is local, not automatically valid in another process. Missing modules/exports and invalid names raise `SystemError`.
     """
     ...
 
@@ -49,11 +43,7 @@ def init(*, sys_api_backend: str = ..., sys_api_dispatch: dict[str, str] = ...) 
     """
     Configure the engine-wide system API backend and dispatch choices.
 
-    `sys_api_backend` accepts `Dll` (default), `DllCopy`, or `DirectSyscall`.
-    `sys_api_dispatch` is a string-to-string mapping. Omitted entries use defaults;
-    unknown keys, variants, or backend names raise `ValueError`. A selected call
-    that is unavailable fails instead of retrying another variant. Configure this
-    before creating native resources; it is not a per-object or per-call setting.
+    `sys_api_backend` accepts `Dll` (default), `DllCopy`, or `DirectSyscall`. `sys_api_dispatch` is a string-to-string mapping. Omitted entries use defaults; unknown keys, variants, or backend names raise `ValueError`. A selected call that is unavailable fails instead of retrying another variant. Configure this before creating native resources; it is not a per-object or per-call setting.
 
     Dispatch keys and variants (default first):
     - CreateProcess: NtCreateProcessEx, NtCreateProcess
@@ -72,3 +62,11 @@ def init(*, sys_api_backend: str = ..., sys_api_dispatch: dict[str, str] = ...) 
         sys_api_dispatch: Dispatch target names to variant names; omitted entries retain their defaults.
     """
     ...
+
+
+__all__ = [
+    "adjust_debug_privilege",
+    "get_module_handle",
+    "get_proc_address",
+    "init",
+]

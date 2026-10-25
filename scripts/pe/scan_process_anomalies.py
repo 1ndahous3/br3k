@@ -9,14 +9,16 @@
 #
 # Config globals: PROCESS_NAME / PROCESS_ID.
 
+from typing import Any
+
 import br3k
 
-PROCESS_NAME = globals().get("PROCESS_NAME", "notepad.exe")
-PROCESS_ID = globals().get("PROCESS_ID", None)
+PROCESS_NAME: str = globals().get("PROCESS_NAME", "notepad.exe")
+PROCESS_ID: int | None = globals().get("PROCESS_ID", None)
 
 
-def open_process(process_name, process_id):
-    args = {
+def open_process(process_name: str, process_id: int | None) -> br3k.proc.Process:
+    args: dict[str, Any] = {
         "process_open_strategy": br3k.proc.ProcessOpenStrategy.OpenProcess,
         "process_vm_read_strategy": br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory,
     }
@@ -30,7 +32,7 @@ def open_process(process_name, process_id):
     return process
 
 
-def region_line(region):
+def region_line(region: br3k.proc.MemoryRegion) -> str:
     line = (
         f"{hex(region.BaseAddress)}-{hex(region.EndAddress)} "
         f"size={hex(region.RegionSize)} state={br3k.mem.state_text(region.State)} "
@@ -42,13 +44,13 @@ def region_line(region):
     return line
 
 
-def print_loaded_modules(modules):
+def print_loaded_modules(modules: list[br3k.proc.Module]) -> None:
     print(f"loaded_modules: {len(modules)}")
     for module in modules:
         print(f"  {hex(module.DllBase)}-{hex(module.DllBase + module.SizeOfImage)} {module.BaseDllName} {module.FullDllName}")
 
 
-def print_process_scan(scan):
+def print_process_scan(scan: br3k.pe.analysis.ProcessScan) -> None:
     print()
     print("process_scan:")
     print(f"  modules: {scan.module_count}")
@@ -75,7 +77,7 @@ def print_process_scan(scan):
         print(f"  working_set_error: {scan.working_set_error}")
 
 
-def print_scan_findings(findings):
+def print_scan_findings(findings: list[br3k.pe.analysis.ScanFinding]) -> None:
     print()
     print("scan_findings:")
     if len(findings) == 0:
@@ -98,7 +100,7 @@ def print_scan_findings(findings):
             )
 
 
-def print_working_set_private_regions(scan):
+def print_working_set_private_regions(scan: br3k.pe.analysis.ProcessScan) -> None:
     print()
     print("working_set_private_executable_regions:")
     if scan.working_set_error is not None:
@@ -124,7 +126,7 @@ def print_working_set_private_regions(scan):
         print(f"    region={region_line(region.Region)}")
 
 
-def print_thread_start_diagnostics(scan):
+def print_thread_start_diagnostics(scan: br3k.pe.analysis.ProcessScan) -> None:
     print()
     print("thread_start_diagnostics:")
     if scan.thread_error is not None:
@@ -153,7 +155,7 @@ def print_thread_start_diagnostics(scan):
             if thread.region is not None:
                 print(f"      region={region_line(thread.region)}")
 
-def print_thread_stack_diagnostics(scan):
+def print_thread_stack_diagnostics(scan: br3k.pe.analysis.ProcessScan) -> None:
     print()
     print("thread_stack_diagnostics:")
     if scan.thread_error is not None:
@@ -178,7 +180,7 @@ def print_thread_stack_diagnostics(scan):
         print(f"    region={region_line(stack.region)}")
 
 
-def print_hidden_candidates(result):
+def print_hidden_candidates(result: br3k.pe.analysis.HiddenModuleScanResult) -> None:
     visible = result.visible_candidates()
 
     print()

@@ -9,12 +9,14 @@
 # =============================================================================
 
 # Captures belong to one view generation but keep their captured bytes alive.
-PROCESS_ID = PROCESS_ID
+PROCESS_ID: int = globals()["PROCESS_ID"]
+
+from collections.abc import Callable
 
 import br3k
 
 
-def open_process(process_id):
+def open_process(process_id: int) -> br3k.proc.Process:
     process = br3k.proc.Process(pid=str(process_id),
         process_open_strategy=br3k.proc.ProcessOpenStrategy.OpenProcess,
         process_vm_read_strategy=br3k.proc.ProcessVmReadStrategy.ReadVirtualMemory)
@@ -23,7 +25,7 @@ def open_process(process_id):
     return process
 
 
-def expect_error(error_type, operation):
+def expect_error(error_type: type[Exception], operation: Callable[[], object]) -> None:
     try:
         operation()
     except error_type:
@@ -31,7 +33,7 @@ def expect_error(error_type, operation):
     raise AssertionError(f"expected {error_type.__name__}")
 
 
-def check_generation(view, process, module):
+def check_generation(view: br3k.pe.ProcessView, process: br3k.proc.Process, module: br3k.proc.Module) -> None:
     capture = view.capture(module)
     other = br3k.pe.ProcessView(process)
     expect_error(ValueError, lambda: other.compare(capture))

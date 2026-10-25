@@ -7,14 +7,16 @@
 # ONLY_CHANGED_MODULES selects modules with observed differences from disk.
 # Comparison failures are reported, never treated as equality.
 
+from typing import Any
+
 import br3k
 
-PROCESS_NAME = globals().get("PROCESS_NAME", "notepad.exe")
-PROCESS_ID = globals().get("PROCESS_ID", None)
+PROCESS_NAME: str = globals().get("PROCESS_NAME", "notepad.exe")
+PROCESS_ID: int | None = globals().get("PROCESS_ID", None)
 
 
-def open_process():
-    target = {"name": PROCESS_NAME} if PROCESS_ID is None else {"pid": str(PROCESS_ID)}
+def open_process() -> br3k.proc.Process:
+    target: dict[str, Any] = {"name": PROCESS_NAME} if PROCESS_ID is None else {"pid": str(PROCESS_ID)}
     process = br3k.proc.Process(
         **target,
         process_open_strategy=br3k.proc.ProcessOpenStrategy.OpenProcess,
@@ -24,7 +26,7 @@ def open_process():
     process.init_memory()
     return process
 
-ONLY_CHANGED_MODULES = globals().get("ONLY_CHANGED_MODULES", False)
+ONLY_CHANGED_MODULES: bool = globals().get("ONLY_CHANGED_MODULES", False)
 
 
 if __name__ == "__main__":

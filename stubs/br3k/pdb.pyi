@@ -2,12 +2,11 @@
 """
 Matching-PDB downloads, symbol RVAs, and structure-field offsets.
 
-Resolve against the exact image build, then add the target module base to
-a symbol RVA. Field offsets are already byte offsets within their type.
-`download` accepts a native `pe.native.PtrImage`, not a `pe.Image` snapshot.
+Resolve against the exact image build, then add the target module base to a symbol RVA. Field offsets are already byte offsets within their type. `download` accepts a native `pe.native.PtrImage`, not a `pe.Image` snapshot.
 """
 from typing import Any, Iterable
 from enum import IntEnum
+import builtins
 import br3k
 import br3k.pe.native
 
@@ -15,9 +14,7 @@ class Pdb:
     """
     An opened PDB for symbol RVAs and structure-field offsets.
 
-    Use a PDB matching the target image's build. Returned RVAs are relative to
-    that image's base; field offsets are bytes from the start of a structure.
-    Parse failures and missing symbols or fields raise `ValueError`.
+    Use a PDB matching the target image's build. Returned RVAs are relative to that image's base; field offsets are bytes from the start of a structure. Parse failures and missing symbols or fields raise `ValueError`.
     """
     def __init__(self, filepath: str) -> None:
         """
@@ -39,7 +36,12 @@ def download(pe: br3k.pe.native.PtrImage, folder_path: str) -> str:
     """
     Obtain the matching PDB for a native `br3k.pe.native.PtrImage` in `folder_path`.
 
-    Uses PE debug identity and the core's download cache. Returns the local PDB
-    path; lookup, download, and filesystem failures raise `SystemError`.
+    Uses PE debug identity and the core's download cache. Returns the local PDB path; lookup, download, and filesystem failures raise `SystemError`.
     """
     ...
+
+
+__all__ = [
+    "Pdb",
+    "download",
+]

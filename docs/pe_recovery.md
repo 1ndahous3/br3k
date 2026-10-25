@@ -4,7 +4,7 @@ Use these routines only for authorized, non-malicious education, research, and t
 
 `br3k.pe` provides process capture, PE inspection, comparison, and local reconstruction. Scripts select targets and present results; parsing and recovery run in Rust. These operations neither modify the target process nor execute reconstructed code.
 
-See the [script guide](scripts.md) for ready-made scenarios and the [API reference](api/pe/index.md) or [Python stubs](../stubs/br3k/pe/__init__.pyi) for signatures, options, and returned records.
+See the [script guide](scripts.md) for ready-made scenarios. For signatures, options, and returned records, [build the API reference](development.md#documentation) or consult the [Python stubs](https://github.com/1ndahous3/br3k/blob/main/stubs/br3k/pe/__init__.pyi).
 
 ## Object Model
 
@@ -127,4 +127,4 @@ Recovery consumes the selected capture. When headers are missing, surviving sect
 - Directory validation is structural. Exception checks are not an unwinder; CLR checks are not managed-code verification. Specialized hybrid/dynamic-relocation/enclave/volatile/hotpatch metadata, unknown versions, x86 exception directories, and file-offset-only debug payloads may remain `Unsupported`.
 - Certificates and overlays are file-only. Memory captures cannot recreate an absent overlay or a valid signature. Synthetic images and partial builds may be useful for analysis without being runnable.
 
-For API details, configure the editor's stub path to `stubs` or use the [generated reference](api/pe/index.md). Documentation generation and runtime docstring limitations are described in the [generator guide](../tools/python-api/README.md).
+For API details, [build the reference](development.md#documentation) or configure the editor with the [stub package](development.md#stub-wheel). Documentation generation and runtime docstring limitations are described in the [generator guide](https://github.com/1ndahous3/br3k/blob/main/tools/python-api/README.md).
